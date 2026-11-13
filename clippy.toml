@@ -1,0 +1,7 @@
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+
+# Product names that are not code and should not need backticks in docs.
+doc-valid-idents = ["MuPDF", "SQLite", "PDFium", ".."]

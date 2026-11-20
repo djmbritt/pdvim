@@ -301,6 +301,19 @@ pub fn open(path: PathBuf) -> impl Future<Output = Result<Opened, Error>> {
     }
 }
 
+/// A path as MuPDF takes it: as it is on Unix, and as text on Windows,
+/// where it must be valid UTF-8.
+#[cfg(unix)]
+#[allow(clippy::unnecessary_wraps)]
+const fn file_path(path: &Path) -> Result<&Path, mupdf::Error> {
+    Ok(path)
+}
+
+#[cfg(not(unix))]
+fn file_path(path: &Path) -> Result<&str, mupdf::Error> {
+    path.to_str().ok_or(mupdf::Error::InvalidUtf8)
+}
+
 /// Opens the file and measures every page.
 fn load(path: &Path) -> Result<(Document, Vec<PageSize>), Error> {
     let name = path.display().to_string();
@@ -308,7 +321,7 @@ fn load(path: &Path) -> Result<(Document, Vec<PageSize>), Error> {
         path: name.clone(),
         reason: reason(&error, &name),
     };
-    let document = Document::open(path).map_err(failed)?;
+    let document = Document::open(file_path(path).map_err(failed)?).map_err(failed)?;
     if document.needs_password().map_err(failed)? {
         return Err(Error::Encrypted(name));
     }
@@ -793,7 +806,7 @@ impl Worker {
                 }
                 Request::Outline(reply) => {
                     let _ = reply.send(
-                        outline(&self.document, || Document::open(self.path.as_path()))
+                        outline(&self.document, || Document::open(file_path(&self.path)?))
                             .map_err(|error| Error::Outline(error.to_string())),
                     );
                 }

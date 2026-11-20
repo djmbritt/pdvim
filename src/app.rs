@@ -375,10 +375,7 @@ pub fn run(paths: Vec<PathBuf>) -> iced::Result {
         .theme(|app: &App| Some(app.theme()))
         .exit_on_close_request(false)
         .window(window::Settings {
-            platform_specific: window::settings::PlatformSpecific {
-                application_id: "pdvim".to_owned(),
-                ..window::settings::PlatformSpecific::default()
-            },
+            platform_specific: platform_specific(),
             ..window::Settings::default()
         })
         .run()
@@ -2756,6 +2753,22 @@ fn jump_to(document: &mut Document, index: Option<usize>, notice: &mut Notice) {
             index.saturating_add(1),
             document.results.hits.len()
         ));
+    }
+}
+
+/// What only some systems take: on Linux, the name the window goes by, which
+/// the desktop matches with `pdvim.desktop`.
+fn platform_specific() -> window::settings::PlatformSpecific {
+    #[cfg(target_os = "linux")]
+    {
+        window::settings::PlatformSpecific {
+            application_id: "pdvim".to_owned(),
+            ..window::settings::PlatformSpecific::default()
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        window::settings::PlatformSpecific::default()
     }
 }
 

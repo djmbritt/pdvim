@@ -980,6 +980,26 @@ fn page_number(page: u32) -> i32 {
 mod tests {
     use super::*;
 
+    /// A file for a test, removed when the test is done with it. Declared
+    /// before the documents opened from it, it outlives them: Windows does
+    /// not remove a file that is open.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(name: &str, content: impl AsRef<[u8]>) -> Self {
+            let path =
+                std::env::temp_dir().join(format!("pdvim-{name}-{}.pdf", std::process::id()));
+            std::fs::write(&path, content).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
     /// A PDF of three letter-size pages. The first has a link to a spot
     /// on the third, 500 points up from its foot, and a link to a web page.
     fn linked_pdf() -> Vec<u8> {
@@ -1035,11 +1055,10 @@ mod tests {
 
     #[test]
     fn links_are_found_with_their_areas_and_targets() {
-        let path = std::env::temp_dir().join(format!("pdvim-links-{}.pdf", std::process::id()));
-        std::fs::write(&path, linked_pdf()).unwrap();
+        let file = Scratch::new("links", linked_pdf());
+        let path = file.0.clone();
         let document = Document::open(path.to_str().unwrap()).unwrap();
         let links = page_links(&document, 0).unwrap();
-        std::fs::remove_file(&path).unwrap();
 
         assert_eq!(links.len(), 2, "{links:?}");
         let close = |left: f32, right: f32| (left - right).abs() < 0.5;
@@ -1067,11 +1086,10 @@ mod tests {
 
     #[test]
     fn text_is_read_a_character_at_a_time() {
-        let path = std::env::temp_dir().join(format!("pdvim-text-{}.pdf", std::process::id()));
-        std::fs::write(&path, text_pdf()).unwrap();
+        let file = Scratch::new("text", text_pdf());
+        let path = file.0.clone();
         let document = Document::open(path.to_str().unwrap()).unwrap();
         let lines = page_text(&document, 0).unwrap();
-        std::fs::remove_file(&path).unwrap();
 
         assert_eq!(lines.len(), 1, "{lines:?}");
         let content: String = lines[0]
@@ -1095,9 +1113,9 @@ mod tests {
 
     #[test]
     fn highlights_are_saved_after_what_the_file_had() {
-        let path = std::env::temp_dir().join(format!("pdvim-highlight-{}.pdf", std::process::id()));
         let original = text_pdf();
-        std::fs::write(&path, &original).unwrap();
+        let file = Scratch::new("highlight", &original);
+        let path = file.0.clone();
         let document = Document::open(path.to_str().unwrap()).unwrap();
         let line = page_text(&document, 0).unwrap()[0]
             .chars
@@ -1163,7 +1181,6 @@ mod tests {
             .collect();
         assert_eq!(left.len(), 1);
         assert!(!left.contains(&first[0].1));
-        std::fs::remove_file(&path).unwrap();
     }
 
     /// A PDF of three pages with a table of contents: Chapter 1 on the
@@ -1186,11 +1203,10 @@ mod tests {
 
     #[test]
     fn the_table_of_contents_is_read_as_a_tree() {
-        let path = std::env::temp_dir().join(format!("pdvim-outline-{}.pdf", std::process::id()));
-        std::fs::write(&path, outlined_pdf()).unwrap();
+        let file = Scratch::new("outline", outlined_pdf());
+        let path = file.0.clone();
         let document = Document::open(path.to_str().unwrap()).unwrap();
         let chapters = outline(&document, || panic!("nothing to mend")).unwrap();
-        std::fs::remove_file(&path).unwrap();
 
         assert_eq!(chapters.len(), 2, "{chapters:?}");
         assert_eq!(chapters[0].title, "Chapter 1");

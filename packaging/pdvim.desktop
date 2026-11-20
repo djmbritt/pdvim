@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=pdvim
+GenericName=PDF Reader
+Comment=A minimal, keyboard-driven PDF reader with vi keybindings
+Exec=pdvim %F
+Icon=pdvim
+Terminal=false
+Categories=Office;Viewer;
+MimeType=application/pdf;
+StartupWMClass=pdvim
+Keywords=pdf;reader;viewer;vi;vim;

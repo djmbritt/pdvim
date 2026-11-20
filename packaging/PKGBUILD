@@ -1,0 +1,54 @@
+# Maintainer: David Britt
+#
+# Builds pdvim from this working tree (not from a tagged release), so
+# `makepkg -si` packages whatever is checked out right now.
+
+pkgname=pdvim
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='A minimal, keyboard-driven PDF reader with vi keybindings'
+arch=('x86_64')
+url='https://github.com/djmbritt/pdvim'
+license=('AGPL-3.0-or-later')
+depends=(
+  'brotli'
+  'bzip2'
+  'expat'
+  'fontconfig'
+  'freetype2'
+  'gcc-libs'
+  'glibc'
+  'hicolor-icon-theme'
+  'libpng'
+  'libxkbcommon'
+  'sqlite'
+  'vulkan-icd-loader'
+  'wayland'
+  'zlib'
+)
+makedepends=('cargo' 'clang')
+# MuPDF is compiled from source by the mupdf crate; LTO objects from that C
+# build do not link cleanly into the Rust binary.
+options=('!lto' '!debug')
+
+_repo="$(realpath "$startdir/..")"
+
+pkgver() {
+  sed -n 's/^version = "\(.*\)"/\1/p' "$_repo/Cargo.toml" | head -n1
+}
+
+build() {
+  cd "$_repo"
+  export CARGO_TARGET_DIR="$srcdir/target"
+  cargo build --release --locked
+}
+
+package() {
+  cd "$_repo"
+  install -Dm755 "$srcdir/target/release/pdvim" "$pkgdir/usr/bin/pdvim"
+  install -Dm644 packaging/pdvim.desktop "$pkgdir/usr/share/applications/pdvim.desktop"
+  install -Dm644 packaging/pdvim.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/pdvim.svg"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/pdvim/README.md"
+  install -Dm644 config.example.toml "$pkgdir/usr/share/doc/pdvim/config.example.toml"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/pdvim/LICENSE"
+}

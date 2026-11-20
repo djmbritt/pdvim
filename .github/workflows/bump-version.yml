@@ -1,0 +1,67 @@
+# Raises the version after every push to main, and pushes that as a commit
+# of its own.
+#
+# The patch number goes up, 0.1.0 to 0.1.1, unless a commit pushed says
+# `#minor` or `#major` in its message. A push that changes the version
+# itself is left alone, so a version can still be set by hand.
+#
+# The commit is pushed with the workflow's own token, and GitHub starts no
+# workflows for pushes made with it, so the bump does not bump itself.
+# Pull before pushing to main again: `git pull --rebase`.
+name: Bump version
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+# One bump at a time, in the order the pushes came.
+concurrency:
+  group: bump-version
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decide how to bump
+        id: decide
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          version() { sed -n 's/^version = "\(.*\)"/\1/p' | head -n1; }
+          now=$(version < Cargo.toml)
+          if before=$(git show "$BEFORE:Cargo.toml" 2>/dev/null | version) &&
+            [ -n "$before" ] && [ "$before" != "$now" ]; then
+            echo "The push set the version to $now itself; leaving it."
+            echo "part=none" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git cat-file -e "$BEFORE" 2>/dev/null; then
+            messages=$(git log --format=%B "$BEFORE..HEAD")
+          else
+            messages=$(git log -1 --format=%B)
+          fi
+          part=patch
+          if grep -q '#major' <<<"$messages"; then
+            part=major
+          elif grep -q '#minor' <<<"$messages"; then
+            part=minor
+          fi
+          echo "part=$part" >> "$GITHUB_OUTPUT"
+
+      - name: Bump and push
+        if: steps.decide.outputs.part != 'none'
+        run: |
+          next=$(packaging/bump-version.sh "${{ steps.decide.outputs.part }}")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Bump the version to $next"
+          git push origin HEAD:main

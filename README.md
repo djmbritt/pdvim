@@ -38,6 +38,10 @@ Each [release](https://github.com/djmbritt/pdvim/releases) has packages for:
 
 On macOS and Windows pdvim keeps its configuration in `~/.config/pdvim` and `%APPDATA%\pdvim`, and its reading history in `~/.local/share/pdvim` and `%LOCALAPPDATA%\pdvim`.
 
+### Versions
+
+Every push to main raises the version: [`.github/workflows/bump-version.yml`](.github/workflows/bump-version.yml) runs [`packaging/bump-version.sh`](packaging/bump-version.sh) and pushes the change as a commit of its own, so pull before pushing again. The patch number goes up, `0.1.0` to `0.1.1`, unless a commit in the push says `#minor` (`0.2.0`) or `#major` (`1.0.0`) in its message. A push that changes the version in `Cargo.toml` itself keeps that version.
+
 ### Making a release
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) builds, tests and packages pdvim on each platform. Push a tag that matches the version in `Cargo.toml` to draft a release with every package attached:

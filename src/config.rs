@@ -226,6 +226,7 @@ mod tests {
             settings,
             [
                 Setting::ConfirmQuit(false),
+                Setting::ConfirmTabClose(false),
                 Setting::Recolor(false),
                 Setting::RecolorInk(palette.ink),
                 Setting::RecolorPaper(palette.paper),

@@ -61,6 +61,8 @@ pub enum Setting {
     ScrollStep(f32),
     /// Whether to ask before quitting.
     ConfirmQuit(bool),
+    /// Whether to ask before closing a tab, when others are left.
+    ConfirmTabClose(bool),
 }
 
 /// Why a command could not be understood.
@@ -117,8 +119,9 @@ pub fn canonical(name: &str) -> Option<&'static str> {
 }
 
 /// The names of the settings `:set` knows.
-pub const SETTINGS: [&str; 6] = [
+pub const SETTINGS: [&str; 7] = [
     "confirm-quit",
+    "confirm-tab-close",
     "recolor",
     "recolor-darkcolor",
     "recolor-lightcolor",
@@ -224,6 +227,7 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
         "recolor-darkcolor" => Ok(Setting::RecolorInk(value.parse()?)),
         "recolor-lightcolor" => Ok(Setting::RecolorPaper(value.parse()?)),
         "confirm-quit" => parse_switch(value).map(Setting::ConfirmQuit),
+        "confirm-tab-close" => parse_switch(value).map(Setting::ConfirmTabClose),
         "scroll-step" => match value.parse::<f32>() {
             Ok(step) if step.is_finite() && step > 0.0 => Ok(Setting::ScrollStep(step)),
             _ => Err(Error::NotPositive(value.to_owned())),
@@ -303,6 +307,10 @@ mod tests {
         assert_eq!(
             parse("set confirm-quit"),
             Ok(Some(Command::Set(Setting::ConfirmQuit(true))))
+        );
+        assert_eq!(
+            parse("set confirm-tab-close false"),
+            Ok(Some(Command::Set(Setting::ConfirmTabClose(false))))
         );
         assert_eq!(
             parse("set scroll-step 60"),

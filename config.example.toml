@@ -29,6 +29,11 @@ scroll-step = 40
 # stay. Closing the window again while asked quits without asking.
 confirm-quit = false
 
+# Ask "close tab ...? (y/n)" before closing a tab with q, :q or :tabclose
+# while other tabs are open. Closing the last tab quits, so confirm-quit
+# decides about that.
+confirm-tab-close = false
+
 [keys]
 
 # Bind keys to an action by name, or to "none" to remove a default.
@@ -104,6 +109,11 @@ confirm-quit = false
 # Links: label every link in view, then type a label's two letters to
 # follow it
 "f" = "follow-link"
+
+# Selecting text: label every line in view, type a label to start there,
+# move with h j k l, w b e, 0 $, and press y to copy
+"v" = "visual"
+"V" = "visual-line"
 
 # Tabs
 "g t" = "next-tab"

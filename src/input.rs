@@ -96,6 +96,11 @@ pub enum Action {
     ShowHelp,
     /// Label the links in view, to follow one.
     FollowLink,
+    /// Label the lines in view, to start selecting text at one: whole lines
+    /// or characters.
+    Visual {
+        lines: bool,
+    },
     /// Go to the next tab, or the first after the last.
     NextTab,
     /// Go back a number of tabs, round to the last from the first.

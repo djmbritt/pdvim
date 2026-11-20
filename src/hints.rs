@@ -1,7 +1,7 @@
-//! Following links from the keyboard: each link in view gets a label of two
-//! letters, and typing a label follows its link.
+//! Picking from the keyboard: each thing in view, such as a link to follow
+//! or a line to start selecting at, gets a label of two letters, and typing
+//! a label picks it.
 
-use crate::backend::Link;
 use crate::input::Key;
 
 /// The letters labels are made of when few are needed: the home row.
@@ -12,22 +12,22 @@ const ALL: [char; 26] = [
     'z', 'x', 'c', 'v', 'b', 'n', 'm',
 ];
 
-/// A link in view and its label.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Hint {
+/// A thing in view and its label.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hint<T> {
     pub label: [char; 2],
-    /// The page the link is on, counted from 0.
+    /// The page the thing is on, counted from 0.
     pub page: u32,
-    pub link: Link,
+    pub item: T,
 }
 
 /// What a key typed while the labels are shown comes to.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Outcome {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Outcome<T> {
     /// Half a label: wait for the other half.
     Wait,
-    /// A whole label: follow this link.
-    Follow(Hint),
+    /// A whole label: this was picked.
+    Picked(Hint<T>),
     /// Put the labels away.
     Cancel,
     /// No label starts like that: put the labels away and say so.
@@ -35,27 +35,27 @@ pub enum Outcome {
 }
 
 /// The labels shown, and the first letter of one if it has been typed.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Hints {
-    hints: Vec<Hint>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hints<T> {
+    hints: Vec<Hint<T>>,
     typed: Option<char>,
 }
 
-impl Hints {
-    /// Labels the links given, in the order given. There are no labels for
-    /// no links. Links beyond what two letters can label are left out.
-    pub fn new(links: Vec<(u32, Link)>) -> Option<Self> {
-        let letters: &[char] = if links.len() <= HOME_ROW.len().saturating_mul(HOME_ROW.len()) {
+impl<T: Clone> Hints<T> {
+    /// Labels the things given, in the order given. There are no labels for
+    /// nothing. Things beyond what two letters can label are left out.
+    pub fn new(items: Vec<(u32, T)>) -> Option<Self> {
+        let letters: &[char] = if items.len() <= HOME_ROW.len().saturating_mul(HOME_ROW.len()) {
             &HOME_ROW
         } else {
             &ALL
         };
         let count = letters.len();
-        let hints: Vec<Hint> = links
+        let hints: Vec<Hint<T>> = items
             .into_iter()
             .take(count.saturating_mul(count))
             .enumerate()
-            .filter_map(|(index, (page, link))| {
+            .filter_map(|(index, (page, item))| {
                 // The first letter changes fastest, so that few links share
                 // one and the first key already narrows them down.
                 let first = *letters.get(index.checked_rem(count)?)?;
@@ -63,7 +63,7 @@ impl Hints {
                 Some(Hint {
                     label: [first, second],
                     page,
-                    link,
+                    item,
                 })
             })
             .collect();
@@ -72,7 +72,7 @@ impl Hints {
 
     /// The labels still in play: all of them, or those that start with the
     /// letter typed.
-    pub fn shown(&self) -> impl Iterator<Item = &Hint> {
+    pub fn shown(&self) -> impl Iterator<Item = &Hint<T>> {
         self.hints
             .iter()
             .filter(|hint| self.typed.is_none_or(|typed| hint.label[0] == typed))
@@ -84,7 +84,7 @@ impl Hints {
     }
 
     /// Takes a key.
-    pub fn feed(&mut self, key: Key) -> Outcome {
+    pub fn feed(&mut self, key: Key) -> Outcome<T> {
         let letter = match key {
             Key::Escape | Key::Ctrl('c' | '[') => return Outcome::Cancel,
             Key::Backspace | Key::Ctrl('h') => {
@@ -106,14 +106,14 @@ impl Hints {
         self.hints
             .iter()
             .find(|hint| hint.label == [first, letter])
-            .map_or(Outcome::NoMatch, |hint| Outcome::Follow(hint.clone()))
+            .map_or(Outcome::NoMatch, |hint| Outcome::Picked(hint.clone()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::Target;
+    use crate::backend::{Link, Target};
     use crate::layout::Rect;
 
     fn links(count: u32) -> Vec<(u32, Link)> {
@@ -138,7 +138,7 @@ mod tests {
             .collect()
     }
 
-    fn labels(hints: &Hints) -> Vec<String> {
+    fn labels(hints: &Hints<Link>) -> Vec<String> {
         hints
             .shown()
             .map(|hint| hint.label.iter().collect())
@@ -147,7 +147,7 @@ mod tests {
 
     #[test]
     fn no_links_no_labels() {
-        assert_eq!(Hints::new(Vec::new()), None);
+        assert_eq!(Hints::<Link>::new(Vec::new()), None);
     }
 
     #[test]
@@ -180,7 +180,7 @@ mod tests {
         assert_eq!(hints.feed(Key::Char('s')), Outcome::Wait);
         assert_eq!(hints.typed(), Some('s'));
         assert_eq!(labels(&hints), ["sa", "ss"]);
-        let Outcome::Follow(hint) = hints.feed(Key::Char('S')) else {
+        let Outcome::Picked(hint) = hints.feed(Key::Char('S')) else {
             panic!("expected to follow a link");
         };
         assert_eq!(hint.label, ['s', 's']);

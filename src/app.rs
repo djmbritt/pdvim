@@ -24,6 +24,7 @@ use crate::num;
 use crate::reader::Reader;
 use crate::recent::{self, Choice, Picker};
 use crate::recolor::{Palette, Rgb};
+use crate::visual::{self, Kind, Spot, Visual};
 
 /// The colour behind the pages.
 const BACKDROP: Color = Color::from_rgb8(0x10, 0x10, 0x10);
@@ -44,6 +45,10 @@ const LABEL: Color = Color::from_rgb8(0xff, 0xd0, 0x00);
 const LABEL_TEXT: Color = Color::from_rgb8(0x10, 0x10, 0x10);
 /// The size of a link's label, in pixels.
 const LABEL_SIZE: f32 = 12.0;
+/// The colour laid over selected text, and over the character the cursor
+/// is on.
+const SELECTION: Color = Color::from_rgba8(0x40, 0x90, 0xff, 0.35);
+const CURSOR: Color = Color::from_rgba8(0xff, 0x70, 0x00, 0.6);
 /// The colour of the list of recent documents.
 const LIST: Color = Color::from_rgb8(0x1a, 0x1a, 0x1a);
 /// The colour behind the selected entry in that list.
@@ -117,6 +122,9 @@ pub enum Message {
     /// The links on some pages of the document with this number were
     /// found, or could not be.
     LinksFound(u64, Result<backend::PageLinks, backend::Error>),
+    /// The text on some pages of the document with this number was read,
+    /// or could not be.
+    TextFound(u64, Vec<u32>, Result<backend::PageText, backend::Error>),
 }
 
 /// What a rendered page was rendered for. A cached page whose key differs
@@ -179,6 +187,10 @@ struct Document {
     results: Results,
     /// The links on each page whose links have been asked for.
     links: HashMap<u32, Vec<Link>>,
+    /// The lines of text on each page read so far.
+    text: visual::Text,
+    /// The pages whose text is being read right now.
+    reading: std::collections::HashSet<u32>,
 }
 
 /// A tab: a document, or none yet, and the document being opened in it.
@@ -241,6 +253,13 @@ struct Fresh {
     trim: bool,
 }
 
+/// A question the bottom line asks before doing something.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Question {
+    Quit,
+    CloseTab,
+}
+
 /// What the bottom line says when nothing is being typed.
 enum Notice {
     None,
@@ -273,10 +292,18 @@ pub struct App {
     /// The cheat sheet, while it is shown.
     help: Option<Help>,
     /// The labels on the links in view, while they are shown.
-    hints: Option<Hints>,
+    hints: Option<Hints<Link>>,
     /// The document whose links are being found so that they can be
     /// labelled, by its number.
     hints_wanted: Option<u64>,
+    /// The labels on the lines in view, while they are shown, and how text
+    /// will be selected from the line picked.
+    line_hints: Option<(Kind, Hints<Spot>)>,
+    /// The document whose text is being read so that its lines can be
+    /// labelled, by its number, and how text will be selected.
+    lines_wanted: Option<(u64, Kind)>,
+    /// The selection, in visual mode.
+    visual: Option<Visual>,
     notice: Notice,
     palette: Palette,
     /// How far one press of `j` scrolls, in logical pixels.
@@ -285,8 +312,10 @@ pub struct App {
     fresh: Fresh,
     /// Whether to ask before quitting.
     confirm_quit: bool,
-    /// Whether the bottom line is asking whether to quit.
-    asking_to_quit: bool,
+    /// Whether to ask before closing a tab, when others are left.
+    confirm_tab_close: bool,
+    /// What the bottom line is asking, waiting for `y` or anything else.
+    asking: Option<Question>,
 }
 
 /// Runs the reader, opening each document given in a tab of its own.
@@ -328,12 +357,16 @@ impl App {
             help: None,
             hints: None,
             hints_wanted: None,
+            line_hints: None,
+            lines_wanted: None,
+            visual: None,
             notice,
             palette: Palette::default(),
             scroll_step: DEFAULT_SCROLL_STEP,
             fresh: Fresh::default(),
             confirm_quit: false,
-            asking_to_quit: false,
+            confirm_tab_close: false,
+            asking: None,
         };
         // Started without a document, it offers the ones read lately.
         if paths.is_empty() {
@@ -399,6 +432,7 @@ impl App {
                 self.area = area;
                 // The labels were placed for the old size.
                 self.hints = None;
+                self.line_hints = None;
                 for document in self.tabs.iter_mut().filter_map(|tab| tab.document.as_mut()) {
                     document.reader.set_window((area.width, area.height));
                 }
@@ -416,16 +450,21 @@ impl App {
             Message::Wheel(delta) => {
                 // The labels stay where the links were.
                 self.hints = None;
+                self.line_hints = None;
                 self.on_wheel(delta);
                 Task::none()
             }
             // Asked a second time, as when a window manager insists, the
             // window closes without asking again.
-            Message::CloseRequested if self.asking_to_quit => self.exit(),
+            Message::CloseRequested if self.asking == Some(Question::Quit) => self.exit(),
             Message::CloseRequested => self.quit(),
             Message::Opened(request, path, result) => self.on_opened(request, path, result),
             Message::Rendered(id, page, key, result) => {
                 self.on_rendered(id, page, key, result);
+                Task::none()
+            }
+            Message::TextFound(id, pages, result) => {
+                self.on_text(id, &pages, result);
                 Task::none()
             }
             Message::LinksFound(id, result) => {
@@ -461,13 +500,19 @@ impl App {
                     return Task::none();
                 };
                 self.notice = Notice::None;
-                if self.asking_to_quit {
-                    // `y` quits; any other key thinks better of it.
-                    self.asking_to_quit = false;
-                    if matches!(key, Key::Char('y' | 'Y')) {
-                        return self.exit();
+                if let Some(question) = self.asking.take() {
+                    // `y` goes ahead; any other key thinks better of it.
+                    match (question, key) {
+                        (Question::Quit, Key::Char('y' | 'Y')) => self.exit(),
+                        (Question::CloseTab, Key::Char('y' | 'Y')) => self.close_tab_now(),
+                        _ => Task::none(),
                     }
-                    Task::none()
+                } else if self.visual.is_some() {
+                    self.on_visual_key(key)
+                } else if let Some((kind, hints)) = &mut self.line_hints {
+                    let kind = *kind;
+                    let outcome = hints.feed(key);
+                    self.on_line_hint(kind, outcome)
                 } else if let Some(hints) = &mut self.hints {
                     let outcome = hints.feed(key);
                     self.on_hint(outcome);
@@ -587,7 +632,7 @@ impl App {
     }
 
     /// Acts on a key typed while the links are labelled.
-    fn on_hint(&mut self, outcome: Outcome) {
+    fn on_hint(&mut self, outcome: Outcome<Link>) {
         match outcome {
             Outcome::Wait => {}
             Outcome::Cancel => self.hints = None,
@@ -595,9 +640,9 @@ impl App {
                 self.hints = None;
                 self.notice = Notice::Error("no such link".to_owned());
             }
-            Outcome::Follow(hint) => {
+            Outcome::Picked(hint) => {
                 self.hints = None;
-                match hint.link.target {
+                match hint.item.target {
                     Target::Page { page, top } => {
                         if let Some(document) = self.document_mut() {
                             document.reader.go_to_spot(page, top);
@@ -612,6 +657,194 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Labels the lines in view, to start selecting text at one. The text
+    /// of pages not read before is read first.
+    fn label_lines(&mut self, kind: Kind) -> Task<Message> {
+        self.pending = Pending::default();
+        let Some(document) = self.document() else {
+            return Task::none();
+        };
+        let id = document.id;
+        let pages: Vec<u32> = document.reader.visible_pages().collect();
+        if pages.iter().all(|page| document.text.contains_key(page)) {
+            self.show_line_hints(kind);
+            return Task::none();
+        }
+        self.lines_wanted = Some((id, kind));
+        self.read_text(pages)
+    }
+
+    /// Reads the text of those of some pages of the document in view not
+    /// read nor being read.
+    fn read_text(&mut self, pages: Vec<u32>) -> Task<Message> {
+        let Some(document) = self.document_mut() else {
+            return Task::none();
+        };
+        let missing: Vec<u32> = pages
+            .into_iter()
+            .filter(|page| !document.text.contains_key(page) && !document.reading.contains(page))
+            .collect();
+        if missing.is_empty() {
+            return Task::none();
+        }
+        document.reading.extend(missing.iter().copied());
+        let id = document.id;
+        let reading = document.backend.text(missing.clone());
+        Task::perform(reading, move |result| {
+            Message::TextFound(id, missing, result)
+        })
+    }
+
+    fn on_text(
+        &mut self,
+        id: u64,
+        pages: &[u32],
+        result: Result<backend::PageText, backend::Error>,
+    ) {
+        let Some(document) = document_by_id(&mut self.tabs, id) else {
+            return;
+        };
+        for page in pages {
+            document.reading.remove(page);
+        }
+        match result {
+            Ok(text) => document.text.extend(text),
+            Err(error) => {
+                self.notice = Notice::Error(error.to_string());
+                return;
+            }
+        }
+        if let Some((wanted, kind)) = self.lines_wanted
+            && wanted == id
+            && self.document().is_some_and(|document| document.id == id)
+            && let Some(document) = self.document()
+            && document
+                .reader
+                .visible_pages()
+                .all(|page| document.text.contains_key(&page))
+        {
+            self.lines_wanted = None;
+            self.show_line_hints(kind);
+        }
+    }
+
+    /// Labels the lines that show in the window, in reading order.
+    fn show_line_hints(&mut self, kind: Kind) {
+        let Some(document) = self.document() else {
+            return;
+        };
+        let (width, height) = (self.area.width, self.area.height);
+        let reader = &document.reader;
+        let mut lines: Vec<(Rect, Spot)> = Vec::new();
+        for page in reader.visible_pages() {
+            for (index, line) in document.text.get(&page).into_iter().flatten().enumerate() {
+                let Some(first) = line.chars.first() else {
+                    continue;
+                };
+                let area = line.chars.iter().fold(first.area, |area, character| Rect {
+                    left: area.left.min(character.area.left),
+                    top: area.top.min(character.area.top),
+                    right: area.right.max(character.area.right),
+                    bottom: area.bottom.max(character.area.bottom),
+                });
+                let shows = reader.area_on_screen(page, area).is_some_and(|area| {
+                    area.right > 0.0 && area.left < width && area.bottom > 0.0 && area.top < height
+                });
+                if shows {
+                    lines.push((area, Spot::line_start(page, index)));
+                }
+            }
+        }
+        lines.sort_by(|(area, spot), (other_area, other)| {
+            spot.page
+                .cmp(&other.page)
+                .then(area.top.total_cmp(&other_area.top))
+                .then(area.left.total_cmp(&other_area.left))
+        });
+        let spots = lines
+            .into_iter()
+            .map(|(_, spot)| (spot.page, spot))
+            .collect();
+        match Hints::new(spots) {
+            Some(hints) => self.line_hints = Some((kind, hints)),
+            None => self.notice = Notice::Info("no text in view".to_owned()),
+        }
+    }
+
+    /// Acts on a key typed while the lines are labelled.
+    fn on_line_hint(&mut self, kind: Kind, outcome: Outcome<Spot>) -> Task<Message> {
+        match outcome {
+            Outcome::Wait => Task::none(),
+            Outcome::Cancel => {
+                self.line_hints = None;
+                Task::none()
+            }
+            Outcome::NoMatch => {
+                self.line_hints = None;
+                self.notice = Notice::Error("no such line".to_owned());
+                Task::none()
+            }
+            Outcome::Picked(hint) => {
+                self.line_hints = None;
+                self.visual = Some(Visual::new(kind, hint.item));
+                self.follow_cursor()
+            }
+        }
+    }
+
+    /// Moves the selection, copies it, or leaves visual mode.
+    fn on_visual_key(&mut self, key: Key) -> Task<Message> {
+        let (Some(visual), Some(document)) = (
+            &mut self.visual,
+            self.tabs
+                .get(self.current)
+                .and_then(|tab| tab.document.as_ref()),
+        ) else {
+            self.visual = None;
+            return Task::none();
+        };
+        match visual.feed(key, &document.text) {
+            visual::Outcome::Stay => self.follow_cursor(),
+            visual::Outcome::Leave => {
+                self.visual = None;
+                Task::none()
+            }
+            visual::Outcome::Copy(text) => {
+                self.visual = None;
+                let count = text.chars().count();
+                self.notice = Notice::Info(format!(
+                    "copied {count} character{}",
+                    if count == 1 { "" } else { "s" }
+                ));
+                iced::clipboard::write(text)
+            }
+        }
+    }
+
+    /// Keeps the cursor in view, and reads the pages it may move into next.
+    fn follow_cursor(&mut self) -> Task<Message> {
+        let Some(cursor) = self.visual.as_ref().map(Visual::cursor) else {
+            return Task::none();
+        };
+        let Some(document) = self.document_mut() else {
+            return Task::none();
+        };
+        if let Some(area) = visual::character(&document.text, cursor) {
+            document.reader.reveal(cursor.page, area);
+        }
+        let neighbours = self
+            .visual
+            .as_ref()
+            .map(|visual| {
+                visual.neighbours(
+                    self.document()
+                        .map_or(0, |document| document.reader.page_count()),
+                )
+            })
+            .unwrap_or_default();
+        self.read_text(neighbours)
     }
 
     /// Shows the cheat sheet for the bindings in force.
@@ -770,6 +1003,7 @@ impl App {
                 Setting::RecolorInk(ink) => self.palette.ink = ink,
                 Setting::ScrollStep(step) => self.scroll_step = step,
                 Setting::ConfirmQuit(confirm) => self.confirm_quit = confirm,
+                Setting::ConfirmTabClose(confirm) => self.confirm_tab_close = confirm,
             },
         }
         Task::none()
@@ -801,6 +1035,10 @@ impl App {
                 return Task::none();
             }
             Action::FollowLink => return self.label_links(),
+            Action::Visual { lines } => {
+                let kind = if lines { Kind::Lines } else { Kind::Characters };
+                return self.label_lines(kind);
+            }
             Action::ShowHelp => {
                 self.show_help();
                 return Task::none();
@@ -843,6 +1081,7 @@ impl App {
             | Action::ShowRecent
             | Action::ShowHelp
             | Action::FollowLink
+            | Action::Visual { .. }
             | Action::NextTab
             | Action::PreviousTab(_)
             | Action::GotoTab(_)
@@ -950,6 +1189,14 @@ impl App {
             return Task::none();
         };
         tab.opening = None;
+        if index == self.current {
+            // The selection and labels were for the document leaving.
+            self.visual = None;
+            self.line_hints = None;
+        }
+        let Some(tab) = self.tabs.get_mut(index) else {
+            return Task::none();
+        };
         let left = tab.document.replace(Document {
             id,
             path,
@@ -965,6 +1212,8 @@ impl App {
             failed: HashMap::new(),
             results: Results::default(),
             links: HashMap::new(),
+            text: HashMap::new(),
+            reading: std::collections::HashSet::new(),
         });
         // Only the notice that the document was opening is done with.
         if matches!(notice, Notice::Error(_)) {
@@ -1242,9 +1491,26 @@ impl App {
     }
 
     /// Closes the tab in view, and the program with its last tab.
+    /// Closes the tab in view, and the program with its last tab, asking
+    /// first when that is wanted. Closing the last tab is quitting, so only
+    /// `confirm-quit` asks about it.
     fn close_tab(&mut self) -> Task<Message> {
         if self.tabs.len() <= 1 {
             return self.quit();
+        }
+        if self.confirm_tab_close {
+            self.asking = Some(Question::CloseTab);
+            self.pending = Pending::default();
+            return Task::none();
+        }
+        self.close_tab_now()
+    }
+
+    /// Closes the tab in view without asking, and the program with its
+    /// last tab.
+    fn close_tab_now(&mut self) -> Task<Message> {
+        if self.tabs.len() <= 1 {
+            return self.exit();
         }
         if let Some(document) = self
             .tabs
@@ -1287,7 +1553,7 @@ impl App {
     /// Quits, or asks first when that is wanted.
     fn quit(&mut self) -> Task<Message> {
         if self.confirm_quit {
-            self.asking_to_quit = true;
+            self.asking = Some(Question::Quit);
             self.pending = Pending::default();
             return Task::none();
         }
@@ -1365,7 +1631,41 @@ impl App {
                 .wrapping(text::Wrapping::None)
         };
         let left = match (&self.prompt, &self.notice) {
-            _ if self.asking_to_quit => label("quit pdvim? (y/n)".to_owned(), BAR_ERROR),
+            _ if self.asking == Some(Question::Quit) => {
+                label("quit pdvim? (y/n)".to_owned(), BAR_ERROR)
+            }
+            _ if self.asking == Some(Question::CloseTab) => {
+                let name = self
+                    .tabs
+                    .get(self.current)
+                    .map(Tab::name)
+                    .unwrap_or_default();
+                label(format!("close tab {name}? (y/n)"), BAR_ERROR)
+            }
+            _ if self.visual.is_some() => {
+                let visual = self.visual.as_ref();
+                let kind = match visual.map(|visual| visual.kind) {
+                    Some(Kind::Lines) => "-- VISUAL LINE --",
+                    _ => "-- VISUAL --",
+                };
+                let count = visual
+                    .and_then(Visual::count)
+                    .map(|count| format!("  {count}"))
+                    .unwrap_or_default();
+                label(
+                    format!("{kind}{count}    y copies, escape leaves"),
+                    BAR_TEXT,
+                )
+            }
+            _ if self.line_hints.is_some() => {
+                let typed = self
+                    .line_hints
+                    .as_ref()
+                    .and_then(|(_, hints)| hints.typed())
+                    .map(String::from)
+                    .unwrap_or_default();
+                label(format!("select from line: {typed}\u{2588}"), BAR_TEXT)
+            }
             _ if self.hints.is_some() => {
                 let typed = self
                     .hints
@@ -1773,35 +2073,76 @@ impl canvas::Program<Message> for Marks<'_> {
                 frame.fill_rectangle(area.position(), area.size(), fill);
             }
         }
+        if let Some(visual) = &self.0.visual {
+            for (page, area) in visual.areas(&document.text) {
+                if let Some(area) = document.reader.area_on_screen(page, area) {
+                    let area = rectangle(area);
+                    frame.fill_rectangle(area.position(), area.size(), SELECTION);
+                }
+            }
+            let cursor = visual.cursor();
+            if let Some(area) = visual::character(&document.text, cursor)
+                .and_then(|area| document.reader.area_on_screen(cursor.page, area))
+            {
+                let area = rectangle(area);
+                frame.fill_rectangle(area.position(), area.size(), CURSOR);
+            }
+        }
         if let Some(hints) = &self.0.hints {
             for hint in hints.shown() {
-                let Some(area) = document.reader.area_on_screen(hint.page, hint.link.area) else {
+                let Some(area) = document.reader.area_on_screen(hint.page, hint.item.area) else {
                     continue;
                 };
                 let area = rectangle(area);
                 frame.fill_rectangle(area.position(), area.size(), LINK);
-                // The label sits on the link's top-left corner, inside the
-                // window.
-                let corner = Point::new(area.x.max(0.0), area.y.max(0.0));
-                let size = Size::new(LABEL_SIZE * 1.4, LABEL_SIZE * 1.35);
-                frame.fill_rectangle(corner, size, LABEL);
-                frame.fill_text(canvas::Text {
-                    content: hint.label.iter().collect(),
-                    position: Point::new(corner.x + size.width / 2.0, corner.y + size.height / 2.0),
-                    color: LABEL_TEXT,
-                    size: LABEL_SIZE.into(),
-                    font: Font {
-                        weight: iced::font::Weight::Bold,
-                        ..Font::MONOSPACE
-                    },
-                    align_x: iced::widget::text::Alignment::Center,
-                    align_y: iced::alignment::Vertical::Center,
-                    ..canvas::Text::default()
-                });
+                // The label sits on the link's top-left corner.
+                draw_label(&mut frame, hint.label, Point::new(area.x, area.y));
+            }
+        }
+        if let Some((_, hints)) = &self.0.line_hints {
+            for hint in hints.shown() {
+                let Some(area) = visual::character(&document.text, hint.item)
+                    .and_then(|area| document.reader.area_on_screen(hint.page, area))
+                else {
+                    continue;
+                };
+                // The label sits just left of the line's first character.
+                let size = label_size();
+                draw_label(
+                    &mut frame,
+                    hint.label,
+                    Point::new(area.left - size.width - 2.0, area.top),
+                );
             }
         }
         vec![frame.into_geometry()]
     }
+}
+
+/// The size of the box a label of two letters is drawn in.
+const fn label_size() -> Size {
+    Size::new(LABEL_SIZE * 1.4, LABEL_SIZE * 1.35)
+}
+
+/// Draws a label of two letters with its top-left corner at a point, kept
+/// inside the window.
+fn draw_label(frame: &mut canvas::Frame, label: [char; 2], at: Point) {
+    let corner = Point::new(at.x.max(0.0), at.y.max(0.0));
+    let size = label_size();
+    frame.fill_rectangle(corner, size, LABEL);
+    frame.fill_text(canvas::Text {
+        content: label.iter().collect(),
+        position: Point::new(corner.x + size.width / 2.0, corner.y + size.height / 2.0),
+        color: LABEL_TEXT,
+        size: LABEL_SIZE.into(),
+        font: Font {
+            weight: iced::font::Weight::Bold,
+            ..Font::MONOSPACE
+        },
+        align_x: iced::widget::text::Alignment::Center,
+        align_y: iced::alignment::Vertical::Center,
+        ..canvas::Text::default()
+    });
 }
 
 /// Reduces a key press to the keys the reader distinguishes.

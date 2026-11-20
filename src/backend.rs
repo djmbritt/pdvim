@@ -12,7 +12,7 @@ use std::sync::mpsc;
 use std::thread;
 
 use iced::futures::channel::oneshot;
-use mupdf::{Colorspace, DestinationKind, Device, Document, Matrix, Pixmap};
+use mupdf::{Colorspace, DestinationKind, Device, Document, Matrix, Pixmap, TextPageFlags};
 
 use crate::layout::{PageSize, Rect, Rotation};
 use crate::num;
@@ -51,6 +51,8 @@ pub enum Error {
     Search(String),
     #[error("cannot read the links: {0}")]
     Links(String),
+    #[error("cannot read the text: {0}")]
+    Text(String),
     #[error("the document was closed")]
     Closed,
 }
@@ -104,6 +106,24 @@ pub enum Target {
     Uri(String),
 }
 
+/// A line of text on a page, in the order MuPDF reads the page.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextLine {
+    pub chars: Vec<TextChar>,
+}
+
+/// A character on a page.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextChar {
+    pub character: char,
+    /// The area the character takes on the unturned page, in points.
+    pub area: Rect,
+}
+
+/// The lines of text on some pages, each page, counted from 0, with its
+/// lines.
+pub type PageText = Vec<(u32, Vec<TextLine>)>;
+
 /// The links on some pages, each page, counted from 0, with its links.
 pub type PageLinks = Vec<(u32, Vec<Link>)>;
 
@@ -121,6 +141,7 @@ enum Request {
     Search(String, oneshot::Sender<Result<Vec<Hit>, Error>>),
     Measure(oneshot::Sender<Result<Vec<Rect>, Error>>),
     Links(Vec<u32>, oneshot::Sender<Result<PageLinks, Error>>),
+    Text(Vec<u32>, oneshot::Sender<Result<PageText, Error>>),
 }
 
 /// A handle to the worker that owns an open document. The worker stops
@@ -151,6 +172,13 @@ impl Backend {
     pub fn links(&self, pages: Vec<u32>) -> impl Future<Output = Result<PageLinks, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
         let _ = self.requests.send(Request::Links(pages, reply));
+        async move { answer.await.unwrap_or(Err(Error::Closed)) }
+    }
+
+    /// Reads the lines of text on some pages.
+    pub fn text(&self, pages: Vec<u32>) -> impl Future<Output = Result<PageText, Error>> + use<> {
+        let (reply, answer) = oneshot::channel();
+        let _ = self.requests.send(Request::Text(pages, reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -258,6 +286,45 @@ fn page_links(document: &Document, number: u32) -> Result<Vec<Link>, mupdf::Erro
     Ok(links)
 }
 
+/// The box around a quad, measured from the corner of the page.
+fn quad_area(quad: &mupdf::Quad, bounds: &mupdf::Rect) -> Rect {
+    let corners = [quad.ul, quad.ur, quad.ll, quad.lr];
+    let xs = corners.iter().map(|corner| corner.x - bounds.x0);
+    let ys = corners.iter().map(|corner| corner.y - bounds.y0);
+    Rect {
+        left: xs.clone().fold(f32::INFINITY, f32::min),
+        top: ys.clone().fold(f32::INFINITY, f32::min),
+        right: xs.fold(f32::NEG_INFINITY, f32::max),
+        bottom: ys.fold(f32::NEG_INFINITY, f32::max),
+    }
+}
+
+/// The lines of text on a page, with each character's area measured from
+/// the corner of the page. Lines with no characters are left out.
+fn page_text(document: &Document, number: u32) -> Result<Vec<TextLine>, mupdf::Error> {
+    let page = document.load_page(page_number(number))?;
+    let bounds = page.bounds()?;
+    let text = page.to_text_page(TextPageFlags::empty())?;
+    let mut lines = Vec::new();
+    for block in text.blocks() {
+        for line in block.lines() {
+            let chars: Vec<TextChar> = line
+                .chars()
+                .filter_map(|text_char| {
+                    Some(TextChar {
+                        character: text_char.char()?,
+                        area: quad_area(&text_char.quad(), &bounds),
+                    })
+                })
+                .collect();
+            if !chars.is_empty() {
+                lines.push(TextLine { chars });
+            }
+        }
+    }
+    Ok(lines)
+}
+
 /// How far down its page a destination is, when it says. MuPDF gives it
 /// measured downwards from the top of the page, though the mupdf crate names
 /// the fields of a rectangle the way PDF, which measures upwards, does: its
@@ -328,6 +395,15 @@ impl Worker {
                 Request::Links(pages, reply) => {
                     let _ = reply.send(self.links(&pages));
                 }
+                Request::Text(pages, reply) => {
+                    let _ = reply.send(
+                        pages
+                            .iter()
+                            .map(|&page| Ok((page, page_text(&self.document, page)?)))
+                            .collect::<Result<_, mupdf::Error>>()
+                            .map_err(|error| Error::Text(error.to_string())),
+                    );
+                }
             }
         }
     }
@@ -387,17 +463,9 @@ impl Worker {
             let page = self.document.load_page(page_number(number))?;
             let bounds = page.bounds()?;
             for quad in page.search(needle, HITS_PER_PAGE)? {
-                let corners = [quad.ul, quad.ur, quad.ll, quad.lr];
-                let xs = corners.iter().map(|corner| corner.x - bounds.x0);
-                let ys = corners.iter().map(|corner| corner.y - bounds.y0);
                 hits.push(Hit {
                     page: number,
-                    area: Rect {
-                        left: xs.clone().fold(f32::INFINITY, f32::min),
-                        top: ys.clone().fold(f32::INFINITY, f32::min),
-                        right: xs.fold(f32::NEG_INFINITY, f32::max),
-                        bottom: ys.fold(f32::NEG_INFINITY, f32::max),
-                    },
+                    area: quad_area(&quad, &bounds),
                 });
             }
         }
@@ -533,7 +601,7 @@ mod tests {
     /// A PDF of three letter-size pages. The first has a link to a spot
     /// on the third, 500 points up from its foot, and a link to a web page.
     fn linked_pdf() -> Vec<u8> {
-        let objects = [
+        pdf(&[
             "<< /Type /Catalog /Pages 2 0 R >>",
             "<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R] /Count 3 >>",
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [6 0 R 7 0 R] >>",
@@ -543,7 +611,28 @@ mod tests {
              /A << /S /GoTo /D [5 0 R /XYZ 0 500 null] >> >>",
             "<< /Type /Annot /Subtype /Link /Rect [72 600 200 620] \
              /A << /S /URI /URI (https://example.com/) >> >>",
-        ];
+        ])
+    }
+
+    /// A PDF of one letter-size page with "Hello world" in Helvetica, its
+    /// baseline 92 points from the top.
+    fn text_pdf() -> Vec<u8> {
+        let content = "BT /F1 12 Tf 72 700 Td (Hello world) Tj ET";
+        pdf(&[
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R \
+             /Resources << /Font << /F1 5 0 R >> >> >>",
+            &format!(
+                "<< /Length {} >>\nstream\n{content}\nendstream",
+                content.len()
+            ),
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        ])
+    }
+
+    /// A PDF of these objects, numbered from 1, the first the catalog.
+    fn pdf(objects: &[&str]) -> Vec<u8> {
         let size = objects.len().saturating_add(1);
         let mut pdf = b"%PDF-1.4\n".to_vec();
         let mut offsets = Vec::new();
@@ -592,6 +681,34 @@ mod tests {
             Target::Uri("https://example.com/".to_owned())
         );
         assert!(page_links(&document, 1).unwrap().is_empty());
+    }
+
+    #[test]
+    fn text_is_read_a_character_at_a_time() {
+        let path = std::env::temp_dir().join(format!("pdvim-text-{}.pdf", std::process::id()));
+        std::fs::write(&path, text_pdf()).unwrap();
+        let document = Document::open(path.to_str().unwrap()).unwrap();
+        let lines = page_text(&document, 0).unwrap();
+        std::fs::remove_file(&path).unwrap();
+
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        let content: String = lines[0]
+            .chars
+            .iter()
+            .map(|character| character.character)
+            .collect();
+        assert_eq!(content, "Hello world");
+        let first = lines[0].chars[0].area;
+        assert!((first.left - 72.0).abs() < 0.5, "{first:?}");
+        // Measured down from the top: the baseline is 92 points down, so
+        // the letter spans it from above.
+        assert!(first.top < 92.0 && first.bottom > 85.0, "{first:?}");
+        let lefts: Vec<f32> = lines[0]
+            .chars
+            .iter()
+            .map(|character| character.area.left)
+            .collect();
+        assert!(lefts.is_sorted(), "{lefts:?}");
     }
 
     #[test]

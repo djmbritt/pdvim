@@ -5,7 +5,7 @@ use crate::input::Key;
 use crate::keymap::{Binding, Keymap};
 
 /// The actions, in groups, in the order the sheet shows them.
-const GROUPS: [(&str, &[Binding]); 7] = [
+const GROUPS: [(&str, &[Binding]); 8] = [
     (
         "Scrolling",
         &[
@@ -57,6 +57,7 @@ const GROUPS: [(&str, &[Binding]); 7] = [
         ],
     ),
     ("Links", &[Binding::FollowLink]),
+    ("Selecting text", &[Binding::Visual, Binding::VisualLine]),
     ("Tabs", &[Binding::NextTab, Binding::PreviousTab]),
     ("Other", &[Binding::Abort, Binding::Quit]),
 ];
@@ -95,6 +96,8 @@ const fn describe(binding: Binding) -> &'static str {
         Binding::Recent => "Show recent documents",
         Binding::Help => "Show this list",
         Binding::FollowLink => "Label the links in view; type a label to follow it",
+        Binding::Visual => "Select text from a line picked by label; y copies",
+        Binding::VisualLine => "Select whole lines from a line picked by label",
         Binding::NextTab => "Go to the next tab, or tab n",
         Binding::PreviousTab => "Go to the previous tab",
         Binding::Abort => "Cancel a half-typed command, hide highlights",

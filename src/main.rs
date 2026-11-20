@@ -26,6 +26,7 @@ mod num;
 mod reader;
 mod recent;
 mod recolor;
+mod visual;
 
 use std::path::PathBuf;
 use std::process::ExitCode;

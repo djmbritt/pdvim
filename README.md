@@ -14,6 +14,7 @@ pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.r
 - Per-document memory of page, zoom, fit, and rotation, stored in SQLite
 - A list of recently read documents to reopen from
 - A configuration file for settings and key bindings
+- Selecting and copying text from the keyboard, with a visual mode like vim's
 - Following links from the keyboard: `f` labels every link in view, and typing a label follows it
 - A cheat sheet of the key bindings in force, with `:help`
 - `Tab` completion of commands, settings, and file paths in the command prompt
@@ -78,6 +79,31 @@ The mouse wheel also scrolls.
 
 After `f`, each link in view is highlighted and gets a label of two letters. Type a label to follow its link. A link to another place in the document goes there, and any other link, such as a web page, opens with `xdg-open` in your default program. `Backspace` takes back the first letter, and `Esc` puts the labels away.
 
+### Selecting text
+
+| Key       | Action                                  |
+| --------- | --------------------------------------- |
+| `v` / `V` | Select characters / whole lines of text |
+
+After `v` or `V`, each line of text in view gets a label of two letters. Type a label to put the cursor at the start of that line, and start selecting from there.
+
+| Key in visual mode        | Action                                                     |
+| ------------------------- | ---------------------------------------------------------- |
+| `h` / `l`, arrow keys     | Move the cursor a character left / right                   |
+| `j` / `k`, arrow keys     | Move the cursor a line down / up, onto the next pages      |
+| `w` / `b` / `e`           | Move to the next word / the word before / word's end       |
+| `0` / `$`, `Home` / `End` | Move to the start / end of the line                        |
+| `^`                       | Move to the first character on the line that isn't a space |
+| `f` / `F` + a character   | Move to the next / previous such character on the line     |
+| `t` / `T` + a character   | Move to just before / just after it                        |
+| `;` / `,`                 | Repeat the last `f`, `F`, `t`, or `T` / the other way      |
+| `o`                       | Move the cursor to the other end of the selection          |
+| `v` / `V`                 | Switch to selecting characters / lines, or leave           |
+| `y`                       | Copy the selection to the clipboard, and leave             |
+| `Esc`, `Ctrl-c`           | Leave without copying                                      |
+
+A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t`, and `T` look along the cursor's line only, and the cursor stays put if the character isn't there. The keys in visual mode can't be changed.
+
 ### Tabs
 
 | Key                                       | Action                        |
@@ -98,28 +124,29 @@ After `f`, each link in view is highlighted and gets a label of two letters. Typ
 
 ## Commands
 
-| Command                               | Action                                                               |
-| ------------------------------------- | -------------------------------------------------------------------- |
-| `:{n}`                                | Go to page _n_                                                       |
-| `:o[pen] {file}`                      | Open a document in a new tab (`~` expands to your home directory)    |
-| `:rec[ent]`                           | Show recent documents                                                |
-| `:h[elp]`                             | Show every action and the keys bound to it                           |
-| `:noh[lsearch]`                       | Hide search highlights                                               |
-| `:set recolor [true\|false]`          | Turn recoloring on or off                                            |
-| `:set trim [true\|false]`             | Turn margin trimming on or off                                       |
-| `:set recolor-lightcolor #rrggbb`     | Set the color white paper becomes when recolored (default `#1a1a1a`) |
-| `:set recolor-darkcolor #rrggbb`      | Set the color black ink becomes when recolored (default `#dddddd`)   |
-| `:set scroll-step {pixels}`           | Set how far one `j` or `k` scrolls                                   |
-| `:set confirm-quit [true\|false]`     | Ask before quitting                                                  |
-| `:map {keys} {action}`               | Bind keys to an action (see [Keys](#keys-1))                         |
-| `:unmap {keys}`                       | Remove a key binding                                                 |
-| `:mapclear`                           | Remove every key binding                                             |
-| `:tabe[dit] {file}`, `:tabnew [file]` | Open a document in a new tab, or open an empty tab                   |
-| `:tabn[ext] [n]`                      | Go to the next tab, or to tab _n_                                    |
-| `:tabp[revious]`                      | Go to the previous tab                                               |
-| `:tabc[lose]`                         | Close the tab, unless it is the last                                 |
-| `:q[uit]`                             | Close the tab, and quit after the last one                           |
-| `:qa[ll]`                             | Quit                                                                 |
+| Command                                | Action                                                               |
+| -------------------------------------- | -------------------------------------------------------------------- |
+| `:{n}`                                 | Go to page _n_                                                       |
+| `:o[pen] {file}`                       | Open a document in a new tab (`~` expands to your home directory)    |
+| `:rec[ent]`                            | Show recent documents                                                |
+| `:h[elp]`                              | Show every action and the keys bound to it                           |
+| `:noh[lsearch]`                        | Hide search highlights                                               |
+| `:set recolor [true\|false]`           | Turn recoloring on or off                                            |
+| `:set trim [true\|false]`              | Turn margin trimming on or off                                       |
+| `:set recolor-lightcolor #rrggbb`      | Set the color white paper becomes when recolored (default `#1a1a1a`) |
+| `:set recolor-darkcolor #rrggbb`       | Set the color black ink becomes when recolored (default `#dddddd`)   |
+| `:set scroll-step {pixels}`            | Set how far one `j` or `k` scrolls                                   |
+| `:set confirm-quit [true\|false]`      | Ask before quitting                                                  |
+| `:set confirm-tab-close [true\|false]` | Ask before closing a tab while others are open                       |
+| `:map {keys} {action}`                 | Bind keys to an action (see [Keys](#keys-1))                         |
+| `:unmap {keys}`                        | Remove a key binding                                                 |
+| `:mapclear`                            | Remove every key binding                                             |
+| `:tabe[dit] {file}`, `:tabnew [file]`  | Open a document in a new tab, or open an empty tab                   |
+| `:tabn[ext] [n]`                       | Go to the next tab, or to tab _n_                                    |
+| `:tabp[revious]`                       | Go to the previous tab                                               |
+| `:tabc[lose]`                          | Close the tab, unless it is the last                                 |
+| `:q[uit]`                              | Close the tab, and quit after the last one                           |
+| `:qa[ll]`                              | Quit                                                                 |
 
 If you name a boolean setting without a value, it is turned on.
 
@@ -173,7 +200,7 @@ recolor-darkcolor = "#dddddd"
 "shift+q" = "quit"
 ```
 
-`[settings]` takes the same names and values as `:set`. With `confirm-quit` on, pdvim asks `quit pdvim? (y/n)` before quitting: when you close the last tab, use `:qa`, or close the window. Press `y` to quit, or any other key to stay. If the window is closed again while pdvim is asking, for example by a window manager that insists, it quits without asking. `recolor` and `trim` decide how a document starts the first time you open it. After that, the document is restored the way you left it.
+`[settings]` takes the same names and values as `:set`. With `confirm-quit` on, pdvim asks `quit pdvim? (y/n)` before quitting: when you close the last tab, use `:qa`, or close the window. Press `y` to quit, or any other key to stay. If the window is closed again while pdvim is asking, for example by a window manager that insists, it quits without asking. With `confirm-tab-close` on, pdvim asks `close tab {name}? (y/n)` before closing a tab with `q`, `:q`, or `:tabclose` while other tabs are open. Closing the last tab quits pdvim, so `confirm-quit` decides whether that asks. `recolor` and `trim` decide how a document starts the first time you open it. After that, the document is restored the way you left it.
 
 `[keys]` binds keys to the [actions](#actions) below, on top of the default keys. Bind keys to `"none"` to remove a default.
 
@@ -187,7 +214,7 @@ Separate the keys of a sequence with spaces, as in `"g g"` or `"z i"`. A count t
 
 The `:map {keys} {action}`, `:unmap {keys}`, and `:mapclear` commands change the bindings while pdvim runs. They write keys the same way, as in `:map ctrl+n next-tab`.
 
-The keys used in the command prompt and in the recent-documents list can't be changed.
+The keys used in the command prompt, the recent-documents list, the cheat sheet, and visual mode can't be changed.
 
 ### Actions
 
@@ -216,6 +243,7 @@ The keys used in the command prompt and in the recent-documents list can't be ch
 | `quit`                                | `q`                                         |
 | `help`                                | none                                        |
 | `follow-link`                         | `f`                                         |
+| `visual` / `visual-line`              | `v` / `V`                                   |
 
 With a count, `first-page` and `last-page` go to that page, `zoom-to` zooms to that percentage, and `next-tab` goes to that tab.
 

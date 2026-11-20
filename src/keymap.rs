@@ -50,11 +50,15 @@ pub enum Binding {
     Help,
     /// Label the links in view, to follow one by typing its label.
     FollowLink,
+    /// Label the lines in view, to start selecting characters at one.
+    Visual,
+    /// Label the lines in view, to start selecting whole lines at one.
+    VisualLine,
 }
 
 impl Binding {
     /// Every binding with its name.
-    const NAMES: [(Self, &'static str); 35] = [
+    const NAMES: [(Self, &'static str); 37] = [
         (Self::ScrollDown, "scroll-down"),
         (Self::ScrollUp, "scroll-up"),
         (Self::ScrollLeft, "scroll-left"),
@@ -90,6 +94,8 @@ impl Binding {
         (Self::Quit, "quit"),
         (Self::Help, "help"),
         (Self::FollowLink, "follow-link"),
+        (Self::Visual, "visual"),
+        (Self::VisualLine, "visual-line"),
     ];
 
     /// The names of every binding.
@@ -165,6 +171,8 @@ impl Binding {
             Self::Quit => Action::Quit,
             Self::Help => Action::ShowHelp,
             Self::FollowLink => Action::FollowLink,
+            Self::Visual => Action::Visual { lines: false },
+            Self::VisualLine => Action::Visual { lines: true },
         }
     }
 }
@@ -269,7 +277,7 @@ impl Default for Keymap {
     /// The bindings pdvim starts with.
     fn default() -> Self {
         use Binding as B;
-        const DEFAULTS: [(&str, Binding); 54] = [
+        const DEFAULTS: [(&str, Binding); 56] = [
             ("j", B::ScrollDown),
             ("down", B::ScrollDown),
             ("k", B::ScrollUp),
@@ -316,6 +324,8 @@ impl Default for Keymap {
             (":", B::CommandPrompt),
             ("o", B::Recent),
             ("f", B::FollowLink),
+            ("v", B::Visual),
+            ("V", B::VisualLine),
             ("g t", B::NextTab),
             ("ctrl+tab", B::NextTab),
             ("g T", B::PreviousTab),
@@ -438,7 +448,7 @@ mod tests {
     #[test]
     fn every_default_binding_parses() {
         let keymap = Keymap::default();
-        assert_eq!(keymap.bindings.len(), 54);
+        assert_eq!(keymap.bindings.len(), 56);
     }
 
     #[test]

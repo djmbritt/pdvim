@@ -18,12 +18,13 @@ use crate::config;
 use crate::help::{Help, Line};
 use crate::hints::{Hints, Outcome};
 use crate::history::{Fit, History, View};
-use crate::input::{self, Action, ConfirmBinding, Key, Prompt, PromptBinding};
+use crate::input::{self, Action, ConfirmBinding, Key, MarkVerb, Prompt, PromptBinding};
+use crate::jumps::Jumps;
 use crate::keymap::{self, Counts, Fed, Match, Pending};
 use crate::layout::Rect;
 use crate::num;
 use crate::outline::{self, Outline};
-use crate::reader::Reader;
+use crate::reader::{Place, Reader};
 use crate::recent::{self, Choice, Picker};
 use crate::recolor::{Palette, Rgb};
 use crate::theme::{self, Colours};
@@ -216,6 +217,13 @@ struct Document {
     text: visual::Text,
     /// The pages whose text is being read right now.
     reading: std::collections::HashSet<u32>,
+    /// The places big moves left from, to go back to.
+    jumps: Jumps,
+    /// The marks of this document, a to z.
+    marks: HashMap<char, Place>,
+    /// A place to go once a trimmed view is restored, which would move
+    /// away from it otherwise.
+    arriving: Option<Place>,
 }
 
 /// A tab: a document, or none yet, and the document being opened in it.
@@ -361,6 +369,13 @@ pub struct App {
     system_dark: Option<bool>,
     /// What the bottom line is asking, waiting for `y` or anything else.
     asking: Option<Question>,
+    /// Whether the next key is the letter of a mark to set, or to go to.
+    awaiting_mark: Option<MarkVerb>,
+    /// The marks A to Z: a document and a place in it. Kept in the history
+    /// too, when there is one.
+    global_marks: HashMap<char, (PathBuf, Place)>,
+    /// A document being opened to go to a mark in it, and the place.
+    arriving: Option<(PathBuf, Place)>,
 }
 
 /// Runs the reader, opening each document given in a tab of its own.
@@ -424,6 +439,9 @@ impl App {
             recolor_auto: false,
             system_dark: None,
             asking: None,
+            awaiting_mark: None,
+            global_marks: HashMap::new(),
+            arriving: None,
         };
         // Started without a document, it offers the ones read lately.
         if paths.is_empty() {
@@ -633,6 +651,8 @@ impl App {
                     self.on_picker_key(key)
                 } else if self.prompt.is_some() {
                     self.on_prompt_key(key)
+                } else if let Some(verb) = self.awaiting_mark.take() {
+                    self.on_mark(verb, key)
                 } else {
                     match self.pending.feed(key, &self.keymaps.normal, Counts::Taken) {
                         Fed::Bound(binding, count) => self.act(binding.action(count)),
@@ -750,6 +770,7 @@ impl App {
                 match hint.item.target {
                     Target::Page { page, top } => {
                         if let Some(document) = self.document_mut() {
+                            document.jumps.record(document.reader.place());
                             document.reader.go_to_spot(page, top);
                         }
                     }
@@ -1118,6 +1139,205 @@ impl App {
         }
     }
 
+    /// The marks a to z of a document, from the history.
+    fn load_marks(&self, path: &Path, notice: &mut Notice) -> HashMap<char, Place> {
+        match self.history.as_ref().map(|history| history.marks(path)) {
+            Some(Ok(marks)) => marks
+                .into_iter()
+                .filter(|(name, _)| name.is_ascii_lowercase())
+                .collect(),
+            Some(Err(error)) => {
+                *notice = Notice::Error(error.to_string());
+                HashMap::new()
+            }
+            None => HashMap::new(),
+        }
+    }
+
+    /// Goes back through the places jumped from, or forward again, a number
+    /// of times.
+    fn step_jumps(&mut self, back: bool, times: u32) {
+        let Some(document) = current_document(&mut self.tabs, self.current) else {
+            return;
+        };
+        let here = document.reader.place();
+        let place = if back {
+            document.jumps.back(here, times)
+        } else {
+            document.jumps.forward(times)
+        };
+        match place {
+            Some(place) => document.reader.go_to_place(place),
+            None if back => self.notice = Notice::Error("no earlier jump".to_owned()),
+            None => self.notice = Notice::Error("no later jump".to_owned()),
+        }
+    }
+
+    /// Takes the letter after `m`, or after `` ` ``. Any key that is not a
+    /// character gives up.
+    fn on_mark(&mut self, verb: MarkVerb, key: Key) -> Task<Message> {
+        let Key::Char(name) = key else {
+            return Task::none();
+        };
+        match verb {
+            MarkVerb::Set => {
+                self.set_mark(name);
+                Task::none()
+            }
+            MarkVerb::Go => self.go_to_mark(name),
+        }
+    }
+
+    /// Marks the place in view with a letter: a to z for this document, A
+    /// to Z for any.
+    fn set_mark(&mut self, name: char) {
+        if !name.is_ascii_alphabetic() {
+            self.notice = Notice::Error(format!(
+                "not a mark: {name}; a to z mark this document, A to Z any"
+            ));
+            return;
+        }
+        let Some(document) = self.document_mut() else {
+            return;
+        };
+        let place = document.reader.place();
+        let path = document.path.clone();
+        if name.is_ascii_lowercase() {
+            document.marks.insert(name, place);
+        } else {
+            self.global_marks.insert(name, (path.clone(), place));
+        }
+        let saved = self
+            .history
+            .as_ref()
+            .map(|history| history.set_mark(&path, name, place));
+        self.notice = match saved {
+            Some(Err(error)) => Notice::Error(error.to_string()),
+            _ => Notice::Info(format!(
+                "mark {name} set on page {}",
+                place.page.saturating_add(1)
+            )),
+        };
+    }
+
+    /// Goes to a mark: in this document, in whichever has it for A to Z,
+    /// or, for `` ` `` and `'`, where the last jump left from.
+    fn go_to_mark(&mut self, name: char) -> Task<Message> {
+        if name.is_ascii_uppercase() {
+            return self.go_to_global_mark(name);
+        }
+        let Some(document) = self.document_mut() else {
+            return Task::none();
+        };
+        let back = matches!(name, '`' | '\'');
+        let place = if back {
+            document.jumps.before()
+        } else {
+            document.marks.get(&name).copied()
+        };
+        match place {
+            Some(place) => {
+                document.jumps.record(document.reader.place());
+                document.reader.go_to_place(place);
+            }
+            None if back => self.notice = Notice::Error("no jump to go back to".to_owned()),
+            None => self.notice = Notice::Error(format!("mark {name} is not set")),
+        }
+        Task::none()
+    }
+
+    /// Goes to a mark A to Z, opening its document if need be.
+    fn go_to_global_mark(&mut self, name: char) -> Task<Message> {
+        let mark = match self.global_marks.get(&name) {
+            Some(mark) => Some(mark.clone()),
+            None => match self
+                .history
+                .as_ref()
+                .map(|history| history.global_mark(name))
+            {
+                Some(Ok(mark)) => mark,
+                Some(Err(error)) => {
+                    self.notice = Notice::Error(error.to_string());
+                    return Task::none();
+                }
+                None => None,
+            },
+        };
+        let Some((path, place)) = mark else {
+            self.notice = Notice::Error(format!("mark {name} is not set"));
+            return Task::none();
+        };
+        if let Some(document) = self.document_mut() {
+            document.jumps.record(document.reader.place());
+        }
+        let task = self.open_in_tab(path.clone());
+        // Open already, it is in view now; otherwise it goes there once
+        // it has opened.
+        match self.document_mut() {
+            Some(document) if document.path == path => document.reader.go_to_place(place),
+            _ => self.arriving = Some((path, place)),
+        }
+        task
+    }
+
+    /// Says which marks are set: this document's, and A to Z.
+    fn list_marks(&mut self) {
+        let mut listed: Vec<String> = Vec::new();
+        if let Some(document) = self.document() {
+            let mut marks: Vec<_> = document.marks.iter().collect();
+            marks.sort_by_key(|(name, _)| **name);
+            listed.extend(
+                marks
+                    .into_iter()
+                    .map(|(name, place)| format!("{name} p{}", place.page.saturating_add(1))),
+            );
+        }
+        let mut global: Vec<(char, PathBuf)> = self
+            .global_marks
+            .iter()
+            .map(|(name, (path, _))| (*name, path.clone()))
+            .collect();
+        if let Some(Ok(saved)) = self.history.as_ref().map(History::global_marks) {
+            for (name, path) in saved {
+                if !global.iter().any(|(known, _)| *known == name) {
+                    global.push((name, path));
+                }
+            }
+        }
+        global.sort();
+        listed.extend(global.into_iter().map(|(name, path)| {
+            let file = path
+                .file_name()
+                .map_or_else(|| tilde(&path), |file| file.to_string_lossy().into_owned());
+            format!("{name} {file}")
+        }));
+        self.notice = Notice::Info(if listed.is_empty() {
+            "no marks".to_owned()
+        } else {
+            format!("marks: {}", listed.join("  "))
+        });
+    }
+
+    /// Takes marks away: these letters, or all of this document's a to z.
+    fn delete_marks(&mut self, names: Option<Vec<char>>) {
+        let Some(document) = current_document(&mut self.tabs, self.current) else {
+            return;
+        };
+        let names = names.unwrap_or_else(|| document.marks.keys().copied().collect());
+        let path = document.path.clone();
+        for name in &names {
+            document.marks.remove(name);
+            self.global_marks.remove(name);
+        }
+        if let Some(Err(error)) = self
+            .history
+            .as_ref()
+            .map(|history| history.delete_marks(&path, &names))
+        {
+            self.notice = Notice::Error(error.to_string());
+        }
+    }
+
     /// Moves through the table of contents, or goes to a chapter.
     fn on_sidebar_key(&mut self, key: Key) {
         let rows = self.sidebar_rows();
@@ -1130,6 +1350,7 @@ impl App {
             outline::Outcome::Go(page, top) => {
                 self.sidebar = None;
                 if let Some(document) = self.document_mut() {
+                    document.jumps.record(document.reader.place());
                     document.reader.go_to_spot(page, top);
                 }
             }
@@ -1264,6 +1485,8 @@ impl App {
             Command::QuitAll => return self.quit(),
             Command::Open(path) | Command::TabOpen(Some(path)) => return self.open_in_tab(path),
             Command::Recent => self.show_recent(),
+            Command::Marks => self.list_marks(),
+            Command::DeleteMarks(names) => self.delete_marks(names),
             Command::Version => self.notice = Notice::Info(crate::ABOUT.to_owned()),
             Command::ShowTheme => {
                 let theme = self.current_theme().name();
@@ -1290,6 +1513,7 @@ impl App {
             Command::TabPrevious => self.step_tab(-1),
             Command::Goto(page) => {
                 if let Some(document) = self.document_mut() {
+                    document.jumps.record(document.reader.place());
                     document.reader.go_to_page(page.saturating_sub(1));
                 }
             }
@@ -1379,6 +1603,14 @@ impl App {
                 return self.label_lines(kind);
             }
             Action::ShowOutline => return self.show_outline(),
+            Action::Mark(verb) => {
+                self.awaiting_mark = Some(verb);
+                return Task::none();
+            }
+            Action::JumpBack(times) | Action::JumpForward(times) => {
+                self.step_jumps(matches!(action, Action::JumpBack(_)), times);
+                return Task::none();
+            }
             Action::ShowHelp => {
                 self.show_help();
                 return Task::none();
@@ -1403,9 +1635,9 @@ impl App {
             Action::HalfScreen(count) => reader.scroll_screens(steps(count) / 2.0),
             Action::FullScreen(count) => reader.scroll_screens(steps(count)),
             Action::Page(count) => reader.page_by(count),
-            Action::GotoPage(page) => reader.go_to_page(page.saturating_sub(1)),
-            Action::GotoFirst => reader.go_to_page(0),
-            Action::GotoLast => reader.go_to_page(u32::MAX),
+            Action::GotoPage(page) => leap(document, page.saturating_sub(1)),
+            Action::GotoFirst => leap(document, 0),
+            Action::GotoLast => leap(document, u32::MAX),
             Action::PageTop => reader.page_top(),
             Action::PageBottom => reader.page_bottom(),
             Action::ZoomIn => reader.zoom_in(),
@@ -1421,6 +1653,9 @@ impl App {
             | Action::ShowRecent
             | Action::ShowHelp
             | Action::ShowOutline
+            | Action::Mark(_)
+            | Action::JumpBack(_)
+            | Action::JumpForward(_)
             | Action::FollowLink
             | Action::Visual { .. }
             | Action::Undo
@@ -1528,6 +1763,15 @@ impl App {
             Some(Err(error)) => notice = Notice::Error(error.to_string()),
             Some(Ok(None)) | None => {}
         }
+        let marks = self.load_marks(&path, &mut notice);
+        // Opened to go to a mark: there, rather than where it was left.
+        let arriving = self
+            .arriving
+            .take_if(|(to, _)| *to == path)
+            .and_then(|(_, place)| {
+                reader.go_to_place(place);
+                returning.is_some().then_some(place)
+            });
         // Following the system, its theme wins over how the document was
         // left.
         if self.recolor_auto
@@ -1568,6 +1812,9 @@ impl App {
             links: HashMap::new(),
             text: HashMap::new(),
             reading: std::collections::HashSet::new(),
+            jumps: Jumps::default(),
+            marks,
+            arriving,
         });
         // Only the notice that the document was opening is done with.
         if matches!(notice, Notice::Error(_)) {
@@ -1624,6 +1871,9 @@ impl App {
                     document.reader.set_crops(Some(contents.clone()));
                     if let Some(view) = returning {
                         document.reader.restore(view);
+                    }
+                    if let Some(place) = document.arriving.take() {
+                        document.reader.go_to_place(place);
                     }
                 }
                 document.contents = Some(contents);
@@ -2116,10 +2366,12 @@ impl App {
                 num::round(reader.zoom() * 100.0),
             )
         });
-        let right = label(
-            format!("{}  {position}", self.pending.display()),
-            chrome.bar_text,
-        );
+        let typed = match self.awaiting_mark {
+            Some(MarkVerb::Set) => self.keymaps.normal.first(input::Binding::SetMark),
+            Some(MarkVerb::Go) => self.keymaps.normal.first(input::Binding::GoToMark),
+            None => self.pending.display(),
+        };
+        let right = label(format!("{typed}  {position}"), chrome.bar_text);
         // A long notice is cut short rather than pushing the position away.
         let left = container(left).width(Fill).clip(true);
         container(row![left, right].spacing(16))
@@ -2747,6 +2999,7 @@ fn jump_to(document: &mut Document, index: Option<usize>, notice: &mut Notice) {
         return;
     };
     document.results.current = Some(index);
+    document.jumps.record(document.reader.place());
     document.reader.reveal(hit.page, hit.area);
     if !matches!(notice, Notice::Error(_)) {
         *notice = Notice::Info(format!(
@@ -2755,6 +3008,12 @@ fn jump_to(document: &mut Document, index: Option<usize>, notice: &mut Notice) {
             document.results.hits.len()
         ));
     }
+}
+
+/// Goes to the top of a page, noting where it left from in the jump list.
+fn leap(document: &mut Document, page: u32) {
+    document.jumps.record(document.reader.place());
+    document.reader.go_to_page(page);
 }
 
 /// What only some systems take: on Linux, the name the window goes by, which

@@ -11,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::layout::Rotation;
+use crate::reader::Place;
 
 /// How the window was fitted to the page, if it was.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -114,7 +115,116 @@ impl History {
             connection
                 .execute_batch("ALTER TABLE view ADD COLUMN left_at INTEGER NOT NULL DEFAULT 0")?;
         }
+        // Marks: a letter for a place. A small letter belongs to one
+        // document; a capital belongs to all, and is in the table once.
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS mark (
+                path TEXT NOT NULL,
+                name TEXT NOT NULL,
+                page INTEGER NOT NULL,
+                down REAL NOT NULL,
+                PRIMARY KEY (path, name)
+            ) STRICT",
+        )?;
         Ok(Self { connection })
+    }
+
+    /// Puts a mark at a place in a document. A capital mark leaves any
+    /// other document it was in.
+    pub fn set_mark(&self, path: &Path, name: char, place: Place) -> Result<(), Error> {
+        let name = name.to_string();
+        if name.chars().all(char::is_uppercase) {
+            self.connection
+                .execute("DELETE FROM mark WHERE name = ?1", params![name])?;
+        }
+        self.connection.execute(
+            "INSERT INTO mark (path, name, page, down) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (path, name) DO UPDATE SET page = excluded.page, down = excluded.down",
+            params![path.to_string_lossy(), name, place.page, place.down],
+        )?;
+        Ok(())
+    }
+
+    /// The marks in a document, small and capital, by letter.
+    pub fn marks(&self, path: &Path) -> Result<Vec<(char, Place)>, Error> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT name, page, down FROM mark WHERE path = ?1 ORDER BY name")?;
+        let marks = statement
+            .query_map(params![path.to_string_lossy()], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    Place {
+                        page: row.get(1)?,
+                        down: row.get(2)?,
+                    },
+                ))
+            })?
+            .filter_map(|mark| {
+                mark.map(|(name, place)| Some((name.chars().next()?, place)))
+                    .transpose()
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(marks)
+    }
+
+    /// Where a capital mark is: its document and its place there.
+    pub fn global_mark(&self, name: char) -> Result<Option<(PathBuf, Place)>, Error> {
+        let mark = self
+            .connection
+            .query_row(
+                "SELECT path, page, down FROM mark WHERE name = ?1",
+                params![name.to_string()],
+                |row| {
+                    Ok((
+                        PathBuf::from(row.get::<_, String>(0)?),
+                        Place {
+                            page: row.get(1)?,
+                            down: row.get(2)?,
+                        },
+                    ))
+                },
+            )
+            .optional()?;
+        Ok(mark)
+    }
+
+    /// Every capital mark, by letter, with its document.
+    pub fn global_marks(&self) -> Result<Vec<(char, PathBuf)>, Error> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT name, path FROM mark WHERE name BETWEEN 'A' AND 'Z' ORDER BY name")?;
+        let marks = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    PathBuf::from(row.get::<_, String>(1)?),
+                ))
+            })?
+            .filter_map(|mark| {
+                mark.map(|(name, path)| Some((name.chars().next()?, path)))
+                    .transpose()
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(marks)
+    }
+
+    /// Takes marks away: those of a document with these letters, small or
+    /// capital.
+    pub fn delete_marks(&self, path: &Path, names: &[char]) -> Result<(), Error> {
+        for name in names {
+            let name = name.to_string();
+            if name.chars().all(char::is_uppercase) {
+                self.connection
+                    .execute("DELETE FROM mark WHERE name = ?1", params![name])?;
+            } else {
+                self.connection.execute(
+                    "DELETE FROM mark WHERE path = ?1 AND name = ?2",
+                    params![path.to_string_lossy(), name],
+                )?;
+            }
+        }
+        Ok(())
     }
 
     /// The view a document was left in, if it has been opened before.
@@ -203,6 +313,36 @@ fn data_directory() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn marks_are_kept_by_document_and_capitals_across_them() {
+        let history = memory();
+        let one = Path::new("/tmp/one.pdf");
+        let two = Path::new("/tmp/two.pdf");
+        let at = |page, down| Place { page, down };
+        history.set_mark(one, 'a', at(3, 0.5)).unwrap();
+        history.set_mark(two, 'a', at(7, 0.0)).unwrap();
+        history.set_mark(one, 'a', at(4, 0.25)).unwrap();
+        history.set_mark(one, 'Q', at(1, 0.0)).unwrap();
+        assert_eq!(
+            history.marks(one).unwrap(),
+            [('Q', at(1, 0.0)), ('a', at(4, 0.25))]
+        );
+        assert_eq!(history.marks(two).unwrap(), [('a', at(7, 0.0))]);
+
+        // A capital is in one document only.
+        history.set_mark(two, 'Q', at(9, 0.5)).unwrap();
+        assert_eq!(history.marks(one).unwrap(), [('a', at(4, 0.25))]);
+        assert_eq!(
+            history.global_mark('Q').unwrap(),
+            Some((two.to_path_buf(), at(9, 0.5)))
+        );
+        assert_eq!(history.global_marks().unwrap(), [('Q', two.to_path_buf())]);
+
+        history.delete_marks(two, &['a', 'Q']).unwrap();
+        assert_eq!(history.marks(two).unwrap(), []);
+        assert_eq!(history.global_mark('Q').unwrap(), None);
+    }
 
     fn memory() -> History {
         History::with(Connection::open_in_memory().unwrap()).unwrap()

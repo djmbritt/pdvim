@@ -17,6 +17,7 @@ pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.r
 - A configuration file for settings and key bindings
 - Selecting and copying text from the keyboard, with a visual mode like vim's
 - A sidebar with the table of contents, to go to a chapter
+- Marks (`ma`, `` `a ``, and `A`–`Z` across documents) and a jump list (`Ctrl-o`, `Ctrl-i`), as in vim
 - Following links from the keyboard: `f` labels every link in view, and typing a label follows it
 - A cheat sheet of the key bindings in force, with `:help`
 - `Tab` completion of commands, settings, and file paths in the command prompt
@@ -126,7 +127,19 @@ The mouse wheel also scrolls.
 | --- | ------------------------ |
 | `f` | Label every link in view |
 
-After `f`, each link in view is highlighted and gets a label of two letters. Type a label to follow its link. A link to another place in the document goes there, and any other link, such as a web page, opens with `xdg-open` in your default program. `Backspace` takes back the first letter, and `Esc` puts the labels away.
+After `f`, each link in view is highlighted and gets a label of two letters. Type a label to follow its link. A link to another place in the document goes there. A web or mail link (`http`, `https`, `mailto`) opens in your default program; links to anything else, such as files, are not followed. `Backspace` takes back the first letter, and `Esc` puts the labels away.
+
+### Marks and jumps
+
+| Key                          | Action                                                               |
+| ---------------------------- | -------------------------------------------------------------------- |
+| `m{a-z}`                     | Mark this place in the document                                      |
+| `m{A-Z}`                     | Mark this place, to come back to from any document                   |
+| `` `{letter} ``, `'{letter}` | Go to a mark, opening its document for `A`–`Z`                       |
+| ` `` `, `''`                 | Go back to where the last jump left from                             |
+| `Ctrl-o` / `Ctrl-i`          | Go back through the jumps, or forward again; `{n}Ctrl-o` goes n back |
+
+A jump is `gg`, `G`, `{n}G`, `:{n}`, a search match, a chapter from the table of contents, a followed link, or a mark. Marks are kept in the reading history, so they last after pdvim closes; the jump list lasts while the document is open. `:marks` lists the marks, and `:delm[arks] {letters}` or `:delmarks !` takes them away.
 
 ### Selecting text
 
@@ -184,6 +197,8 @@ A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t
 | `:o[pen] {file}`                       | Open a document in a new tab (`~` expands to your home directory)    |
 | `:rec[ent]`                            | Show recent documents                                                |
 | `:h[elp]`                              | Show every action and the keys bound to it                           |
+| `:marks`                               | List the marks of the document in view, and `A`–`Z`                  |
+| `:delm[arks] {letters}` or `!`         | Take marks away: those letters, or with `!` all of this document's   |
 | `:ve[rsion]`                           | Show pdvim's version and where to find it on GitHub                  |
 | `:noh[lsearch]`                        | Hide search highlights                                               |
 | `:set recolor [true\|false\|auto]`     | Turn recoloring on or off, or follow the system's theme (default)    |
@@ -328,6 +343,8 @@ The actions of normal mode, and their default keys:
 | `visual` / `visual-line`              | `v` / `V`                                   |
 | `undo` / `redo`                       | `u` / `ctrl+r`                              |
 | `outline`                             | `tab`                                       |
+| `set-mark` / `go-to-mark`             | `m` / `` ` ``, `'`                          |
+| `jump-back` / `jump-forward`          | `ctrl+o` / `ctrl+i`                         |
 
 With a count, `first-page` and `last-page` go to that page, `zoom-to` zooms to that percentage, and `next-tab` goes to that tab.
 

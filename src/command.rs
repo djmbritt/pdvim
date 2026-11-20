@@ -21,6 +21,11 @@ pub enum Command {
     ShowTheme,
     /// Say which version of pdvim this is, and where it comes from.
     Version,
+    /// Say which marks are set.
+    Marks,
+    /// Take marks away: these letters, or with none, all of the
+    /// document's a to z.
+    DeleteMarks(Option<Vec<char>>),
     /// Open a new tab, with a document in it or empty.
     TabOpen(Option<PathBuf>),
     /// Close the tab in view, unless it is the last.
@@ -103,6 +108,8 @@ pub enum Error {
     NotBoolean(String),
     #[error("`{0}` is not true, false or auto")]
     NotRecolor(String),
+    #[error("not a mark: {0}; marks are letters")]
+    NotAMark(char),
     #[error("unknown theme: {0}")]
     UnknownTheme(String),
     #[error("`{0}` is not a positive number")]
@@ -114,10 +121,12 @@ pub enum Error {
 }
 
 /// Every command by its full name, and the shorter names it also goes by.
-const NAMES: [(&str, &[&str]); 17] = [
+const NAMES: [(&str, &[&str]); 19] = [
+    ("delmarks", &["delm"]),
     ("help", &["h"]),
     ("map", &[]),
     ("mapclear", &[]),
+    ("marks", &[]),
     ("nohlsearch", &["noh", "nohl"]),
     ("open", &["o"]),
     ("qall", &["qa", "quita", "quitall"]),
@@ -213,6 +222,18 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
         }
         "recent" => Command::Recent,
         "version" => Command::Version,
+        "marks" => Command::Marks,
+        "delmarks" => match argument {
+            "!" => Command::DeleteMarks(None),
+            "" => return Err(Error::MissingArgument("delmarks")),
+            letters => {
+                let names: Vec<char> = letters.chars().filter(|c| !c.is_whitespace()).collect();
+                if let Some(bad) = names.iter().find(|name| !name.is_ascii_alphabetic()) {
+                    return Err(Error::NotAMark(*bad));
+                }
+                Command::DeleteMarks(Some(names))
+            }
+        },
         // As `:set theme`; with nothing after it, says which is in force.
         "theme" if argument.is_empty() => Command::ShowTheme,
         "theme" => Command::Set(setting("theme", argument)?),
@@ -488,6 +509,18 @@ mod tests {
         assert_eq!(parse("rec"), Ok(Some(Command::Recent)));
         assert_eq!(parse("recent"), Ok(Some(Command::Recent)));
         assert_eq!(parse("qa"), Ok(Some(Command::QuitAll)));
+    }
+
+    #[test]
+    fn mark_commands_parse() {
+        assert_eq!(parse("marks"), Ok(Some(Command::Marks)));
+        assert_eq!(
+            parse("delm a B c"),
+            Ok(Some(Command::DeleteMarks(Some(vec!['a', 'B', 'c']))))
+        );
+        assert_eq!(parse("delmarks !"), Ok(Some(Command::DeleteMarks(None))));
+        assert_eq!(parse("delmarks 1"), Err(Error::NotAMark('1')));
+        assert_eq!(parse("delmarks"), Err(Error::MissingArgument("delmarks")));
     }
 
     #[test]

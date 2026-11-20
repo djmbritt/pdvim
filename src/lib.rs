@@ -28,6 +28,7 @@ mod help;
 mod hints;
 mod history;
 mod input;
+mod jumps;
 mod keymap;
 mod layout;
 mod num;

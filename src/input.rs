@@ -56,6 +56,13 @@ impl Prompt {
     }
 }
 
+/// What to do with the mark whose letter is typed next.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarkVerb {
+    Set,
+    Go,
+}
+
 /// Something the reader can be told to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
@@ -104,6 +111,12 @@ pub enum Action {
     },
     /// Show the table of contents in a sidebar.
     ShowOutline,
+    /// Wait for a letter, then put a mark there, or go to it.
+    Mark(MarkVerb),
+    /// Go back through the places jumped from, a number of times.
+    JumpBack(u32),
+    /// Go forward again, a number of times.
+    JumpForward(u32),
     /// Take back the last highlight.
     Undo,
     /// Put back the last highlight taken back.
@@ -173,6 +186,12 @@ bindable! {
         /// The next tab, or the tab given by a count.
         NextTab = "next-tab", "Go to the next tab, or tab n";
         PreviousTab = "previous-tab", "Go to the previous tab";
+        /// The letter is the next key: a to z for this document, A to Z
+        /// for any.
+        SetMark = "set-mark", "Mark this place with the letter typed next";
+        GoToMark = "go-to-mark", "Go to the mark typed next; ` or ' for before the last jump";
+        JumpBack = "jump-back", "Go back to where the last jump left from, or n jumps";
+        JumpForward = "jump-forward", "Go forward again through the jumps";
         Abort = "abort", "Cancel a half-typed command, hide highlights";
         Quit = "quit", "Close the tab, and quit after the last one";
     }
@@ -236,6 +255,10 @@ impl Binding {
             Self::Undo => Action::Undo,
             Self::Redo => Action::Redo,
             Self::Outline => Action::ShowOutline,
+            Self::SetMark => Action::Mark(MarkVerb::Set),
+            Self::GoToMark => Action::Mark(MarkVerb::Go),
+            Self::JumpBack => Action::JumpBack(count.unwrap_or(1)),
+            Self::JumpForward => Action::JumpForward(count.unwrap_or(1)),
         }
     }
 }
@@ -352,6 +375,17 @@ mod tests {
                 Key::CtrlTab
             ]),
             [Action::NextTab, Action::PreviousTab(1), Action::GotoTab(2)]
+        );
+    }
+
+    #[test]
+    fn marks_and_jumps_have_keys() {
+        assert_eq!(typed("m"), [Action::Mark(MarkVerb::Set)]);
+        assert_eq!(typed("`"), [Action::Mark(MarkVerb::Go)]);
+        assert_eq!(typed("'"), [Action::Mark(MarkVerb::Go)]);
+        assert_eq!(
+            pressed(&[Key::Char('3'), Key::Ctrl('o'), Key::Ctrl('i')]),
+            [Action::JumpBack(3), Action::JumpForward(1)]
         );
     }
 

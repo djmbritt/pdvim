@@ -21,7 +21,7 @@ bindable! {
 }
 
 /// Normal mode, in groups, in the order the sheet shows them.
-const NORMAL: [(&str, &[input::Binding]); 9] = {
+const NORMAL: [(&str, &[input::Binding]); 10] = {
     use input::Binding as B;
     [
         (
@@ -76,6 +76,10 @@ const NORMAL: [(&str, &[input::Binding]); 9] = {
             ],
         ),
         ("Links", &[B::FollowLink]),
+        (
+            "Marks and jumps",
+            &[B::SetMark, B::GoToMark, B::JumpBack, B::JumpForward],
+        ),
         ("Selecting text", &[B::Visual, B::VisualLine]),
         ("Highlights", &[B::Undo, B::Redo]),
         ("Tabs", &[B::NextTab, B::PreviousTab]),

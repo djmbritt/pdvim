@@ -29,6 +29,23 @@ enum Anchor {
     Top,
 }
 
+/// A place in a document, whatever the zoom: a page, and how far down it
+/// the top of the window is, as a share of the page's height.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Place {
+    /// The page, counted from 0.
+    pub page: u32,
+    /// From 0 at the top of the page to 1 at its bottom.
+    pub down: f32,
+}
+
+impl Place {
+    /// Whether two places are so near that one stands for the other.
+    pub fn near(self, other: Self) -> bool {
+        self.page == other.page && (self.down - other.down).abs() < 0.02
+    }
+}
+
 /// The view on an open document.
 #[derive(Debug, Clone)]
 pub struct Reader {
@@ -200,6 +217,35 @@ impl Reader {
         }
         if let Some(on_screen) = self.area_on_screen(page, spot) {
             self.y += on_screen.top / self.zoom;
+            self.clamp();
+        }
+    }
+
+    /// Where the top of the window is.
+    pub fn place(&self) -> Place {
+        let page = self.current_page();
+        let down = self.layout.page_rect(page).map_or(0.0, |area| {
+            let height = area.bottom - area.top;
+            if height > 0.0 {
+                ((self.y - area.top) / height).clamp(0.0, 1.0)
+            } else {
+                0.0
+            }
+        });
+        Place { page, down }
+    }
+
+    /// Moves the top of the window to a place. A page past the end is taken
+    /// as the last.
+    pub fn go_to_place(&mut self, place: Place) {
+        let page = place.page.min(self.page_count().saturating_sub(1));
+        if let Some(area) = self.layout.page_rect(page) {
+            let down = if place.down.is_finite() {
+                place.down.clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            self.y = area.top + down * (area.bottom - area.top);
             self.clamp();
         }
     }
@@ -640,5 +686,30 @@ mod tests {
         assert_eq!(reader.page_count(), 0);
         assert_eq!(reader.visible_pages(), 0..0);
         assert!(reader.view(false).y.is_finite());
+    }
+
+    #[test]
+    fn a_place_is_kept_whatever_the_zoom() {
+        let mut reader = reader();
+        reader.go_to_page(3);
+        reader.scroll_by(0.0, 200.0);
+        let place = reader.place();
+        assert_eq!(place.page, 3);
+        assert!(place.down > 0.0 && place.down < 1.0, "{place:?}");
+
+        reader.zoom_to(2.5);
+        reader.go_to_page(8);
+        reader.go_to_place(place);
+        assert!(reader.place().near(place), "{:?} {place:?}", reader.place());
+    }
+
+    #[test]
+    fn a_place_past_the_end_is_the_last_page() {
+        let mut reader = reader();
+        reader.go_to_place(Place {
+            page: 99,
+            down: f32::NAN,
+        });
+        assert_eq!(reader.current_page(), 9);
     }
 }

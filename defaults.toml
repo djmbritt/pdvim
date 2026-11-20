@@ -150,6 +150,17 @@ highlight-color = "#ffff00"
 "u" = "undo"
 "ctrl+r" = "redo"
 
+# Marks and jumps. m then a letter marks the place: a to z in this
+# document, A to Z in any, kept across restarts. ` or ' then the letter goes
+# back to it; `` goes back to where the last jump left from. A jump is gg,
+# G, a search, a chapter, a link or a mark; ctrl+o goes back through them
+# and ctrl+i forward again.
+"m" = "set-mark"
+"`" = "go-to-mark"
+"'" = "go-to-mark"
+"ctrl+o" = "jump-back"
+"ctrl+i" = "jump-forward"
+
 # Tabs
 "g t" = "next-tab"
 "ctrl+tab" = "next-tab"

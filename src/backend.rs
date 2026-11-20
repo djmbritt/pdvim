@@ -55,6 +55,8 @@ pub enum Error {
     Text(String),
     #[error("cannot highlight: {0}")]
     Highlight(String),
+    #[error("cannot read the table of contents: {0}")]
+    Outline(String),
     #[error("the document was closed")]
     Closed,
 }
@@ -146,6 +148,19 @@ enum Request {
     Text(Vec<u32>, oneshot::Sender<Result<PageText, Error>>),
     Highlight(Highlight, oneshot::Sender<Result<Vec<Annotation>, Error>>),
     Unhighlight(Vec<Annotation>, oneshot::Sender<Result<(), Error>>),
+    Outline(oneshot::Sender<Result<Vec<Chapter>, Error>>),
+}
+
+/// An entry in a document's table of contents, with the entries under it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Chapter {
+    pub title: String,
+    /// The page the entry leads to, counted from 0, if it leads anywhere in
+    /// the document.
+    pub page: Option<u32>,
+    /// How far down that page, in points, when the entry says.
+    pub top: Option<f32>,
+    pub sections: Vec<Self>,
 }
 
 /// An annotation pdvim added to a page: the page, counted from 0, and the
@@ -220,6 +235,13 @@ impl Backend {
     ) -> impl Future<Output = Result<(), Error>> + use<> {
         let (reply, answer) = oneshot::channel();
         let _ = self.requests.send(Request::Unhighlight(annotations, reply));
+        async move { answer.await.unwrap_or(Err(Error::Closed)) }
+    }
+
+    /// Reads the table of contents, which may be empty.
+    pub fn outline(&self) -> impl Future<Output = Result<Vec<Chapter>, Error>> + use<> {
+        let (reply, answer) = oneshot::channel();
+        let _ = self.requests.send(Request::Outline(reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -472,6 +494,18 @@ fn page_text(document: &Document, number: u32) -> Result<Vec<TextLine>, mupdf::E
     Ok(lines)
 }
 
+/// An entry of MuPDF's outline as pdvim's own.
+fn chapter(outline: mupdf::Outline) -> Chapter {
+    Chapter {
+        title: outline.title.trim().to_owned(),
+        page: outline.dest.map(|destination| destination.loc.page_number),
+        top: outline
+            .dest
+            .and_then(|destination| destination_top(destination.kind)),
+        sections: outline.down.into_iter().map(chapter).collect(),
+    }
+}
+
 /// How far down its page a destination is, when it says. MuPDF gives it
 /// measured downwards from the top of the page, though the mupdf crate names
 /// the fields of a rectangle the way PDF, which measures upwards, does: its
@@ -547,6 +581,14 @@ impl Worker {
                 }
                 Request::Highlight(highlight, reply) => {
                     let _ = reply.send(highlight_in_file(&self.document, &self.path, &highlight));
+                }
+                Request::Outline(reply) => {
+                    let _ = reply.send(
+                        self.document
+                            .outlines()
+                            .map(|outlines| outlines.into_iter().map(chapter).collect())
+                            .map_err(|error| Error::Outline(error.to_string())),
+                    );
                 }
                 Request::Unhighlight(annotations, reply) => {
                     let _ = reply.send(unhighlight_in_file(
@@ -942,6 +984,52 @@ mod tests {
         assert_eq!(left.len(), 1);
         assert!(!left.contains(&first[0].1));
         std::fs::remove_file(&path).unwrap();
+    }
+
+    /// A PDF of three pages with a table of contents: Chapter 1 on the
+    /// first, with Section 1.1 on the second, 500 points up from its foot,
+    /// then Chapter 2 on the third.
+    fn outlined_pdf() -> Vec<u8> {
+        pdf(&[
+            "<< /Type /Catalog /Pages 2 0 R /Outlines 6 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R] /Count 3 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+            "<< /Type /Outlines /First 7 0 R /Last 9 0 R /Count 3 >>",
+            "<< /Title (Chapter 1) /Parent 6 0 R /Next 9 0 R /First 8 0 R /Last 8 0 R \
+             /Count 1 /Dest [3 0 R /Fit] >>",
+            "<< /Title (Section 1.1) /Parent 7 0 R /Dest [4 0 R /XYZ 0 500 null] >>",
+            "<< /Title (Chapter 2) /Parent 6 0 R /Prev 7 0 R /Dest [5 0 R /Fit] >>",
+        ])
+    }
+
+    #[test]
+    fn the_table_of_contents_is_read_as_a_tree() {
+        let path = std::env::temp_dir().join(format!("pdvim-outline-{}.pdf", std::process::id()));
+        std::fs::write(&path, outlined_pdf()).unwrap();
+        let document = Document::open(path.to_str().unwrap()).unwrap();
+        let chapters: Vec<Chapter> = document
+            .outlines()
+            .unwrap()
+            .into_iter()
+            .map(chapter)
+            .collect();
+        std::fs::remove_file(&path).unwrap();
+
+        assert_eq!(chapters.len(), 2, "{chapters:?}");
+        assert_eq!(chapters[0].title, "Chapter 1");
+        assert_eq!((chapters[0].page, chapters[0].top), (Some(0), None));
+        let section = &chapters[0].sections[0];
+        assert_eq!(section.title, "Section 1.1");
+        assert_eq!(section.page, Some(1));
+        assert!(
+            section.top.is_some_and(|top| (top - 292.0).abs() < 0.5),
+            "{section:?}"
+        );
+        assert_eq!(chapters[1].title, "Chapter 2");
+        assert_eq!(chapters[1].page, Some(2));
+        assert!(chapters[1].sections.is_empty());
     }
 
     #[test]

@@ -23,6 +23,7 @@ mod input;
 mod keymap;
 mod layout;
 mod num;
+mod outline;
 mod reader;
 mod recent;
 mod recolor;

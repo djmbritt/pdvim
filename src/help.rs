@@ -28,6 +28,7 @@ const GROUPS: [(&str, &[Binding]); 9] = [
             Binding::LastPage,
             Binding::PageTop,
             Binding::PageBottom,
+            Binding::Outline,
         ],
     ),
     (
@@ -101,6 +102,7 @@ const fn describe(binding: Binding) -> &'static str {
         Binding::VisualLine => "Select whole lines from a line picked by label",
         Binding::Undo => "Take back the last highlight",
         Binding::Redo => "Put back the last highlight taken back",
+        Binding::Outline => "Show the table of contents, to go to a chapter",
         Binding::NextTab => "Go to the next tab, or tab n",
         Binding::PreviousTab => "Go to the previous tab",
         Binding::Abort => "Cancel a half-typed command, hide highlights",

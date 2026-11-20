@@ -21,6 +21,7 @@ use crate::input::{Action, Key, Pending, Prompt};
 use crate::keymap::Keymap;
 use crate::layout::Rect;
 use crate::num;
+use crate::outline::{self, Outline};
 use crate::reader::Reader;
 use crate::recent::{self, Choice, Picker};
 use crate::recolor::{Palette, Rgb};
@@ -66,6 +67,10 @@ const TAB_TEXT: Color = Color::from_rgb8(0x90, 0x90, 0x90);
 
 /// The height of one line of the cheat sheet, in pixels.
 const HELP_ROW: f32 = 20.0;
+/// The width of the table of contents sidebar, in pixels.
+const SIDEBAR_WIDTH: f32 = 380.0;
+/// How far each level of the table of contents is set in, in pixels.
+const SIDEBAR_INDENT: f32 = 14.0;
 /// The room the cheat sheet takes besides its lines: the margin around it,
 /// its padding, and the line at its foot, in pixels.
 const HELP_CHROME: f32 = 24.0 * 2.0 + 8.0 * 2.0 + HELP_ROW + 4.0;
@@ -126,6 +131,9 @@ pub enum Message {
     /// The links on some pages of the document with this number were
     /// found, or could not be.
     LinksFound(u64, Result<backend::PageLinks, backend::Error>),
+    /// The table of contents of the document with this number was read, or
+    /// could not be.
+    OutlineFound(u64, Result<Vec<backend::Chapter>, backend::Error>),
     /// Text in the document with this number was highlighted and the file
     /// saved, or not; done afresh, or redone.
     Highlighted(
@@ -224,6 +232,8 @@ struct Document {
     /// render is not tried again and again.
     failed: HashMap<u32, RenderKey>,
     results: Results,
+    /// The table of contents, once read.
+    chapters: Option<Vec<backend::Chapter>>,
     /// The links on each page whose links have been asked for.
     links: HashMap<u32, Vec<Link>>,
     /// The lines of text on each page read so far.
@@ -330,6 +340,8 @@ pub struct App {
     picker: Option<Picker>,
     /// The cheat sheet, while it is shown.
     help: Option<Help>,
+    /// The table of contents sidebar, while it is shown.
+    sidebar: Option<Outline>,
     /// The labels on the links in view, while they are shown.
     hints: Option<Hints<Link>>,
     /// The document whose links are being found so that they can be
@@ -396,6 +408,7 @@ impl App {
             completing: None,
             picker: None,
             help: None,
+            sidebar: None,
             hints: None,
             hints_wanted: None,
             line_hints: None,
@@ -517,6 +530,10 @@ impl App {
                 self.on_unhighlighted(id, edit, result);
                 Task::none()
             }
+            Message::OutlineFound(id, result) => {
+                self.on_outline(id, result);
+                Task::none()
+            }
             Message::LinksFound(id, result) => {
                 self.on_links(id, result);
                 Task::none()
@@ -566,6 +583,9 @@ impl App {
                 } else if let Some(hints) = &mut self.hints {
                     let outcome = hints.feed(key);
                     self.on_hint(outcome);
+                    Task::none()
+                } else if self.sidebar.is_some() {
+                    self.on_sidebar_key(key);
                     Task::none()
                 } else if self.help.is_some() {
                     let rows = self.help_rows();
@@ -1026,6 +1046,68 @@ impl App {
         self.read_text(neighbours)
     }
 
+    /// Shows the table of contents in the sidebar, reading it first the
+    /// first time.
+    fn show_outline(&mut self) -> Task<Message> {
+        self.pending = Pending::default();
+        let Some(document) = self.document() else {
+            return Task::none();
+        };
+        if let Some(chapters) = &document.chapters {
+            let page = document.reader.current_page();
+            self.sidebar = Outline::new(chapters, page);
+            if self.sidebar.is_none() {
+                self.notice = Notice::Info("this document has no table of contents".to_owned());
+            }
+            return Task::none();
+        }
+        let id = document.id;
+        let reading = document.backend.outline();
+        Task::perform(reading, move |result| Message::OutlineFound(id, result))
+    }
+
+    fn on_outline(&mut self, id: u64, result: Result<Vec<backend::Chapter>, backend::Error>) {
+        let Some(document) = document_by_id(&mut self.tabs, id) else {
+            return;
+        };
+        match result {
+            Ok(chapters) => document.chapters = Some(chapters),
+            Err(error) => {
+                self.notice = Notice::Error(error.to_string());
+                return;
+            }
+        }
+        // Only if the document is still the one in view.
+        if self.document().is_some_and(|document| document.id == id) {
+            let _ = self.show_outline();
+        }
+    }
+
+    /// Moves through the table of contents, or goes to a chapter.
+    fn on_sidebar_key(&mut self, key: Key) {
+        let rows = self.sidebar_rows();
+        let Some(sidebar) = &mut self.sidebar else {
+            return;
+        };
+        match sidebar.feed(key, rows) {
+            outline::Outcome::Stay => {}
+            outline::Outcome::Close => self.sidebar = None,
+            outline::Outcome::Go(page, top) => {
+                self.sidebar = None;
+                if let Some(document) = self.document_mut() {
+                    document.reader.go_to_spot(page, top);
+                }
+            }
+        }
+    }
+
+    /// How many entries of the table of contents fit in the window.
+    fn sidebar_rows(&self) -> usize {
+        // Room is kept for the heading and the line at the foot.
+        let rows = num::round(((self.area.height - 16.0) / HELP_ROW).floor() - 2.0);
+        usize::try_from(rows).unwrap_or(1).max(1)
+    }
+
     /// Shows the cheat sheet for the bindings in force.
     fn show_help(&mut self) {
         self.pending = Pending::default();
@@ -1221,6 +1303,7 @@ impl App {
                 let kind = if lines { Kind::Lines } else { Kind::Characters };
                 return self.label_lines(kind);
             }
+            Action::ShowOutline => return self.show_outline(),
             Action::ShowHelp => {
                 self.show_help();
                 return Task::none();
@@ -1262,6 +1345,7 @@ impl App {
             | Action::OpenPrompt(_)
             | Action::ShowRecent
             | Action::ShowHelp
+            | Action::ShowOutline
             | Action::FollowLink
             | Action::Visual { .. }
             | Action::Undo
@@ -1398,6 +1482,7 @@ impl App {
             rendering: HashMap::new(),
             failed: HashMap::new(),
             results: Results::default(),
+            chapters: None,
             links: HashMap::new(),
             text: HashMap::new(),
             reading: std::collections::HashSet::new(),
@@ -1771,6 +1856,9 @@ impl App {
         if let Some(completing) = &self.completing {
             layers = layers.push(completions(completing));
         }
+        if let Some(sidebar) = &self.sidebar {
+            layers = layers.push(contents(sidebar, self.sidebar_rows()));
+        }
         if let Some(help) = &self.help {
             layers = layers.push(cheat_sheet(help, self.help_rows()));
         }
@@ -2097,6 +2185,91 @@ fn cheat_sheet(help: &Help, rows: usize) -> Element<'_, Message> {
         .center_y(Fill)
         .padding(24)
         .into()
+}
+
+/// The table of contents, in a sidebar over the left of the pages: as many
+/// entries as fit, each set in by its depth, the selected one marked.
+fn contents(sidebar: &Outline, rows: usize) -> Element<'_, Message> {
+    let label = |content: String, colour: Color| {
+        text(content)
+            .size(LIST_TEXT_SIZE)
+            .font(Font::MONOSPACE)
+            .color(colour)
+            .wrapping(text::Wrapping::None)
+    };
+    let entries = sidebar.shown(rows).into_iter().map(|shown| {
+        let entry = shown.entry;
+        let marker = match (entry.has_sections, shown.unfolded) {
+            (false, _) => " ",
+            (true, false) => "\u{25b8}",
+            (true, true) => "\u{25be}",
+        };
+        let page = entry
+            .page
+            .map(|page| page.saturating_add(1).to_string())
+            .unwrap_or_default();
+        let indent = SIDEBAR_INDENT * num::float(u32::try_from(entry.depth).unwrap_or(u32::MAX));
+        let line = row![
+            iced::widget::Space::new().width(indent),
+            label(marker.to_owned(), LIST_NUMBER),
+            container(label(
+                entry.title.clone(),
+                if shown.selected { BAR_TEXT } else { TAB_TEXT }
+            ))
+            .width(Fill)
+            .clip(true),
+            label(page, LIST_NUMBER),
+        ]
+        .spacing(6);
+        let selected = shown.selected;
+        container(line)
+            .height(HELP_ROW)
+            .width(Fill)
+            .padding([0, 6])
+            .align_y(iced::alignment::Vertical::Center)
+            .style(move |_| {
+                if selected {
+                    container::background(TAB_CURRENT)
+                } else {
+                    container::Style::default()
+                }
+            })
+            .into()
+    });
+    let (top, count) = sidebar.position();
+    let last = top.saturating_add(rows).min(count);
+    let heading = container(label("Contents".to_owned(), BAR_TEXT).font(Font {
+        weight: iced::font::Weight::Bold,
+        ..Font::MONOSPACE
+    }))
+    .height(HELP_ROW)
+    .padding([0, 6]);
+    let foot = container(label(
+        format!(
+            "{}-{last} of {count}   enter: go   l/h: open/close",
+            top.saturating_add(1)
+        ),
+        LIST_NUMBER,
+    ))
+    .height(HELP_ROW)
+    .padding([0, 6])
+    .clip(true);
+    let panel = container(column![
+        heading,
+        Column::with_children(entries).height(Fill),
+        foot
+    ])
+    .padding(8)
+    .width(SIDEBAR_WIDTH)
+    .height(Fill)
+    .style(|_| {
+        container::background(LIST).border(iced::Border {
+            color: LIST_BORDER,
+            width: 1.0,
+            radius: 0.0.into(),
+        })
+    });
+    container(panel).width(Fill).height(Fill).into()
 }
 
 /// The list of recent documents, drawn over the pages. The first nine are

@@ -81,6 +81,9 @@ highlight-color = "#ffff00"
 "end" = "last-page"
 "H" = "page-top"
 "L" = "page-bottom"
+# The table of contents, in a sidebar: j/k to move, l/h to open and close
+# a chapter's sections, enter to go there
+"tab" = "outline"
 
 # Zoom and view
 "+" = "zoom-in"

@@ -101,6 +101,8 @@ pub enum Action {
     Visual {
         lines: bool,
     },
+    /// Show the table of contents in a sidebar.
+    ShowOutline,
     /// Take back the last highlight.
     Undo,
     /// Put back the last highlight taken back.

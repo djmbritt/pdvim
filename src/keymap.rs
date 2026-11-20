@@ -58,11 +58,13 @@ pub enum Binding {
     Undo,
     /// Put back the last highlight taken back.
     Redo,
+    /// Show the table of contents in a sidebar.
+    Outline,
 }
 
 impl Binding {
     /// Every binding with its name.
-    const NAMES: [(Self, &'static str); 39] = [
+    const NAMES: [(Self, &'static str); 40] = [
         (Self::ScrollDown, "scroll-down"),
         (Self::ScrollUp, "scroll-up"),
         (Self::ScrollLeft, "scroll-left"),
@@ -102,6 +104,7 @@ impl Binding {
         (Self::VisualLine, "visual-line"),
         (Self::Undo, "undo"),
         (Self::Redo, "redo"),
+        (Self::Outline, "outline"),
     ];
 
     /// The names of every binding.
@@ -181,6 +184,7 @@ impl Binding {
             Self::VisualLine => Action::Visual { lines: true },
             Self::Undo => Action::Undo,
             Self::Redo => Action::Redo,
+            Self::Outline => Action::ShowOutline,
         }
     }
 }
@@ -285,7 +289,7 @@ impl Default for Keymap {
     /// The bindings pdvim starts with.
     fn default() -> Self {
         use Binding as B;
-        const DEFAULTS: [(&str, Binding); 58] = [
+        const DEFAULTS: [(&str, Binding); 59] = [
             ("j", B::ScrollDown),
             ("down", B::ScrollDown),
             ("k", B::ScrollUp),
@@ -310,6 +314,7 @@ impl Default for Keymap {
             ("end", B::LastPage),
             ("H", B::PageTop),
             ("L", B::PageBottom),
+            ("tab", B::Outline),
             ("+", B::ZoomIn),
             ("z i", B::ZoomIn),
             ("z I", B::ZoomIn),
@@ -458,7 +463,7 @@ mod tests {
     #[test]
     fn every_default_binding_parses() {
         let keymap = Keymap::default();
-        assert_eq!(keymap.bindings.len(), 58);
+        assert_eq!(keymap.bindings.len(), 59);
     }
 
     #[test]

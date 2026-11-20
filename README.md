@@ -15,6 +15,7 @@ pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.r
 - A list of recently read documents to reopen from
 - A configuration file for settings and key bindings
 - Selecting and copying text from the keyboard, with a visual mode like vim's
+- A sidebar with the table of contents, to go to a chapter
 - Following links from the keyboard: `f` labels every link in view, and typing a label follows it
 - A cheat sheet of the key bindings in force, with `:help`
 - `Tab` completion of commands, settings, and file paths in the command prompt
@@ -55,8 +56,11 @@ Put a count before a key to repeat it, as in vi. For example, `3j` scrolls three
 | `gg`, `Home` / `G`, `End`                   | Go to the first / last page                |
 | `{n}G`, `{n}gg`                             | Go to page _n_                             |
 | `H` / `L`                                   | Go to the top / bottom of the current page |
+| `Tab`                                       | Show the table of contents                 |
 
 The mouse wheel also scrolls.
+
+`Tab` opens the table of contents in a sidebar, with the chapter you're reading selected. Move with `j` / `k`, `gg` / `G`, and `Ctrl-d` / `Ctrl-u`. `l` opens a chapter to show its sections, or steps into them, and `h` closes it or goes up to the chapter it's in. `Space` opens and closes. `Enter` goes to the chapter and closes the sidebar, and `Esc`, `q`, or `Tab` close it without going anywhere.
 
 ### View
 
@@ -220,7 +224,7 @@ Separate the keys of a sequence with spaces, as in `"g g"` or `"z i"`. A count t
 
 The `:map {keys} {action}`, `:unmap {keys}`, and `:mapclear` commands change the bindings while pdvim runs. They write keys the same way, as in `:map ctrl+n next-tab`.
 
-The keys used in the command prompt, the recent-documents list, the cheat sheet, and visual mode can't be changed.
+The keys used in the command prompt, the recent-documents list, the cheat sheet, the table of contents, and visual mode can't be changed.
 
 ### Actions
 
@@ -251,6 +255,7 @@ The keys used in the command prompt, the recent-documents list, the cheat sheet,
 | `follow-link`                         | `f`                                         |
 | `visual` / `visual-line`              | `v` / `V`                                   |
 | `undo` / `redo`                       | `u` / `ctrl+r`                              |
+| `outline`                             | `tab`                                       |
 
 With a count, `first-page` and `last-page` go to that page, `zoom-to` zooms to that percentage, and `next-tab` goes to that tab.
 

@@ -82,6 +82,8 @@ pub enum Action {
     SearchNext,
     SearchPrevious,
     OpenPrompt(Prompt),
+    /// Show the recently read documents, to pick one to open.
+    ShowRecent,
     /// Drop whatever is half-typed and hide search highlights.
     Abort,
     Quit,
@@ -187,6 +189,7 @@ impl Pending {
             Key::Char(':') => Action::OpenPrompt(Prompt::Command),
             Key::Char('/') => Action::OpenPrompt(Prompt::SearchForward),
             Key::Char('?') => Action::OpenPrompt(Prompt::SearchBackward),
+            Key::Char('o') => Action::ShowRecent,
             Key::Escape | Key::Ctrl('c' | '[') => Action::Abort,
             Key::Char('q') => Action::Quit,
             _ => return None,

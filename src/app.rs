@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use iced::widget::canvas::{self, Canvas};
-use iced::widget::{column, container, image, row, stack, text};
+use iced::widget::{Column, column, container, image, row, stack, text};
 use iced::{
     Color, Element, Event, Fill, Font, Point, Rectangle, Renderer, Size, Subscription, Task, Theme,
     keyboard, mouse, window,
@@ -17,6 +17,7 @@ use crate::input::{Action, Key, Pending, Prompt};
 use crate::layout::Rect;
 use crate::num;
 use crate::reader::Reader;
+use crate::recent::{self, Choice, Picker};
 use crate::recolor::{Palette, Rgb};
 
 /// The colour behind the pages.
@@ -31,9 +32,21 @@ const BAR_ERROR: Color = Color::from_rgb8(0xff, 0x6b, 0x6b);
 const HIT: Color = Color::from_rgba8(0xff, 0xd0, 0x00, 0.35);
 /// The colour laid over the search result last jumped to.
 const HIT_CURRENT: Color = Color::from_rgba8(0xff, 0x70, 0x00, 0.5);
+/// The colour of the list of recent documents.
+const LIST: Color = Color::from_rgb8(0x1a, 0x1a, 0x1a);
+/// The colour behind the selected entry in that list.
+const LIST_SELECTED: Color = Color::from_rgb8(0x3a, 0x3a, 0x3a);
+/// The colour of the frame around that list.
+const LIST_BORDER: Color = Color::from_rgb8(0x40, 0x40, 0x40);
+/// The colour of the number in front of each entry.
+const LIST_NUMBER: Color = Color::from_rgb8(0x80, 0x80, 0x80);
 
 /// The size of status bar text, in pixels.
 const BAR_TEXT_SIZE: f32 = 13.0;
+/// The size of text in the list of recent documents, in pixels.
+const LIST_TEXT_SIZE: f32 = 14.0;
+/// The widest the list of recent documents grows, in pixels.
+const LIST_WIDTH: f32 = 720.0;
 
 /// How far one notch of a mouse wheel scrolls, in scroll steps.
 const WHEEL_STEPS: f32 = 3.0;
@@ -144,6 +157,8 @@ pub struct App {
     pending: Pending,
     /// The prompt being typed into, and the text so far.
     prompt: Option<(Prompt, String)>,
+    /// The list of recent documents, while it is shown.
+    picker: Option<Picker>,
     notice: Notice,
     palette: Palette,
     /// How far one press of `j` scrolls, in logical pixels.
@@ -182,11 +197,18 @@ impl App {
             modifiers: keyboard::Modifiers::default(),
             pending: Pending::default(),
             prompt: None,
+            picker: None,
             notice,
             palette: Palette::default(),
             scroll_step: 40.0,
         };
-        let task = path.map_or_else(Task::none, |path| app.open(path));
+        // Started without a document, it offers the ones read lately.
+        let task = if let Some(path) = path {
+            app.open(path)
+        } else {
+            app.picker = Picker::new(app.recent_documents());
+            Task::none()
+        };
         (app, task)
     }
 
@@ -283,7 +305,9 @@ impl App {
                     return Task::none();
                 };
                 self.notice = Notice::None;
-                if self.prompt.is_some() {
+                if self.picker.is_some() {
+                    self.on_picker_key(key)
+                } else if self.prompt.is_some() {
                     self.on_prompt_key(key)
                 } else {
                     self.pending
@@ -292,6 +316,54 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Moves through the list of recent documents, or opens one.
+    fn on_picker_key(&mut self, key: Key) -> Task<Message> {
+        let Some(picker) = &mut self.picker else {
+            return Task::none();
+        };
+        match picker.feed(key) {
+            Some(Choice::Open(path)) => {
+                self.picker = None;
+                self.open(path)
+            }
+            Some(Choice::Close) => {
+                self.picker = None;
+                Task::none()
+            }
+            None => Task::none(),
+        }
+    }
+
+    /// Shows the list of recent documents, or says there are none.
+    fn show_recent(&mut self) {
+        self.pending = Pending::default();
+        self.picker = Picker::new(self.recent_documents());
+        if self.picker.is_none() && matches!(self.notice, Notice::None) {
+            self.notice = Notice::Info("no recent documents".to_owned());
+        }
+    }
+
+    /// The documents read lately that still exist, newest first, leaving
+    /// out the one open now.
+    fn recent_documents(&mut self) -> Vec<PathBuf> {
+        let Some(history) = &self.history else {
+            return Vec::new();
+        };
+        let paths = match history.recent() {
+            Ok(paths) => paths,
+            Err(error) => {
+                self.notice = Notice::Error(error.to_string());
+                return Vec::new();
+            }
+        };
+        let open = self.document.as_ref().map(|document| &document.path);
+        paths
+            .into_iter()
+            .filter(|path| Some(path) != open && path.is_file())
+            .take(recent::SHOWN)
+            .collect()
     }
 
     /// Edits the prompt, or runs it once enter is pressed.
@@ -341,6 +413,7 @@ impl App {
         match command {
             Command::Quit => return self.quit(),
             Command::Open(path) => return self.open(path),
+            Command::Recent => self.show_recent(),
             Command::Goto(page) => {
                 if let Some(document) = &mut self.document {
                     document.reader.go_to_page(page.saturating_sub(1));
@@ -372,6 +445,10 @@ impl App {
             Action::Quit => return self.quit(),
             Action::OpenPrompt(prompt) => {
                 self.prompt = Some((prompt, String::new()));
+                return Task::none();
+            }
+            Action::ShowRecent => {
+                self.show_recent();
                 return Task::none();
             }
             Action::SearchNext => return self.step_search(true),
@@ -412,6 +489,7 @@ impl App {
             Action::Abort => document.results.shown = false,
             Action::Quit
             | Action::OpenPrompt(_)
+            | Action::ShowRecent
             | Action::SearchNext
             | Action::SearchPrevious
             | Action::ToggleTrim => {}
@@ -761,7 +839,11 @@ impl App {
     fn view(&self) -> Element<'_, Message> {
         let pages = Canvas::new(Pages(self)).width(Fill).height(Fill);
         let marks = Canvas::new(Marks(self)).width(Fill).height(Fill);
-        column![stack![pages, marks], self.bar()].into()
+        let mut layers = stack![pages, marks];
+        if let Some(picker) = &self.picker {
+            layers = layers.push(list(picker));
+        }
+        column![layers, self.bar()].into()
     }
 
     /// The line at the bottom: the prompt while typing, otherwise a notice
@@ -809,6 +891,60 @@ impl App {
             .style(|_| container::background(BAR))
             .into()
     }
+}
+
+/// The list of recent documents, drawn over the pages. The first nine are
+/// numbered, for the digit that opens each.
+fn list(picker: &Picker) -> Element<'_, Message> {
+    let label = |content: String, colour: Color| {
+        text(content)
+            .size(LIST_TEXT_SIZE)
+            .font(Font::MONOSPACE)
+            .color(colour)
+            .wrapping(text::Wrapping::None)
+    };
+    let heading = container(label("Recent documents".to_owned(), BAR_TEXT)).padding([4, 10]);
+    let entries = picker.entries().iter().enumerate().map(|(index, path)| {
+        let number = index
+            .checked_add(1)
+            .filter(|number| *number <= 9)
+            .map_or_else(|| " ".to_owned(), |number| number.to_string());
+        let selected = index == picker.selected();
+        let line = row![
+            label(number, LIST_NUMBER),
+            container(label(tilde(path), BAR_TEXT))
+                .width(Fill)
+                .clip(true),
+        ]
+        .spacing(12);
+        container(line)
+            .padding([3, 10])
+            .width(Fill)
+            .style(move |_| {
+                if selected {
+                    container::background(LIST_SELECTED)
+                } else {
+                    container::Style::default()
+                }
+            })
+            .into()
+    });
+    let body = Column::with_children(entries).spacing(1);
+    let panel = container(column![heading, body].spacing(4))
+        .padding(8)
+        .max_width(LIST_WIDTH)
+        .style(|_| {
+            container::background(LIST).border(iced::Border {
+                color: LIST_BORDER,
+                width: 1.0,
+                radius: 4.0.into(),
+            })
+        });
+    container(panel)
+        .center_x(Fill)
+        .center_y(Fill)
+        .padding(24)
+        .into()
 }
 
 /// The layer that draws the pages, and listens to the mouse.

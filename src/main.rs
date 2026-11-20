@@ -4,7 +4,8 @@
 //! - `layout` places pages in a column and `reader` scrolls and zooms over it;
 //! - `input` turns key presses into actions and `command` parses `:` commands;
 //! - `backend` renders and searches documents with MuPDF on a worker thread;
-//! - `history` remembers where each document was left;
+//! - `history` remembers where each document was left, and `recent` lists
+//!   the documents read lately to pick from;
 //! - `app` is the window that ties them together.
 
 mod app;
@@ -15,6 +16,7 @@ mod input;
 mod layout;
 mod num;
 mod reader;
+mod recent;
 mod recolor;
 
 use std::path::PathBuf;

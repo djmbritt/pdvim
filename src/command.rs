@@ -9,6 +9,8 @@ use crate::recolor::{InvalidColour, Rgb};
 pub enum Command {
     /// Open a document.
     Open(PathBuf),
+    /// Show the recently read documents, to pick one to open.
+    Recent,
     /// Go to a page, counted from 1.
     Goto(u32),
     /// Change a setting.
@@ -72,6 +74,7 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
             }
             Command::Open(expand_home(argument))
         }
+        "rec" | "recent" => Command::Recent,
         "noh" | "nohl" | "nohlsearch" => Command::NoHighlight,
         "set" => Command::Set(parse_setting(argument)?),
         _ => return Err(Error::Unknown(name.to_owned())),
@@ -203,5 +206,7 @@ mod tests {
         assert_eq!(parse("q"), Ok(Some(Command::Quit)));
         assert_eq!(parse("quit"), Ok(Some(Command::Quit)));
         assert_eq!(parse("noh"), Ok(Some(Command::NoHighlight)));
+        assert_eq!(parse("rec"), Ok(Some(Command::Recent)));
+        assert_eq!(parse("recent"), Ok(Some(Command::Recent)));
     }
 }

@@ -12,7 +12,7 @@ use std::sync::mpsc;
 use std::thread;
 
 use iced::futures::channel::oneshot;
-use mupdf::{Colorspace, Device, Document, Matrix, Pixmap};
+use mupdf::{Colorspace, DestinationKind, Device, Document, Matrix, Pixmap};
 
 use crate::layout::{PageSize, Rect, Rotation};
 use crate::num;
@@ -49,6 +49,8 @@ pub enum Error {
     Measure(String),
     #[error("search failed: {0}")]
     Search(String),
+    #[error("cannot read the links: {0}")]
+    Links(String),
     #[error("the document was closed")]
     Closed,
 }
@@ -84,6 +86,27 @@ pub struct Hit {
     pub area: Rect,
 }
 
+/// A link on a page.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Link {
+    /// The area that is the link on the unturned page, in points.
+    pub area: Rect,
+    pub target: Target,
+}
+
+/// Where a link leads.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Target {
+    /// A place in the same document: a page counted from 0, and how far
+    /// down the unturned page, in points, when the link says.
+    Page { page: u32, top: Option<f32> },
+    /// Anything else, such as a web page, for another program to open.
+    Uri(String),
+}
+
+/// The links on some pages, each page, counted from 0, with its links.
+pub type PageLinks = Vec<(u32, Vec<Link>)>;
+
 /// A document that has just been opened.
 #[derive(Debug, Clone)]
 pub struct Opened {
@@ -97,6 +120,7 @@ enum Request {
     Render(RenderJob, oneshot::Sender<Result<Bitmap, Error>>),
     Search(String, oneshot::Sender<Result<Vec<Hit>, Error>>),
     Measure(oneshot::Sender<Result<Vec<Rect>, Error>>),
+    Links(Vec<u32>, oneshot::Sender<Result<PageLinks, Error>>),
 }
 
 /// A handle to the worker that owns an open document. The worker stops
@@ -120,6 +144,13 @@ impl Backend {
     pub fn search(&self, needle: String) -> impl Future<Output = Result<Vec<Hit>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
         let _ = self.requests.send(Request::Search(needle, reply));
+        async move { answer.await.unwrap_or(Err(Error::Closed)) }
+    }
+
+    /// Finds the links on some pages, each page with its links.
+    pub fn links(&self, pages: Vec<u32>) -> impl Future<Output = Result<PageLinks, Error>> + use<> {
+        let (reply, answer) = oneshot::channel();
+        let _ = self.requests.send(Request::Links(pages, reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -198,6 +229,52 @@ fn load(path: &Path) -> Result<(Document, Vec<PageSize>), Error> {
     Ok((document, sizes))
 }
 
+/// The links on a page, with their areas measured from the corner of the
+/// page.
+fn page_links(document: &Document, number: u32) -> Result<Vec<Link>, mupdf::Error> {
+    let page = document.load_page(page_number(number))?;
+    let bounds = page.bounds()?;
+    let links = page
+        .links()?
+        .map(|link| {
+            let target = match link.dest {
+                Some(destination) => Target::Page {
+                    page: destination.loc.page_number,
+                    top: destination_top(destination.kind),
+                },
+                None => Target::Uri(link.uri),
+            };
+            Link {
+                area: Rect {
+                    left: link.bounds.x0 - bounds.x0,
+                    top: link.bounds.y0 - bounds.y0,
+                    right: link.bounds.x1 - bounds.x0,
+                    bottom: link.bounds.y1 - bounds.y0,
+                },
+                target,
+            }
+        })
+        .collect();
+    Ok(links)
+}
+
+/// How far down its page a destination is, when it says. MuPDF gives it
+/// measured downwards from the top of the page, though the mupdf crate names
+/// the fields of a rectangle the way PDF, which measures upwards, does: its
+/// `bottom` is the top edge.
+const fn destination_top(kind: DestinationKind) -> Option<f32> {
+    match kind {
+        DestinationKind::XYZ { top, .. }
+        | DestinationKind::FitH { top }
+        | DestinationKind::FitBH { top } => top,
+        DestinationKind::FitR { bottom, .. } => Some(bottom),
+        DestinationKind::Fit
+        | DestinationKind::FitB
+        | DestinationKind::FitV { .. }
+        | DestinationKind::FitBV { .. } => None,
+    }
+}
+
 /// What went wrong, without the wrapping MuPDF puts around its messages or
 /// a repeat of the path, which the caller states already.
 fn reason(error: &mupdf::Error, path: &str) -> String {
@@ -248,6 +325,9 @@ impl Worker {
                             .map_err(|error| Error::Measure(error.to_string())),
                     );
                 }
+                Request::Links(pages, reply) => {
+                    let _ = reply.send(self.links(&pages));
+                }
             }
         }
     }
@@ -270,6 +350,29 @@ impl Worker {
             page: job.page.saturating_add(1),
             reason: error.to_string(),
         })
+    }
+
+    /// Finds the links on some pages.
+    fn links(&self, pages: &[u32]) -> Result<PageLinks, Error> {
+        pages
+            .iter()
+            .map(|&number| {
+                // The mupdf crate panics on a link whose destination MuPDF
+                // cannot resolve. That must not take the worker, and with
+                // it the document, down.
+                let links = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    page_links(&self.document, number)
+                }))
+                .map_err(|_| {
+                    Error::Links(format!(
+                        "a link on page {} is broken",
+                        number.saturating_add(1)
+                    ))
+                })?
+                .map_err(|error| Error::Links(error.to_string()))?;
+                Ok((number, links))
+            })
+            .collect()
     }
 
     /// Searches every page in order.
@@ -426,6 +529,70 @@ fn page_number(page: u32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A PDF of three letter-size pages. The first has a link to a spot
+    /// on the third, 500 points up from its foot, and a link to a web page.
+    fn linked_pdf() -> Vec<u8> {
+        let objects = [
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R] /Count 3 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [6 0 R 7 0 R] >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+            "<< /Type /Annot /Subtype /Link /Rect [72 700 200 720] \
+             /A << /S /GoTo /D [5 0 R /XYZ 0 500 null] >> >>",
+            "<< /Type /Annot /Subtype /Link /Rect [72 600 200 620] \
+             /A << /S /URI /URI (https://example.com/) >> >>",
+        ];
+        let size = objects.len().saturating_add(1);
+        let mut pdf = b"%PDF-1.4\n".to_vec();
+        let mut offsets = Vec::new();
+        for (index, object) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            pdf.extend(format!("{} 0 obj\n{object}\nendobj\n", index.saturating_add(1)).bytes());
+        }
+        let xref = pdf.len();
+        pdf.extend(format!("xref\n0 {size}\n0000000000 65535 f \n").bytes());
+        for offset in offsets {
+            pdf.extend(format!("{offset:010} 00000 n \n").bytes());
+        }
+        pdf.extend(
+            format!("trailer\n<< /Size {size} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").bytes(),
+        );
+        pdf
+    }
+
+    #[test]
+    fn links_are_found_with_their_areas_and_targets() {
+        let path = std::env::temp_dir().join(format!("pdvim-links-{}.pdf", std::process::id()));
+        std::fs::write(&path, linked_pdf()).unwrap();
+        let document = Document::open(path.to_str().unwrap()).unwrap();
+        let links = page_links(&document, 0).unwrap();
+        std::fs::remove_file(&path).unwrap();
+
+        assert_eq!(links.len(), 2, "{links:?}");
+        let close = |left: f32, right: f32| (left - right).abs() < 0.5;
+        // Measured down from the top of the page: 792 - 720 = 72.
+        let area = links[0].area;
+        assert!(
+            close(area.left, 72.0)
+                && close(area.top, 72.0)
+                && close(area.right, 200.0)
+                && close(area.bottom, 92.0),
+            "{area:?}"
+        );
+        let Target::Page { page, top } = links[0].target else {
+            panic!("expected a link into the document: {:?}", links[0].target);
+        };
+        assert_eq!(page, 2);
+        // 500 up from the foot is 292 down from the top.
+        assert!(top.is_some_and(|top| close(top, 292.0)), "{top:?}");
+        assert_eq!(
+            links[1].target,
+            Target::Uri("https://example.com/".to_owned())
+        );
+        assert!(page_links(&document, 1).unwrap().is_empty());
+    }
 
     #[test]
     fn a_blank_image_has_no_content() {

@@ -14,6 +14,8 @@ pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.r
 - Per-document memory of page, zoom, fit, and rotation, stored in SQLite
 - A list of recently read documents to reopen from
 - A configuration file for settings and key bindings
+- Following links from the keyboard: `f` labels every link in view, and typing a label follows it
+- A cheat sheet of the key bindings in force, with `:help`
 - `Tab` completion of commands, settings, and file paths in the command prompt
 - Tabs, with vim's `gt` / `gT`, `Ctrl-Tab` / `Ctrl-Shift-Tab`, and `:tabedit`
 
@@ -68,6 +70,14 @@ The mouse wheel also scrolls.
 | `Ctrl-r`              | Turn recoloring on or off        |
 | `t`                   | Turn margin trimming on or off   |
 
+### Links
+
+| Key | Action                   |
+| --- | ------------------------ |
+| `f` | Label every link in view |
+
+After `f`, each link in view is highlighted and gets a label of two letters. Type a label to follow its link. A link to another place in the document goes there, and any other link, such as a web page, opens with `xdg-open` in your default program. `Backspace` takes back the first letter, and `Esc` puts the labels away.
+
 ### Tabs
 
 | Key                                       | Action                        |
@@ -93,6 +103,7 @@ The mouse wheel also scrolls.
 | `:{n}`                                | Go to page _n_                                                       |
 | `:o[pen] {file}`                      | Open a document in a new tab (`~` expands to your home directory)    |
 | `:rec[ent]`                           | Show recent documents                                                |
+| `:h[elp]`                             | Show every action and the keys bound to it                           |
 | `:noh[lsearch]`                       | Hide search highlights                                               |
 | `:set recolor [true\|false]`          | Turn recoloring on or off                                            |
 | `:set trim [true\|false]`             | Turn margin trimming on or off                                       |
@@ -111,6 +122,8 @@ The mouse wheel also scrolls.
 | `:qa[ll]`                             | Quit                                                                 |
 
 If you name a boolean setting without a value, it is turned on.
+
+`:help` shows a cheat sheet of every action, the keys bound to it, and what it does. It shows your own bindings, including changes from the configuration file and `:map`. Scroll it with `j` / `k`, `Ctrl-d` / `Ctrl-u`, and `g` / `G`, and close it with `q` or `Esc`. To open it with a key, bind the `help` action, as in `"ctrl+h" = "help"`.
 
 You can also run any [action](#actions) by name, as in `:scroll-down` or `:next-tab`. A number after it works like a count typed before a key: `:zoom-to 150` zooms to 150%, and `:first-page 12` goes to page 12.
 
@@ -201,6 +214,8 @@ The keys used in the command prompt and in the recent-documents list can't be ch
 | `next-tab` / `previous-tab`           | `g t`, `ctrl+tab` / `g T`, `ctrl+shift+tab` |
 | `abort`                               | `escape`, `ctrl+c`, `ctrl+[`                |
 | `quit`                                | `q`                                         |
+| `help`                                | none                                        |
+| `follow-link`                         | `f`                                         |
 
 With a count, `first-page` and `last-page` go to that page, `zoom-to` zooms to that percentage, and `next-tab` goes to that tab.
 

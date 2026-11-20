@@ -97,6 +97,13 @@ confirm-quit = false
 "N" = "search-previous"
 ":" = "command-prompt"
 "o" = "recent"
+# "help" lists every action and the keys bound to it, like :help. It has no
+# key by default; give it one with, for example:
+# "ctrl+h" = "help"
+
+# Links: label every link in view, then type a label's two letters to
+# follow it
+"f" = "follow-link"
 
 # Tabs
 "g t" = "next-tab"

@@ -4,7 +4,8 @@
 //! - `layout` places pages in a column and `reader` scrolls and zooms over it;
 //! - `input` turns key presses into actions through the bindings in `keymap`,
 //!   and `command` parses `:` commands, which `complete` completes;
-//! - `config` reads those commands from the configuration file;
+//! - `config` reads those commands from the configuration file, and `help`
+//!   lists the bindings in force;
 //! - `backend` renders and searches documents with MuPDF on a worker thread;
 //! - `history` remembers where each document was left, and `recent` lists
 //!   the documents read lately to pick from;
@@ -15,6 +16,8 @@ mod backend;
 mod command;
 mod complete;
 mod config;
+mod help;
+mod hints;
 mod history;
 mod input;
 mod keymap;

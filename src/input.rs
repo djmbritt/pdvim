@@ -92,6 +92,10 @@ pub enum Action {
     OpenPrompt(Prompt),
     /// Show the recently read documents, to pick one to open.
     ShowRecent,
+    /// Show the key bindings.
+    ShowHelp,
+    /// Label the links in view, to follow one.
+    FollowLink,
     /// Go to the next tab, or the first after the last.
     NextTab,
     /// Go back a number of tabs, round to the last from the first.

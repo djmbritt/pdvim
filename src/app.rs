@@ -10,10 +10,12 @@ use iced::{
     keyboard, mouse, window,
 };
 
-use crate::backend::{self, Backend, Hit, Opened, RenderJob};
+use crate::backend::{self, Backend, Hit, Link, Opened, RenderJob, Target};
 use crate::command::{self, Command, Setting};
 use crate::complete::{self, Candidate};
 use crate::config;
+use crate::help::{Help, Line};
+use crate::hints::{Hints, Outcome};
 use crate::history::{Fit, History, View};
 use crate::input::{Action, Key, Pending, Prompt};
 use crate::keymap::Keymap;
@@ -35,6 +37,13 @@ const BAR_ERROR: Color = Color::from_rgb8(0xff, 0x6b, 0x6b);
 const HIT: Color = Color::from_rgba8(0xff, 0xd0, 0x00, 0.35);
 /// The colour laid over the search result last jumped to.
 const HIT_CURRENT: Color = Color::from_rgba8(0xff, 0x70, 0x00, 0.5);
+/// The colour laid over a link while links are labelled.
+const LINK: Color = Color::from_rgba8(0x40, 0x90, 0xff, 0.25);
+/// The colour behind a link's label, and of its letters.
+const LABEL: Color = Color::from_rgb8(0xff, 0xd0, 0x00);
+const LABEL_TEXT: Color = Color::from_rgb8(0x10, 0x10, 0x10);
+/// The size of a link's label, in pixels.
+const LABEL_SIZE: f32 = 12.0;
 /// The colour of the list of recent documents.
 const LIST: Color = Color::from_rgb8(0x1a, 0x1a, 0x1a);
 /// The colour behind the selected entry in that list.
@@ -49,6 +58,17 @@ const TABS: Color = Color::from_rgb8(0x18, 0x18, 0x18);
 const TAB_CURRENT: Color = Color::from_rgb8(0x30, 0x30, 0x30);
 /// The colour of the names of tabs not in view.
 const TAB_TEXT: Color = Color::from_rgb8(0x90, 0x90, 0x90);
+
+/// The height of one line of the cheat sheet, in pixels.
+const HELP_ROW: f32 = 20.0;
+/// The room the cheat sheet takes besides its lines: the margin around it,
+/// its padding, and the line at its foot, in pixels.
+const HELP_CHROME: f32 = 24.0 * 2.0 + 8.0 * 2.0 + HELP_ROW + 4.0;
+/// The widest the cheat sheet grows, in pixels.
+const HELP_WIDTH: f32 = 900.0;
+/// The width of the keys and of the action names on the cheat sheet.
+const HELP_KEYS_WIDTH: f32 = 200.0;
+const HELP_ACTION_WIDTH: f32 = 150.0;
 
 /// How many completions the list above the prompt shows at a time.
 const COMPLETIONS_SHOWN: usize = 60;
@@ -94,6 +114,9 @@ pub enum Message {
     /// The margins of every page of the document with this number were
     /// measured, or could not be.
     Measured(u64, Result<Vec<Rect>, backend::Error>),
+    /// The links on some pages of the document with this number were
+    /// found, or could not be.
+    LinksFound(u64, Result<backend::PageLinks, backend::Error>),
 }
 
 /// What a rendered page was rendered for. A cached page whose key differs
@@ -154,6 +177,8 @@ struct Document {
     /// render is not tried again and again.
     failed: HashMap<u32, RenderKey>,
     results: Results,
+    /// The links on each page whose links have been asked for.
+    links: HashMap<u32, Vec<Link>>,
 }
 
 /// A tab: a document, or none yet, and the document being opened in it.
@@ -245,6 +270,13 @@ pub struct App {
     completing: Option<Completing>,
     /// The list of recent documents, while it is shown.
     picker: Option<Picker>,
+    /// The cheat sheet, while it is shown.
+    help: Option<Help>,
+    /// The labels on the links in view, while they are shown.
+    hints: Option<Hints>,
+    /// The document whose links are being found so that they can be
+    /// labelled, by its number.
+    hints_wanted: Option<u64>,
     notice: Notice,
     palette: Palette,
     /// How far one press of `j` scrolls, in logical pixels.
@@ -293,6 +325,9 @@ impl App {
             prompt: None,
             completing: None,
             picker: None,
+            help: None,
+            hints: None,
+            hints_wanted: None,
             notice,
             palette: Palette::default(),
             scroll_step: DEFAULT_SCROLL_STEP,
@@ -362,6 +397,8 @@ impl App {
             Message::Keyboard(event) => self.on_keyboard(event),
             Message::Resized(area) => {
                 self.area = area;
+                // The labels were placed for the old size.
+                self.hints = None;
                 for document in self.tabs.iter_mut().filter_map(|tab| tab.document.as_mut()) {
                     document.reader.set_window((area.width, area.height));
                 }
@@ -377,6 +414,8 @@ impl App {
                 Task::none()
             }
             Message::Wheel(delta) => {
+                // The labels stay where the links were.
+                self.hints = None;
                 self.on_wheel(delta);
                 Task::none()
             }
@@ -387,6 +426,10 @@ impl App {
             Message::Opened(request, path, result) => self.on_opened(request, path, result),
             Message::Rendered(id, page, key, result) => {
                 self.on_rendered(id, page, key, result);
+                Task::none()
+            }
+            Message::LinksFound(id, result) => {
+                self.on_links(id, result);
                 Task::none()
             }
             Message::Measured(id, result) => {
@@ -425,6 +468,18 @@ impl App {
                         return self.exit();
                     }
                     Task::none()
+                } else if let Some(hints) = &mut self.hints {
+                    let outcome = hints.feed(key);
+                    self.on_hint(outcome);
+                    Task::none()
+                } else if self.help.is_some() {
+                    let rows = self.help_rows();
+                    if let Some(help) = &mut self.help
+                        && !help.feed(key, rows)
+                    {
+                        self.help = None;
+                    }
+                    Task::none()
                 } else if self.picker.is_some() {
                     self.on_picker_key(key)
                 } else if self.prompt.is_some() {
@@ -454,6 +509,122 @@ impl App {
             }
             None => Task::none(),
         }
+    }
+
+    /// Labels the links in view. The links on pages not seen before are
+    /// found first, which takes a moment.
+    fn label_links(&mut self) -> Task<Message> {
+        self.pending = Pending::default();
+        let Some(document) = self.document() else {
+            return Task::none();
+        };
+        let id = document.id;
+        let missing: Vec<u32> = document
+            .reader
+            .visible_pages()
+            .filter(|page| !document.links.contains_key(page))
+            .collect();
+        if missing.is_empty() {
+            self.show_hints();
+            return Task::none();
+        }
+        let finding = document.backend.links(missing);
+        self.hints_wanted = Some(id);
+        Task::perform(finding, move |result| Message::LinksFound(id, result))
+    }
+
+    fn on_links(&mut self, id: u64, result: Result<backend::PageLinks, backend::Error>) {
+        let wanted = self.hints_wanted.take() == Some(id);
+        let Some(document) = document_by_id(&mut self.tabs, id) else {
+            return;
+        };
+        match result {
+            Ok(pages) => document.links.extend(pages),
+            Err(error) => {
+                self.notice = Notice::Error(error.to_string());
+                return;
+            }
+        }
+        // Only if the document is still the one in view.
+        if wanted && self.document().is_some_and(|document| document.id == id) {
+            self.show_hints();
+        }
+    }
+
+    /// Labels the links that show in the window, in reading order.
+    fn show_hints(&mut self) {
+        let Some(document) = self.document() else {
+            return;
+        };
+        let (width, height) = (self.area.width, self.area.height);
+        let reader = &document.reader;
+        let mut links: Vec<(u32, Link)> = reader
+            .visible_pages()
+            .flat_map(|page| {
+                document
+                    .links
+                    .get(&page)
+                    .into_iter()
+                    .flatten()
+                    .map(move |link| (page, link))
+            })
+            .filter(|(page, link)| {
+                reader.area_on_screen(*page, link.area).is_some_and(|area| {
+                    area.right > 0.0 && area.left < width && area.bottom > 0.0 && area.top < height
+                })
+            })
+            .map(|(page, link)| (page, link.clone()))
+            .collect();
+        links.sort_by(|(page, link), (other_page, other)| {
+            page.cmp(other_page)
+                .then(link.area.top.total_cmp(&other.area.top))
+                .then(link.area.left.total_cmp(&other.area.left))
+        });
+        self.hints = Hints::new(links);
+        if self.hints.is_none() {
+            self.notice = Notice::Info("no links in view".to_owned());
+        }
+    }
+
+    /// Acts on a key typed while the links are labelled.
+    fn on_hint(&mut self, outcome: Outcome) {
+        match outcome {
+            Outcome::Wait => {}
+            Outcome::Cancel => self.hints = None,
+            Outcome::NoMatch => {
+                self.hints = None;
+                self.notice = Notice::Error("no such link".to_owned());
+            }
+            Outcome::Follow(hint) => {
+                self.hints = None;
+                match hint.link.target {
+                    Target::Page { page, top } => {
+                        if let Some(document) = self.document_mut() {
+                            document.reader.go_to_spot(page, top);
+                        }
+                    }
+                    Target::Uri(uri) => {
+                        self.notice = match open_externally(&uri) {
+                            Ok(()) => Notice::Info(format!("opening {uri}")),
+                            Err(error) => Notice::Error(format!("cannot open {uri}: {error}")),
+                        };
+                    }
+                }
+            }
+        }
+    }
+
+    /// Shows the cheat sheet for the bindings in force.
+    fn show_help(&mut self) {
+        self.pending = Pending::default();
+        self.picker = None;
+        self.help = Some(Help::new(&self.keymap));
+    }
+
+    /// How many lines of the cheat sheet fit in the window.
+    fn help_rows(&self) -> usize {
+        let rows = num::round(((self.area.height - HELP_CHROME) / HELP_ROW).floor());
+        usize::try_from(rows).unwrap_or(1).max(1)
     }
 
     /// Shows the list of recent documents, or says there are none.
@@ -548,6 +719,7 @@ impl App {
             Command::QuitAll => return self.quit(),
             Command::Open(path) | Command::TabOpen(Some(path)) => return self.open_in_tab(path),
             Command::Recent => self.show_recent(),
+            Command::Help => self.show_help(),
             Command::TabOpen(None) => {
                 self.tabs.push(Tab::default());
                 self.go_to_tab(self.tabs.len().saturating_sub(1));
@@ -628,6 +800,11 @@ impl App {
                 self.show_recent();
                 return Task::none();
             }
+            Action::FollowLink => return self.label_links(),
+            Action::ShowHelp => {
+                self.show_help();
+                return Task::none();
+            }
             Action::SearchNext => return self.step_search(true),
             Action::SearchPrevious => return self.step_search(false),
             Action::ToggleTrim => {
@@ -664,6 +841,8 @@ impl App {
             Action::Quit
             | Action::OpenPrompt(_)
             | Action::ShowRecent
+            | Action::ShowHelp
+            | Action::FollowLink
             | Action::NextTab
             | Action::PreviousTab(_)
             | Action::GotoTab(_)
@@ -785,6 +964,7 @@ impl App {
             rendering: HashMap::new(),
             failed: HashMap::new(),
             results: Results::default(),
+            links: HashMap::new(),
         });
         // Only the notice that the document was opening is done with.
         if matches!(notice, Notice::Error(_)) {
@@ -1137,6 +1317,9 @@ impl App {
         if let Some(completing) = &self.completing {
             layers = layers.push(completions(completing));
         }
+        if let Some(help) = &self.help {
+            layers = layers.push(cheat_sheet(help, self.help_rows()));
+        }
         match self.tab_bar() {
             Some(tabs) => column![tabs, layers, self.bar()].into(),
             None => column![layers, self.bar()].into(),
@@ -1183,6 +1366,15 @@ impl App {
         };
         let left = match (&self.prompt, &self.notice) {
             _ if self.asking_to_quit => label("quit pdvim? (y/n)".to_owned(), BAR_ERROR),
+            _ if self.hints.is_some() => {
+                let typed = self
+                    .hints
+                    .as_ref()
+                    .and_then(Hints::typed)
+                    .map(String::from)
+                    .unwrap_or_default();
+                label(format!("follow link: {typed}\u{2588}"), BAR_TEXT)
+            }
             (Some((prompt, line)), _) => {
                 label(format!("{}{line}\u{2588}", prompt.sigil()), BAR_TEXT)
             }
@@ -1335,6 +1527,88 @@ fn completions(completing: &Completing) -> Element<'_, Message> {
         .width(Fill)
         .style(|_| container::background(BAR));
     container(band).align_bottom(Fill).clip(true).into()
+}
+
+/// The cheat sheet, drawn over the pages: as many lines as fit, and a
+/// line at the foot saying where they are and how to move.
+fn cheat_sheet(help: &Help, rows: usize) -> Element<'_, Message> {
+    let label = |content: &str, colour: Color| {
+        text(content.to_owned())
+            .size(LIST_TEXT_SIZE)
+            .font(Font::MONOSPACE)
+            .color(colour)
+            .wrapping(text::Wrapping::None)
+    };
+    let lines = help.shown(rows).iter().map(|line| {
+        let content: Element<'_, Message> = match line {
+            Line::Heading(heading) => label(heading, BAR_TEXT)
+                .font(Font {
+                    weight: iced::font::Weight::Bold,
+                    ..Font::MONOSPACE
+                })
+                .into(),
+            Line::Entry {
+                keys,
+                action,
+                description,
+            } => {
+                let keys = if keys.is_empty() { "-" } else { keys };
+                row![
+                    container(label(keys, BAR_TEXT))
+                        .width(HELP_KEYS_WIDTH)
+                        .clip(true),
+                    container(label(action, LIST_NUMBER))
+                        .width(HELP_ACTION_WIDTH)
+                        .clip(true),
+                    container(label(description, TAB_TEXT))
+                        .width(Fill)
+                        .clip(true),
+                ]
+                .spacing(12)
+                .into()
+            }
+            Line::Blank => text("").into(),
+        };
+        container(content)
+            .height(HELP_ROW)
+            .width(Fill)
+            .align_y(iced::alignment::Vertical::Center)
+            .into()
+    });
+    let (top, count) = help.position();
+    let last = top.saturating_add(rows).min(count);
+    let foot = row![
+        container(label(
+            "j/k, ctrl+d/ctrl+u, g/G to scroll; q or escape to close",
+            LIST_NUMBER,
+        ))
+        .width(Fill)
+        .clip(true),
+        label(
+            &format!("{}-{last} of {count}", top.saturating_add(1)),
+            LIST_NUMBER
+        ),
+    ]
+    .spacing(12);
+    let body = Column::with_children(lines);
+    let panel = container(column![
+        body,
+        container(foot).padding(iced::Padding::ZERO.top(4))
+    ])
+    .padding(8)
+    .max_width(HELP_WIDTH)
+    .style(|_| {
+        container::background(LIST).border(iced::Border {
+            color: LIST_BORDER,
+            width: 1.0,
+            radius: 4.0.into(),
+        })
+    });
+    container(panel)
+        .center_x(Fill)
+        .center_y(Fill)
+        .padding(24)
+        .into()
 }
 
 /// The list of recent documents, drawn over the pages. The first nine are
@@ -1499,6 +1773,33 @@ impl canvas::Program<Message> for Marks<'_> {
                 frame.fill_rectangle(area.position(), area.size(), fill);
             }
         }
+        if let Some(hints) = &self.0.hints {
+            for hint in hints.shown() {
+                let Some(area) = document.reader.area_on_screen(hint.page, hint.link.area) else {
+                    continue;
+                };
+                let area = rectangle(area);
+                frame.fill_rectangle(area.position(), area.size(), LINK);
+                // The label sits on the link's top-left corner, inside the
+                // window.
+                let corner = Point::new(area.x.max(0.0), area.y.max(0.0));
+                let size = Size::new(LABEL_SIZE * 1.4, LABEL_SIZE * 1.35);
+                frame.fill_rectangle(corner, size, LABEL);
+                frame.fill_text(canvas::Text {
+                    content: hint.label.iter().collect(),
+                    position: Point::new(corner.x + size.width / 2.0, corner.y + size.height / 2.0),
+                    color: LABEL_TEXT,
+                    size: LABEL_SIZE.into(),
+                    font: Font {
+                        weight: iced::font::Weight::Bold,
+                        ..Font::MONOSPACE
+                    },
+                    align_x: iced::widget::text::Alignment::Center,
+                    align_y: iced::alignment::Vertical::Center,
+                    ..canvas::Text::default()
+                });
+            }
+        }
         vec![frame.into_geometry()]
     }
 }
@@ -1575,6 +1876,20 @@ fn jump_to(document: &mut Document, index: Option<usize>, notice: &mut Notice) {
             document.results.hits.len()
         ));
     }
+}
+
+/// Has the desktop's chosen program open a link, such as a web page in the
+/// browser, without waiting for it.
+fn open_externally(uri: &str) -> std::io::Result<()> {
+    let mut child = std::process::Command::new("xdg-open")
+        .arg(uri)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    // Collect it once it is done, so it does not linger.
+    std::thread::spawn(move || child.wait());
+    Ok(())
 }
 
 /// The index of a tab counted from 1.

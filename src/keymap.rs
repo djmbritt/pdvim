@@ -46,11 +46,15 @@ pub enum Binding {
     PreviousTab,
     Abort,
     Quit,
+    /// Show the key bindings.
+    Help,
+    /// Label the links in view, to follow one by typing its label.
+    FollowLink,
 }
 
 impl Binding {
     /// Every binding with its name.
-    const NAMES: [(Self, &'static str); 33] = [
+    const NAMES: [(Self, &'static str); 35] = [
         (Self::ScrollDown, "scroll-down"),
         (Self::ScrollUp, "scroll-up"),
         (Self::ScrollLeft, "scroll-left"),
@@ -84,11 +88,21 @@ impl Binding {
         (Self::PreviousTab, "previous-tab"),
         (Self::Abort, "abort"),
         (Self::Quit, "quit"),
+        (Self::Help, "help"),
+        (Self::FollowLink, "follow-link"),
     ];
 
     /// The names of every binding.
     pub fn names() -> impl Iterator<Item = &'static str> {
         Self::NAMES.iter().map(|(_, name)| *name)
+    }
+
+    /// The name of the binding.
+    pub fn name(self) -> &'static str {
+        Self::NAMES
+            .iter()
+            .find(|(binding, _)| *binding == self)
+            .map_or("", |(_, name)| name)
     }
 
     /// The binding with this name.
@@ -149,6 +163,8 @@ impl Binding {
             Self::PreviousTab => Action::PreviousTab(count.unwrap_or(1)),
             Self::Abort => Action::Abort,
             Self::Quit => Action::Quit,
+            Self::Help => Action::ShowHelp,
+            Self::FollowLink => Action::FollowLink,
         }
     }
 }
@@ -253,7 +269,7 @@ impl Default for Keymap {
     /// The bindings pdvim starts with.
     fn default() -> Self {
         use Binding as B;
-        const DEFAULTS: [(&str, Binding); 53] = [
+        const DEFAULTS: [(&str, Binding); 54] = [
             ("j", B::ScrollDown),
             ("down", B::ScrollDown),
             ("k", B::ScrollUp),
@@ -299,6 +315,7 @@ impl Default for Keymap {
             ("?", B::SearchBackward),
             (":", B::CommandPrompt),
             ("o", B::Recent),
+            ("f", B::FollowLink),
             ("g t", B::NextTab),
             ("ctrl+tab", B::NextTab),
             ("g T", B::PreviousTab),
@@ -350,6 +367,14 @@ impl Keymap {
             .collect();
         bindings.sort_by(|left, right| left.0.cmp(&right.0));
         bindings
+    }
+
+    /// The key sequences bound to an action, in the order they were bound.
+    pub fn keys_for(&self, binding: Binding) -> impl Iterator<Item = &[Key]> {
+        self.bindings
+            .iter()
+            .filter(move |(_, bound)| *bound == binding)
+            .map(|(keys, _)| keys.as_slice())
     }
 
     /// What a sequence of keys amounts to. A whole sequence wins over a
@@ -413,13 +438,14 @@ mod tests {
     #[test]
     fn every_default_binding_parses() {
         let keymap = Keymap::default();
-        assert_eq!(keymap.bindings.len(), 53);
+        assert_eq!(keymap.bindings.len(), 54);
     }
 
     #[test]
     fn every_binding_has_a_name_and_back() {
         for (binding, name) in Binding::NAMES {
             assert_eq!(Binding::named(name), Some(binding));
+            assert_eq!(binding.name(), name);
         }
         assert_eq!(Binding::named("fly"), None);
     }

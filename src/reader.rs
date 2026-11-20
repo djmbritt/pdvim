@@ -178,6 +178,32 @@ impl Reader {
         }
     }
 
+    /// Goes to a spot on a page, given how far down the unturned page it
+    /// is in points, and puts it at the top of the window. Without a spot,
+    /// goes to the top of the page.
+    pub fn go_to_spot(&mut self, page: u32, top: Option<f32>) {
+        self.go_to_page(page);
+        let Some(top) = top else {
+            return;
+        };
+        let spot = Rect {
+            left: 0.0,
+            top,
+            right: 0.0,
+            bottom: top,
+        };
+        // On a turned page the spot need not be near the top; it is enough
+        // that it shows.
+        if self.rotation != Rotation::None {
+            self.reveal(page, spot);
+            return;
+        }
+        if let Some(on_screen) = self.area_on_screen(page, spot) {
+            self.y += on_screen.top / self.zoom;
+            self.clamp();
+        }
+    }
+
     /// Moves to the top of the current page.
     pub fn page_top(&mut self) {
         self.go_to_page(self.current_page());
@@ -383,6 +409,25 @@ mod tests {
 
     fn reader() -> Reader {
         Reader::new(vec![PAGE; 10], WINDOW)
+    }
+
+    #[test]
+    fn a_spot_on_a_page_goes_to_the_top_of_the_window() {
+        let mut reader = reader();
+        let spot = Rect {
+            left: 0.0,
+            top: 300.0,
+            right: 0.0,
+            bottom: 300.0,
+        };
+        reader.go_to_spot(3, Some(300.0));
+        assert_eq!(reader.current_page(), 3);
+        let on_screen = reader.area_on_screen(3, spot).unwrap();
+        assert!(close(on_screen.top, 0.0), "{on_screen:?}");
+
+        reader.go_to_spot(5, None);
+        let page = reader.page_on_screen(5).unwrap();
+        assert!(close(page.top, 0.0), "{page:?}");
     }
 
     #[test]

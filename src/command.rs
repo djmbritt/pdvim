@@ -13,6 +13,8 @@ pub enum Command {
     Open(PathBuf),
     /// Show the recently read documents, to pick one to open.
     Recent,
+    /// Show the key bindings.
+    Help,
     /// Open a new tab, with a document in it or empty.
     TabOpen(Option<PathBuf>),
     /// Close the tab in view, unless it is the last.
@@ -83,7 +85,8 @@ pub enum Error {
 }
 
 /// Every command by its full name, and the shorter names it also goes by.
-const NAMES: [(&str, &[&str]); 14] = [
+const NAMES: [(&str, &[&str]); 15] = [
+    ("help", &["h"]),
     ("map", &[]),
     ("mapclear", &[]),
     ("nohlsearch", &["noh", "nohl"]),
@@ -173,6 +176,7 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
             Command::Open(expand_home(argument))
         }
         "recent" => Command::Recent,
+        "help" => Command::Help,
         "nohlsearch" => Command::NoHighlight,
         "set" => Command::Set(parse_setting(argument)?),
         // The keys may have spaces between them, so the action is the

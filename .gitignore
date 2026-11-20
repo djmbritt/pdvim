@@ -4,3 +4,4 @@
 /packaging/*.pkg.tar.*
 /TODO.md
 /dist
+/packaging/aur/PUBLISHING.md

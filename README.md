@@ -26,17 +26,29 @@ pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.r
 
 Each [release](https://github.com/djmbritt/pdvim/releases) has packages for:
 
-| Platform             | Download                                                                        |
-| -------------------- | ------------------------------------------------------------------------------- |
-| Linux, x86-64        | `pdvim_VERSION-1_amd64.deb`, or `pdvim-VERSION-x86_64-unknown-linux-gnu.tar.gz` |
-| macOS, Apple silicon | `pdvim-VERSION-aarch64-apple-darwin.dmg`, or the `.tar.gz` for the terminal     |
-| macOS, Intel         | `pdvim-VERSION-x86_64-apple-darwin.dmg`, or the `.tar.gz`                       |
-| Windows, x86-64      | `pdvim-VERSION-x86_64-pc-windows-msvc.zip`                                      |
-| Arch Linux           | build the package in [`packaging/`](packaging/) with `makepkg -si`              |
+| Platform             | Download                                                                                                                    |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Linux, x86-64        | `pdvim_VERSION-1_amd64.deb`, or `pdvim-VERSION-x86_64-unknown-linux-gnu.tar.gz`                                             |
+| macOS, Apple silicon | `pdvim-VERSION-aarch64-apple-darwin.dmg`, or the `.tar.gz` for the terminal                                                 |
+| macOS, Intel         | `pdvim-VERSION-x86_64-apple-darwin.dmg`, or the `.tar.gz`                                                                   |
+| Windows, x86-64      | `pdvim-VERSION-x86_64-pc-windows-msvc.zip`                                                                                  |
+| Arch Linux           | `yay -S pdvim` or `paru -S pdvim` from the AUR, or `makepkg -si` in [`packaging/`](packaging/) to build what is checked out |
 
 `SHA256SUMS` lists the checksum of each. The macOS app is not signed by a registered developer, so macOS refuses to open it at first: right-click it and choose Open, or run `xattr -dr com.apple.quarantine /Applications/pdvim.app`.
 
 On macOS and Windows pdvim keeps its configuration in `~/.config/pdvim` and `%APPDATA%\pdvim`, and its reading history in `~/.local/share/pdvim` and `%LOCALAPPDATA%\pdvim`.
+
+### The AUR
+
+[`packaging/aur/PKGBUILD`](packaging/aur/PKGBUILD) is the `pdvim` package on the AUR, which builds a tagged release. When a release is published on GitHub, [`.github/workflows/aur.yml`](.github/workflows/aur.yml) sets its version and checksum, builds and tests it on Arch Linux, and pushes it to the AUR. It needs the GitHub repository to be public, and an SSH key for the AUR account:
+
+```sh
+ssh-keygen -t ed25519 -N '' -C 'pdvim AUR publishing' -f ~/.ssh/aur-pdvim
+gh secret set AUR_SSH_PRIVATE_KEY < ~/.ssh/aur-pdvim
+cat ~/.ssh/aur-pdvim.pub   # add this in your AUR account, under My Account
+```
+
+The first upload makes the package yours on the AUR. After that, publishing a release on GitHub is enough. Run the workflow by hand from the Actions tab to publish a version again, with a higher `pkgrel` when only the PKGBUILD changed.
 
 ### Versions
 

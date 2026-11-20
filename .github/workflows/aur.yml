@@ -1,0 +1,92 @@
+# Publishes packaging/aur/PKGBUILD to the AUR as `pdvim` when a release is
+# published on GitHub.
+#
+# It sets pkgver to the release's version and the checksum to that of the
+# release's source tarball, builds and tests the package on Arch Linux, and
+# only then pushes PKGBUILD and .SRCINFO to the AUR. Run it by hand from
+# the Actions tab to publish a version again, with a higher pkgrel after a
+# fix to the PKGBUILD alone.
+#
+# It needs the private half of an SSH key whose public half is in the AUR
+# account, as the repository secret AUR_SSH_PRIVATE_KEY, and the GitHub
+# repository to be public, so that the AUR can download its tarballs.
+name: Publish to the AUR
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish, as in Cargo.toml (0.1.1, not v0.1.1)
+        required: true
+      pkgrel:
+        description: Package release, raised for a fix to the PKGBUILD alone
+        default: "1"
+
+permissions:
+  contents: read
+
+jobs:
+  aur:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    env:
+      VERSION: ${{ inputs.version || github.event.release.tag_name }}
+      PKGREL: ${{ inputs.pkgrel || '1' }}
+    steps:
+      - name: Install tools
+        run: pacman -Syu --noconfirm --needed git openssh pacman-contrib namcap
+
+      - uses: actions/checkout@v4
+
+      - name: Set the version
+        run: |
+          version=${VERSION#v}
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          useradd -m builder
+          mkdir /tmp/aur
+          cp packaging/aur/PKGBUILD /tmp/aur/
+          sed -i -e "s/^pkgver=.*/pkgver=$version/" -e "s/^pkgrel=.*/pkgrel=$PKGREL/" /tmp/aur/PKGBUILD
+          chown -R builder /tmp/aur
+
+      # makepkg will not run as root, and does not install what is missing
+      # without sudo, so the dependencies go in first.
+      - name: Install the package's dependencies
+        run: |
+          deps=$(su builder -c "cd /tmp/aur && makepkg --printsrcinfo" |
+            sed -n 's/^\t\(make\)\?depends = //p')
+          pacman -S --noconfirm --needed $deps
+
+      - name: Build and test the package
+        run: |
+          su builder -c "cd /tmp/aur && updpkgsums && makepkg --noconfirm && makepkg --printsrcinfo > .SRCINFO"
+          namcap /tmp/aur/PKGBUILD /tmp/aur/*.pkg.tar.zst || true
+
+      - name: Push to the AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "$AUR_SSH_PRIVATE_KEY" ]; then
+            echo "::error::the AUR_SSH_PRIVATE_KEY secret is not set"
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o IdentitiesOnly=yes"
+
+          git clone ssh://aur@aur.archlinux.org/pdvim.git /tmp/aur-repo
+          cp /tmp/aur/PKGBUILD /tmp/aur/.SRCINFO /tmp/aur-repo/
+          cd /tmp/aur-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then
+            echo "The AUR already has this PKGBUILD."
+            exit 0
+          fi
+          git commit -m "Update to $VERSION-$PKGREL"
+          git push origin HEAD:master

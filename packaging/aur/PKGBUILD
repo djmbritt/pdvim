@@ -1,0 +1,65 @@
+# Maintainer: David Britt
+#
+# The PKGBUILD published to the AUR as `pdvim`. It builds a tagged release
+# from GitHub. .github/workflows/aur.yml sets pkgver and the checksum and
+# pushes it to the AUR whenever a release is published; to try it by hand,
+# run `updpkgsums && makepkg -si` here.
+
+pkgname=pdvim
+pkgver=0.1.1
+pkgrel=1
+pkgdesc='A minimal, keyboard-driven PDF reader with vi keybindings'
+arch=('x86_64' 'aarch64')
+url='https://github.com/djmbritt/pdvim'
+license=('AGPL-3.0-or-later')
+depends=(
+  'brotli'
+  'bzip2'
+  'expat'
+  'fontconfig'
+  'freetype2'
+  'gcc-libs'
+  'glibc'
+  'hicolor-icon-theme'
+  'libpng'
+  'libxkbcommon'
+  'vulkan-icd-loader'
+  'wayland'
+  'zlib'
+)
+makedepends=('cargo' 'clang')
+# MuPDF is compiled from source by the mupdf crate; LTO objects from that C
+# build do not link cleanly into the Rust binary.
+options=('!lto' '!debug')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo test --frozen --release
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 target/release/pdvim "$pkgdir/usr/bin/pdvim"
+  install -Dm644 packaging/pdvim.desktop "$pkgdir/usr/share/applications/pdvim.desktop"
+  install -Dm644 packaging/pdvim.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/pdvim.svg"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/pdvim/README.md"
+  install -Dm644 defaults.toml "$pkgdir/usr/share/doc/pdvim/defaults.toml"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/pdvim/LICENSE"
+}

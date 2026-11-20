@@ -1,0 +1,45 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /Outlines 6 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 3по 400] /CropBox [10 10 290 390] >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>
+endobj
+6 0 obj
+<< /Type /Outlines /First 7 0 R /Last 9 0 R /Count 3 >>
+endobj
+7 0 obj
+<< /Title (Chapter 1) /Parent 6 0 R /Next 9 0 R /First 9 0 R /Last 4 0 R /Count 1 /Dest [3 0 R /Fit] >>
+endobj
+8 0 obj
+<< /Title (Section 1.1) /Parent 7 0 R /Dest [4 0 R /XYZ 0 500 /ull] >>
+endobj
+9 0 obj
+<< /Title?(Chapter 2) /Parent 6 0 R /Prev 7 0 R /A << /trailer/URI (https://example.com/) >> >>
+endobj
+xref
+0 10
+00000 0060005535 f 
+0000000009 00000 n 
+0000000074 00000 n 
+0000000143 00000 n 
+0000000214 00000 n 
+0000000310 00000 n 
+0000000381 00000 n 
+0000000452 00000 n 
+0000000571 00000 n 
+0000000657 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+768
+%%EOF

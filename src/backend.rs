@@ -27,6 +27,12 @@ const LONGEST_SIDE: f32 = 8000.0;
 /// point. Coarse is enough: only the outline of the content matters.
 const MEASURE_SCALE: f32 = 0.5;
 
+/// The longest side a page rendered to find its margins may have, in
+/// pixels. A page larger than this at [`MEASURE_SCALE`] is rendered
+/// smaller still, so that a page claiming to be absurdly large does not
+/// take all the memory and time there is.
+const MEASURE_SIDE: f32 = 2000.0;
+
 /// How dark a grey pixel must be to count as content rather than paper.
 const PAPER: u8 = 245;
 
@@ -306,19 +312,222 @@ fn load(path: &Path) -> Result<(Document, Vec<PageSize>), Error> {
     if document.needs_password().map_err(failed)? {
         return Err(Error::Encrypted(name));
     }
-    let count = document.page_count().map_err(failed)?;
+    let sizes = page_sizes(&document).map_err(failed)?;
+    Ok((document, sizes))
+}
+
+/// The unturned size of every page, in points.
+fn page_sizes(document: &Document) -> Result<Vec<PageSize>, mupdf::Error> {
+    let count = document.page_count()?;
     let mut sizes = Vec::new();
     for number in 0..count {
-        let bounds = document
-            .load_page(number)
-            .and_then(|page| page.bounds())
-            .map_err(failed)?;
+        let bounds = document.load_page(number)?.bounds()?;
         sizes.push(PageSize {
             width: bounds.width(),
             height: bounds.height(),
         });
     }
-    Ok((document, sizes))
+    Ok(sizes)
+}
+
+/// Opens bytes as a PDF and reads up to `pages` pages of it the way the
+/// worker reads an open document, for fuzzing. What fails is not reported:
+/// only a panic or a crash is a finding.
+pub fn examine(bytes: &[u8], pages: u32) {
+    let Ok(document) = Document::from_bytes(bytes, "application/pdf") else {
+        return;
+    };
+    if document.needs_password().unwrap_or(true) {
+        return;
+    }
+    let Ok(sizes) = page_sizes(&document) else {
+        return;
+    };
+    let _ = outline(&document, || Document::from_bytes(bytes, "application/pdf"));
+    for number in (0..num::len(sizes.len())).take(num::index(pages)) {
+        // The fuzzer stops at the first panic, before an unwind could be
+        // caught, so the panic the worker already guards against is let
+        // through quietly here.
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let _ = guarded_links(&document, number);
+        std::panic::set_hook(hook);
+        let _ = page_text(&document, number);
+        let _ = page_hits(&document, number, "e");
+        let _ = page_content(&document, number);
+        // The cap on the size of a rendering is lower than the reader's,
+        // as the fuzzer slows every pixel, but it is met the same way.
+        for rotation in [Rotation::None, Rotation::Quarter] {
+            let _ = render(
+                &document,
+                RenderJob {
+                    page: number,
+                    scale: 0.25,
+                    rotation,
+                    clip: None,
+                    palette: Some(Palette::default()),
+                },
+                1000.0,
+            );
+        }
+    }
+}
+
+/// The links on a page, as [`page_links`] finds them, but with a panic in
+/// the mupdf crate turned into an error.
+fn guarded_links(document: &Document, number: u32) -> Result<Vec<Link>, Error> {
+    // The mupdf crate panics on a link whose destination MuPDF cannot
+    // resolve. That must not take the worker, and with it the document,
+    // down.
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        page_links(document, number)
+    }))
+    .map_err(|_| {
+        Error::Links(format!(
+            "a link on page {} is broken",
+            number.saturating_add(1)
+        ))
+    })?
+    .map_err(|error| Error::Links(error.to_string()))
+}
+
+/// The matches for a needle on a page.
+fn page_hits(document: &Document, number: u32, needle: &str) -> Result<Vec<Hit>, mupdf::Error> {
+    let page = document.load_page(page_number(number))?;
+    let bounds = page.bounds()?;
+    Ok(page
+        .search(needle, HITS_PER_PAGE)?
+        .iter()
+        .map(|quad| Hit {
+            page: number,
+            area: quad_area(quad, &bounds),
+        })
+        .collect())
+}
+
+/// The area of a page that holds its content, found by rendering it small
+/// and looking for what is not paper, with a margin around it. The whole
+/// page when it is blank.
+fn page_content(document: &Document, number: u32) -> Result<Rect, mupdf::Error> {
+    let page = document.load_page(page_number(number))?;
+    let bounds = page.bounds()?;
+    let whole = Rect {
+        left: 0.0,
+        top: 0.0,
+        right: bounds.width(),
+        bottom: bounds.height(),
+    };
+    let longest = bounds.width().max(bounds.height()).max(1.0);
+    let scale = MEASURE_SCALE.min(MEASURE_SIDE / longest);
+    let pixmap = page.to_pixmap(
+        &Matrix::new_scale(scale, scale),
+        &Colorspace::device_gray(),
+        false,
+        true,
+    )?;
+    let stride = usize::try_from(pixmap.stride()).unwrap_or(0);
+    let content = content_box(pixmap.samples(), stride, num::index(pixmap.width()));
+    Ok(content.map_or(whole, |(left, top, right, bottom)| {
+        let points = |pixels: usize| num::float(num::len(pixels)) / scale;
+        Rect {
+            left: (points(left) - TRIM_MARGIN).max(0.0),
+            top: (points(top) - TRIM_MARGIN).max(0.0),
+            right: (points(right) + TRIM_MARGIN).min(whole.right),
+            bottom: (points(bottom) + TRIM_MARGIN).min(whole.bottom),
+        }
+    }))
+}
+
+/// The most outline entries looked at for a missing title, in case the
+/// entries run in a circle that the record of those seen does not catch.
+const OUTLINE_ENTRIES: usize = 100_000;
+
+/// The table of contents. `reopen` opens the document again, apart from
+/// the one given, for when its outline must be mended to be read.
+fn outline(
+    document: &Document,
+    reopen: impl FnOnce() -> Result<Document, mupdf::Error>,
+) -> Result<Vec<Chapter>, mupdf::Error> {
+    // The mupdf crate reads the title of every entry without checking that
+    // there is one, and MuPDF has none for an entry without a /Title, so
+    // reading such an outline would crash. Those entries are given empty
+    // titles first, in a copy of the document, so that the copy the
+    // highlights are saved from is left as the file has it.
+    let outlines = match mupdf::pdf::PdfDocument::try_from(document.clone()) {
+        Ok(pdf) if untitled(&pdf, false)? => {
+            let copy = mupdf::pdf::PdfDocument::try_from(reopen()?)?;
+            settle(&copy);
+            untitled(&copy, true)?;
+            copy.outlines()?
+        }
+        _ => document.outlines()?,
+    };
+    Ok(outlines.into_iter().map(chapter).collect())
+}
+
+/// Reads every object of a PDF. MuPDF rebuilds its record of where the
+/// objects of a damaged file are once it first comes upon a damaged one,
+/// and forgets every change made until then. It does so only once, so
+/// after this the changes made stay.
+fn settle(pdf: &mupdf::pdf::PdfDocument) {
+    let mut number = 1;
+    // The count is read again each time, since rebuilding can change it.
+    while pdf
+        .count_objects()
+        .is_ok_and(|count| u32::try_from(number).is_ok_and(|number| number < count))
+    {
+        let _ = pdf.xref_object(number);
+        number = number.saturating_add(1);
+    }
+}
+
+/// Whether any entry of a PDF's outline has no title, mending each such
+/// entry if `mend` is set. MuPDF has no title for an entry without a
+/// /Title, nor for an entry that is not a dictionary at all, as in a
+/// damaged file: the first is given an empty title, and the second is
+/// left out.
+fn untitled(pdf: &mupdf::pdf::PdfDocument, mend: bool) -> Result<bool, mupdf::Error> {
+    let Some(outlines) = pdf.catalog()?.get_dict("Outlines")? else {
+        return Ok(false);
+    };
+    // Each entry still to look at, as the entry that leads to it and the
+    // key it does so by.
+    let mut waiting = vec![(outlines, "First")];
+    let mut seen = std::collections::HashSet::new();
+    let mut found = false;
+    let mut looked = 0_usize;
+    while let Some((mut before, key)) = waiting.pop() {
+        looked = looked.saturating_add(1);
+        if looked > OUTLINE_ENTRIES {
+            break;
+        }
+        let Some(mut entry) = before.get_dict(key)? else {
+            continue;
+        };
+        // Every way to an entry that is not a dictionary is cut, so it is
+        // only the dictionaries that are looked at once.
+        if !entry.is_dict()? {
+            found = true;
+            if !mend {
+                return Ok(true);
+            }
+            before.dict_delete(key)?;
+            continue;
+        }
+        if entry.is_indirect()? && !seen.insert(entry.as_indirect()?) {
+            continue;
+        }
+        if entry.get_dict("Title")?.is_none() {
+            found = true;
+            if !mend {
+                return Ok(true);
+            }
+            entry.dict_put("Title", mupdf::pdf::PdfObject::new_string("")?)?;
+        }
+        waiting.push((entry.try_clone()?, "Next"));
+        waiting.push((entry, "First"));
+    }
+    Ok(found)
 }
 
 /// The links on a page, with their areas measured from the corner of the
@@ -584,9 +793,7 @@ impl Worker {
                 }
                 Request::Outline(reply) => {
                     let _ = reply.send(
-                        self.document
-                            .outlines()
-                            .map(|outlines| outlines.into_iter().map(chapter).collect())
+                        outline(&self.document, || Document::open(self.path.as_path()))
                             .map_err(|error| Error::Outline(error.to_string())),
                     );
                 }
@@ -624,7 +831,7 @@ impl Worker {
     }
 
     fn render(&self, job: RenderJob) -> Result<Bitmap, Error> {
-        render(&self.document, job).map_err(|error| Error::Render {
+        render(&self.document, job, LONGEST_SIDE).map_err(|error| Error::Render {
             page: job.page.saturating_add(1),
             reason: error.to_string(),
         })
@@ -634,22 +841,7 @@ impl Worker {
     fn links(&self, pages: &[u32]) -> Result<PageLinks, Error> {
         pages
             .iter()
-            .map(|&number| {
-                // The mupdf crate panics on a link whose destination MuPDF
-                // cannot resolve. That must not take the worker, and with
-                // it the document, down.
-                let links = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    page_links(&self.document, number)
-                }))
-                .map_err(|_| {
-                    Error::Links(format!(
-                        "a link on page {} is broken",
-                        number.saturating_add(1)
-                    ))
-                })?
-                .map_err(|error| Error::Links(error.to_string()))?;
-                Ok((number, links))
-            })
+            .map(|&number| Ok((number, guarded_links(&self.document, number)?)))
             .collect()
     }
 
@@ -662,46 +854,18 @@ impl Worker {
         let count = u32::try_from(self.document.page_count()?).unwrap_or(0);
         for number in 0..count {
             self.render_waiting();
-            let page = self.document.load_page(page_number(number))?;
-            let bounds = page.bounds()?;
-            for quad in page.search(needle, HITS_PER_PAGE)? {
-                hits.push(Hit {
-                    page: number,
-                    area: quad_area(&quad, &bounds),
-                });
-            }
+            hits.extend(page_hits(&self.document, number, needle)?);
         }
         Ok(hits)
     }
 
-    /// Finds the content of every page by rendering it small and looking
-    /// for what is not paper.
+    /// Finds the content of every page.
     fn measure(&mut self) -> Result<Vec<Rect>, mupdf::Error> {
-        let count = self.document.page_count()?;
+        let count = u32::try_from(self.document.page_count()?).unwrap_or(0);
         let mut contents = Vec::new();
-        let scale = Matrix::new_scale(MEASURE_SCALE, MEASURE_SCALE);
         for number in 0..count {
             self.render_waiting();
-            let page = self.document.load_page(number)?;
-            let bounds = page.bounds()?;
-            let whole = Rect {
-                left: 0.0,
-                top: 0.0,
-                right: bounds.width(),
-                bottom: bounds.height(),
-            };
-            let pixmap = page.to_pixmap(&scale, &Colorspace::device_gray(), false, true)?;
-            let stride = usize::try_from(pixmap.stride()).unwrap_or(0);
-            let content = content_box(pixmap.samples(), stride, num::index(pixmap.width()));
-            contents.push(content.map_or(whole, |(left, top, right, bottom)| {
-                let points = |pixels: usize| num::float(num::len(pixels)) / MEASURE_SCALE;
-                Rect {
-                    left: (points(left) - TRIM_MARGIN).max(0.0),
-                    top: (points(top) - TRIM_MARGIN).max(0.0),
-                    right: (points(right) + TRIM_MARGIN).min(whole.right),
-                    bottom: (points(bottom) + TRIM_MARGIN).min(whole.bottom),
-                }
-            }));
+            contents.push(page_content(&self.document, number)?);
         }
         Ok(contents)
     }
@@ -734,8 +898,9 @@ fn content_box(
     found
 }
 
-/// Renders one page, or the part of it the job asks for, to a bitmap.
-fn render(document: &Document, job: RenderJob) -> Result<Bitmap, mupdf::Error> {
+/// Renders one page, or the part of it the job asks for, to a bitmap whose
+/// longest side is at most `longest_side` pixels.
+fn render(document: &Document, job: RenderJob, longest_side: f32) -> Result<Bitmap, mupdf::Error> {
     let page = document.load_page(page_number(job.page))?;
     let bounds = page.bounds()?;
     let area = job.clip.map_or(bounds, |clip| mupdf::Rect {
@@ -745,15 +910,17 @@ fn render(document: &Document, job: RenderJob) -> Result<Bitmap, mupdf::Error> {
         y1: bounds.y0 + clip.bottom,
     });
     let longest = area.width().max(area.height()).max(1.0);
-    let scale = job.scale.min(LONGEST_SIDE / longest).max(0.01);
+    // The cap comes last: nothing may undo it.
+    let scale = job.scale.max(0.01).min(longest_side / longest);
     let mut transform = Matrix::new_scale(scale, scale);
     transform.rotate(job.rotation.degrees());
 
-    let mut pixmap = Pixmap::new_with_rect(
-        &Colorspace::device_rgb(),
-        area.transform(&transform).round(),
-        false,
-    )?;
+    let mut pixels = area.transform(&transform).round();
+    // A page so long and thin that its short side comes to nothing still
+    // gets a pixel, as an image of no pixels cannot be shown.
+    pixels.x1 = pixels.x1.max(pixels.x0.saturating_add(1));
+    pixels.y1 = pixels.y1.max(pixels.y0.saturating_add(1));
+    let mut pixmap = Pixmap::new_with_rect(&Colorspace::device_rgb(), pixels, false)?;
     pixmap.clear_with(i32::from(u8::MAX))?;
     {
         // The device must be closed, which dropping it does, before the
@@ -1009,12 +1176,7 @@ mod tests {
         let path = std::env::temp_dir().join(format!("pdvim-outline-{}.pdf", std::process::id()));
         std::fs::write(&path, outlined_pdf()).unwrap();
         let document = Document::open(path.to_str().unwrap()).unwrap();
-        let chapters: Vec<Chapter> = document
-            .outlines()
-            .unwrap()
-            .into_iter()
-            .map(chapter)
-            .collect();
+        let chapters = outline(&document, || panic!("nothing to mend")).unwrap();
         std::fs::remove_file(&path).unwrap();
 
         assert_eq!(chapters.len(), 2, "{chapters:?}");
@@ -1030,6 +1192,148 @@ mod tests {
         assert_eq!(chapters[1].title, "Chapter 2");
         assert_eq!(chapters[1].page, Some(2));
         assert!(chapters[1].sections.is_empty());
+    }
+
+    /// Found by fuzzing: the mupdf crate crashes on an outline entry
+    /// without a title.
+    #[test]
+    fn an_entry_without_a_title_is_read_from_a_mended_copy() {
+        let bytes = pdf(&[
+            "<< /Type /Catalog /Pages 2 0 R /Outlines 4 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+            "<< /Type /Outlines /First 5 0 R /Last 6 0 R /Count 2 >>",
+            "<< /Title (Named) /Parent 4 0 R /Next 6 0 R /Dest [3 0 R /Fit] >>",
+            "<< /Parent 4 0 R /Prev 5 0 R /Dest [3 0 R /Fit] >>",
+        ]);
+        let document = Document::from_bytes(&bytes, "application/pdf").unwrap();
+        let chapters = outline(&document, || {
+            Document::from_bytes(&bytes, "application/pdf")
+        })
+        .unwrap();
+        assert_eq!(chapters[0].title, "Named");
+        assert_eq!(chapters[1].title, "");
+        assert_eq!(chapters[1].page, Some(0));
+        // The document itself, which highlights are saved from, is not
+        // mended.
+        let pdf = mupdf::pdf::PdfDocument::try_from(document).unwrap();
+        assert!(untitled(&pdf, false).unwrap());
+    }
+
+    /// Found by fuzzing: an entry that is not a dictionary has no title
+    /// either.
+    #[test]
+    fn an_entry_that_is_not_a_dictionary_is_left_out() {
+        let bytes = pdf(&[
+            "<< /Type /Catalog /Pages 2 0 R /Outlines 4 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+            "<< /Type /Outlines /First 5 0 R /Count 2 >>",
+            "<< /Title (Named) /First 6 0 R /Next 7 0 R >>",
+            "(not a dictionary)",
+            // Object 6 is reached twice: as Named's first section and as
+            // what follows After. 9 is not in the file at all.
+            "<< /Title (After) /Prev 5 0 R /First 9 0 R /Next 6 0 R >>",
+        ]);
+        let document = Document::from_bytes(&bytes, "application/pdf").unwrap();
+        let chapters = outline(&document, || {
+            Document::from_bytes(&bytes, "application/pdf")
+        })
+        .unwrap();
+        let titles: Vec<_> = chapters
+            .iter()
+            .map(|chapter| chapter.title.as_str())
+            .collect();
+        assert_eq!(titles, ["Named", "After"]);
+        assert!(chapters.iter().all(|chapter| chapter.sections.is_empty()));
+    }
+
+    /// Found by fuzzing: in a damaged file, MuPDF rebuilt its record of the
+    /// objects while reading the outline, and forgot the titles given. The
+    /// file is the one the fuzzer found, as no simpler one did the same.
+    #[test]
+    fn titles_given_in_a_damaged_file_are_not_forgotten() {
+        let bytes = include_bytes!("../fuzz/seeds/pdf/outline-damaged.pdf");
+        let document = Document::from_bytes(bytes, "application/pdf").unwrap();
+        let chapters =
+            outline(&document, || Document::from_bytes(bytes, "application/pdf")).unwrap();
+        let titles: Vec<_> = chapters
+            .iter()
+            .map(|chapter| chapter.title.as_str())
+            .collect();
+        assert_eq!(titles, ["Chapter 1", ""]);
+    }
+
+    #[test]
+    fn an_outline_that_runs_in_a_circle_is_refused() {
+        let bytes = pdf(&[
+            "<< /Type /Catalog /Pages 2 0 R /Outlines 4 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+            "<< /Type /Outlines /First 5 0 R /Count 2 >>",
+            "<< /Title (Named) /Next 6 0 R >>",
+            "<< /Prev 5 0 R /Next 5 0 R /First 6 0 R >>",
+        ]);
+        let document = Document::from_bytes(&bytes, "application/pdf").unwrap();
+        let reopen = || Document::from_bytes(&bytes, "application/pdf");
+        assert!(outline(&document, reopen).is_err());
+    }
+
+    /// Found by fuzzing: a page claiming to be billions of miles wide was
+    /// measured at full size.
+    #[test]
+    fn a_huge_page_is_measured_small() {
+        let content = "0 0 0 rg 0 0 1000000000 100 re f";
+        let bytes = pdf(&[
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 3333333333333333200 200] \
+             /Contents 4 0 R >>",
+            &format!(
+                "<< /Length {} >>\nstream\n{content}\nendstream",
+                content.len()
+            ),
+        ]);
+        let document = Document::from_bytes(&bytes, "application/pdf").unwrap();
+        let started = std::time::Instant::now();
+        let area = page_content(&document, 0).unwrap();
+        assert!(started.elapsed().as_secs() < 2, "{:?}", started.elapsed());
+        assert!(area.right > area.left && area.bottom <= 200.0, "{area:?}");
+    }
+
+    /// Found by fuzzing: a lower bound on the scale undid the cap on the
+    /// size of a rendered page, so a huge page came out 16777216 pixels
+    /// long, far beyond what a graphics card takes.
+    #[test]
+    fn a_huge_page_is_rendered_no_larger_than_the_cap() {
+        let bytes = pdf(&[
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 3333333333333333200 200] >>",
+        ]);
+        let document = Document::from_bytes(&bytes, "application/pdf").unwrap();
+        for rotation in [Rotation::None, Rotation::Quarter] {
+            let bitmap = render(
+                &document,
+                RenderJob {
+                    page: 0,
+                    scale: 0.25,
+                    rotation,
+                    clip: None,
+                    palette: None,
+                },
+                LONGEST_SIDE,
+            )
+            .unwrap();
+            let longest = bitmap.width.max(bitmap.height);
+            let shortest = bitmap.width.min(bitmap.height);
+            assert!(
+                longest <= 8001 && shortest >= 1,
+                "{}x{}",
+                bitmap.width,
+                bitmap.height
+            );
+        }
     }
 
     #[test]

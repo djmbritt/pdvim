@@ -188,10 +188,15 @@ impl Visual {
             Key::Char('j') | Key::Down => self.vertical(text, times, true),
             Key::Char('k') | Key::Up => self.vertical(text, times, false),
             _ => {
+                // A motion that goes nowhere more, such as `$` once at the
+                // end, stops the count, however large.
                 for _ in 0..times {
                     let Some(moved) = self.horizontal(key, text) else {
                         break;
                     };
+                    if moved == self.cursor {
+                        break;
+                    }
                     self.cursor = moved;
                 }
                 self.goal = None;
@@ -234,8 +239,9 @@ impl Visual {
 
     /// Moves the cursor to the character searched for, the given number of
     /// times along its line, or leaves it if there are not that many. A
-    /// repeated `t` or `T` looks past the character right next to the
-    /// cursor, so that it moves on rather than stay put.
+    /// repeated `t` or `T`, and each `t` or `T` after the first of a count,
+    /// looks past the character right next to the cursor, so that it moves
+    /// on rather than stay put.
     fn find(&mut self, text: &Text, find: Find, times: u32, repeated: bool) {
         let Some(current) = line(text, self.cursor.page, self.cursor.line) else {
             return;
@@ -246,9 +252,9 @@ impl Visual {
                 .get(*index)
                 .is_some_and(|character| character.character == find.target)
         };
-        let skip = usize::from(find.till && repeated);
         let mut at = self.cursor.index;
-        for _ in 0..times {
+        for time in 0..times {
+            let skip = usize::from(find.till && (repeated || time > 0));
             let found = if find.forward {
                 (at.saturating_add(1).saturating_add(skip)..current.chars.len()).find(matches)
             } else {
@@ -663,6 +669,33 @@ mod tests {
         assert_eq!(visual.feed(Key::Char('f'), &text), Outcome::Stay);
         assert_eq!(visual.feed(Key::Escape, &text), Outcome::Stay);
         assert_eq!(visual.feed(Key::Escape, &text), Outcome::Leave);
+    }
+
+    #[test]
+    fn a_count_of_t_stops_short_of_each_in_turn() {
+        let text = text();
+        // "seven eight nine": the first e is right next to the cursor.
+        let mut visual = Visual::new(Kind::Characters, spot(2, 1, 0));
+        keys(&mut visual, &text, "2te");
+        assert_eq!(visual.cursor(), spot(2, 1, 2));
+        keys(&mut visual, &text, "$2Te");
+        assert_eq!(visual.cursor(), spot(2, 1, 4));
+    }
+
+    /// Found by fuzzing: a motion that went nowhere was still repeated the
+    /// whole count, which for a count of billions froze the window.
+    #[test]
+    fn huge_counts_stop_once_the_cursor_does() {
+        let text = text();
+        let mut visual = Visual::new(Kind::Characters, spot(2, 1, 0));
+        let started = std::time::Instant::now();
+        for motion in [
+            "$", "0", "^", "l", "h", "w", "b", "e", "te", "Te", "fe", ";", ",",
+        ] {
+            keys(&mut visual, &text, &format!("4000000000{motion}"));
+        }
+        keys(&mut visual, &text, "4000000000j4000000000k");
+        assert!(started.elapsed().as_secs() < 1, "{:?}", started.elapsed());
     }
 
     #[test]

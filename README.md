@@ -263,6 +263,15 @@ With a count, `first-page` and `last-page` go to that page, `zoom-to` zooms to t
 
 pdvim saves where you left each document in `$XDG_DATA_HOME/pdvim/history.sqlite`. If `XDG_DATA_HOME` is not set, it uses `~/.local/share/pdvim/history.sqlite`. Entries are keyed by file path.
 
+## Fuzzing
+
+`fuzz/` holds [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) targets for the parts of pdvim that read input it does not control: PDF files, the configuration file, `:` commands, key names and key presses. See [fuzz/README.md](fuzz/README.md).
+
+```sh
+cargo install cargo-fuzz
+fuzz/run.sh pdf 600     # fuzz PDF loading for ten minutes
+```
+
 ## Limitations
 
 Password-protected PDFs are not supported yet.

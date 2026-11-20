@@ -1,0 +1,10 @@
+[settings]
+recolor = "maybe"
+confirm-quit = true
+nope = 1
+
+[keys]
+"ctrl+q" = "quit"
+"g x" = "no-such-action"
+"ctrl+" = "help"
+j = ""

@@ -113,9 +113,11 @@ impl Outline {
     /// The entries that fit in this many rows, scrolled so the selected one
     /// shows.
     pub fn shown(&self, rows: usize) -> Vec<Shown<'_>> {
-        self.visible()
+        let visible = self.visible();
+        let top = self.first(&visible, rows);
+        visible
             .into_iter()
-            .skip(self.top)
+            .skip(top)
             .take(rows)
             .filter_map(|index| {
                 Some(Shown {
@@ -202,23 +204,34 @@ impl Outline {
 
     /// Scrolls so that the selected entry shows.
     fn scrolled(&mut self, rows: usize) -> Outcome {
-        let visible = self.visible();
+        self.top = self.first(&self.visible(), rows);
+        Outcome::Stay
+    }
+
+    /// The first of the visible entries to show in this many rows: where
+    /// the list was scrolled to, moved as little as keeps the selected
+    /// entry in view. The list is not scrolled to it until a key is typed,
+    /// and the window may have changed size since.
+    fn first(&self, visible: &[usize], rows: usize) -> usize {
+        let rows = rows.max(1);
         let here = visible
             .iter()
             .position(|&index| index == self.selected)
             .unwrap_or(0);
         if here < self.top {
-            self.top = here;
+            here
         } else if here >= self.top.saturating_add(rows) {
-            self.top = here.saturating_add(1).saturating_sub(rows);
+            here.saturating_add(1).saturating_sub(rows)
+        } else {
+            self.top
         }
-        Outcome::Stay
     }
 
-    /// The first entry shown, and how many show when everything open is
-    /// counted.
-    pub fn position(&self) -> (usize, usize) {
-        (self.top, self.visible().len())
+    /// The first entry shown in this many rows, and how many show when
+    /// everything open is counted.
+    pub fn position(&self, rows: usize) -> (usize, usize) {
+        let visible = self.visible();
+        (self.first(&visible, rows), visible.len())
     }
 }
 
@@ -349,13 +362,27 @@ mod tests {
         assert_eq!(outline.feed(Key::Tab, 100), Outcome::Close);
     }
 
+    /// Found by fuzzing: the entry for the page in view was selected but
+    /// scrolled out of sight until a key was typed.
+    #[test]
+    fn it_opens_scrolled_to_the_chapter_in_view() {
+        let outline = Outline::new(&book(), 21).unwrap();
+        let shown: Vec<_> = outline
+            .shown(2)
+            .iter()
+            .map(|shown| (shown.entry.title.as_str(), shown.selected))
+            .collect();
+        assert_eq!(shown, [("Two", false), ("Three", true)]);
+        assert_eq!(outline.position(2), (1, 3));
+    }
+
     #[test]
     fn the_list_scrolls_to_keep_the_selection_in_view() {
         let mut outline = Outline::new(&book(), 5).unwrap();
         // Six showing, two rows: 1.2.1 is fourth, so the list starts at 1.2.
         outline.feed(Key::Char('k'), 2);
         outline.feed(Key::Char('j'), 2);
-        assert_eq!(outline.position(), (2, 6));
+        assert_eq!(outline.position(2), (2, 6));
         let shown: Vec<_> = outline
             .shown(2)
             .iter()
@@ -364,6 +391,6 @@ mod tests {
         assert_eq!(shown, ["1.2", "1.2.1"]);
         outline.feed(Key::Char('g'), 2);
         outline.feed(Key::Char('g'), 2);
-        assert_eq!(outline.position(), (0, 6));
+        assert_eq!(outline.position(2), (0, 6));
     }
 }

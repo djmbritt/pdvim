@@ -372,6 +372,10 @@ pub struct App {
 }
 
 /// Runs the reader, opening each document given in a tab of its own.
+///
+/// # Errors
+///
+/// When the window cannot be opened.
 pub fn run(paths: Vec<PathBuf>) -> iced::Result {
     iced::application(move || App::boot(paths.clone()), App::update, App::view)
         .title(App::title)
@@ -2236,7 +2240,7 @@ fn contents(sidebar: &Outline, rows: usize) -> Element<'_, Message> {
             })
             .into()
     });
-    let (top, count) = sidebar.position();
+    let (top, count) = sidebar.position(rows);
     let last = top.saturating_add(rows).min(count);
     let heading = container(label("Contents".to_owned(), BAR_TEXT).font(Font {
         weight: iced::font::Weight::Bold,

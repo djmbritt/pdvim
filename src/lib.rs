@@ -1,0 +1,38 @@
+//! pdvim: a minimal PDF reader driven from the keyboard, in the manner of vi.
+//!
+//! The library holds the reader; `main.rs` only reads the command line.
+//!
+//! The pieces, from the inside out:
+//! - `layout` places pages in a column and `reader` scrolls and zooms over it;
+//! - `input` turns key presses into actions through the bindings in `keymap`,
+//!   and `command` parses `:` commands, which `complete` completes;
+//! - `config` reads those commands from the configuration file, and `help`
+//!   lists the bindings in force;
+//! - `backend` renders and searches documents with MuPDF on a worker thread;
+//! - `history` remembers where each document was left, and `recent` lists
+//!   the documents read lately to pick from;
+//! - `app` is the window that ties them together;
+//! - `fuzz` drives the parsers, the key handling and MuPDF with arbitrary
+//!   input, for the targets in `fuzz/`.
+
+mod app;
+mod backend;
+mod command;
+mod complete;
+mod config;
+#[doc(hidden)]
+pub mod fuzz;
+mod help;
+mod hints;
+mod history;
+mod input;
+mod keymap;
+mod layout;
+mod num;
+mod outline;
+mod reader;
+mod recent;
+mod recolor;
+mod visual;
+
+pub use app::run;

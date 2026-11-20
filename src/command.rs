@@ -7,17 +7,28 @@ use crate::recolor::{InvalidColour, Rgb};
 /// A command, parsed.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
-    /// Open a document.
+    /// Open a document in a new tab.
     Open(PathBuf),
     /// Show the recently read documents, to pick one to open.
     Recent,
+    /// Open a new tab, with a document in it or empty.
+    TabOpen(Option<PathBuf>),
+    /// Close the tab in view, unless it is the last.
+    TabClose,
+    /// Go to the next tab, or to a tab counted from 1.
+    TabNext(Option<u32>),
+    /// Go to the previous tab.
+    TabPrevious,
     /// Go to a page, counted from 1.
     Goto(u32),
     /// Change a setting.
     Set(Setting),
     /// Hide the search highlights.
     NoHighlight,
+    /// Close the tab in view, and the program with its last tab.
     Quit,
+    /// Close every tab and the program.
+    QuitAll,
 }
 
 /// A setting and its new value.
@@ -68,6 +79,22 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
         .map_or((line, ""), |(name, rest)| (name, rest.trim()));
     let command = match name {
         "q" | "quit" => Command::Quit,
+        "qa" | "qall" | "quita" | "quitall" => Command::QuitAll,
+        "tabe" | "tabedit" | "tabnew" => {
+            Command::TabOpen((!argument.is_empty()).then(|| expand_home(argument)))
+        }
+        "tabc" | "tabclose" => Command::TabClose,
+        "tabn" | "tabnext" => {
+            if argument.is_empty() {
+                Command::TabNext(None)
+            } else {
+                match argument.parse::<u32>() {
+                    Ok(tab) if tab > 0 => Command::TabNext(Some(tab)),
+                    _ => return Err(Error::NotPositive(argument.to_owned())),
+                }
+            }
+        }
+        "tabp" | "tabprevious" | "tabN" | "tabNext" => Command::TabPrevious,
         "o" | "open" => {
             if argument.is_empty() {
                 return Err(Error::MissingArgument("open"));
@@ -208,5 +235,20 @@ mod tests {
         assert_eq!(parse("noh"), Ok(Some(Command::NoHighlight)));
         assert_eq!(parse("rec"), Ok(Some(Command::Recent)));
         assert_eq!(parse("recent"), Ok(Some(Command::Recent)));
+        assert_eq!(parse("qa"), Ok(Some(Command::QuitAll)));
+    }
+
+    #[test]
+    fn tab_commands_parse() {
+        assert_eq!(parse("tabnew"), Ok(Some(Command::TabOpen(None))));
+        assert_eq!(
+            parse("tabe /tmp/a b.pdf"),
+            Ok(Some(Command::TabOpen(Some(PathBuf::from("/tmp/a b.pdf")))))
+        );
+        assert_eq!(parse("tabc"), Ok(Some(Command::TabClose)));
+        assert_eq!(parse("tabn"), Ok(Some(Command::TabNext(None))));
+        assert_eq!(parse("tabn 2"), Ok(Some(Command::TabNext(Some(2)))));
+        assert_eq!(parse("tabn 0"), Err(Error::NotPositive("0".into())));
+        assert_eq!(parse("tabp"), Ok(Some(Command::TabPrevious)));
     }
 }

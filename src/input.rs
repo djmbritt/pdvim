@@ -15,6 +15,10 @@ pub enum Key {
     Enter,
     Backspace,
     ShiftSpace,
+    /// Tab pressed with control held.
+    CtrlTab,
+    /// Tab pressed with control and shift held.
+    CtrlShiftTab,
     Up,
     Down,
     Left,
@@ -84,8 +88,15 @@ pub enum Action {
     OpenPrompt(Prompt),
     /// Show the recently read documents, to pick one to open.
     ShowRecent,
+    /// Go to the next tab, or the first after the last.
+    NextTab,
+    /// Go back a number of tabs, round to the last from the first.
+    PreviousTab(u32),
+    /// Go to a tab, counted from 1.
+    GotoTab(u32),
     /// Drop whatever is half-typed and hide search highlights.
     Abort,
+    /// Close the tab in view, and the program with its last tab.
     Quit,
 }
 
@@ -135,6 +146,8 @@ impl Pending {
     fn after_prefix(&self, prefix: char, key: Key) -> Option<Action> {
         match (prefix, key) {
             ('g', Key::Char('g')) => Some(self.count.map_or(Action::GotoFirst, Action::GotoPage)),
+            ('g', Key::Char('t')) => Some(self.count.map_or(Action::NextTab, Action::GotoTab)),
+            ('g', Key::Char('T')) => Some(Action::PreviousTab(self.count.unwrap_or(1))),
             ('z', Key::Char('i' | 'I')) => Some(Action::ZoomIn),
             ('z', Key::Char('o' | 'O')) => Some(Action::ZoomOut),
             ('z', Key::Char('0')) => Some(Action::ZoomTo(100)),
@@ -184,6 +197,8 @@ impl Pending {
             Key::Char('r') => Action::Rotate,
             Key::Ctrl('r') => Action::ToggleRecolor,
             Key::Char('t') => Action::ToggleTrim,
+            Key::CtrlTab => count.map_or(Action::NextTab, Action::GotoTab),
+            Key::CtrlShiftTab => Action::PreviousTab(count.unwrap_or(1)),
             Key::Char('n') => Action::SearchNext,
             Key::Char('N') => Action::SearchPrevious,
             Key::Char(':') => Action::OpenPrompt(Prompt::Command),
@@ -242,6 +257,23 @@ mod tests {
         assert_eq!(typed("zi"), [Action::ZoomIn]);
         assert_eq!(typed("zo"), [Action::ZoomOut]);
         assert_eq!(typed("z0"), [Action::ZoomTo(100)]);
+    }
+
+    #[test]
+    fn g_t_moves_between_tabs() {
+        assert_eq!(typed("gt"), [Action::NextTab]);
+        assert_eq!(typed("3gt"), [Action::GotoTab(3)]);
+        assert_eq!(typed("gT"), [Action::PreviousTab(1)]);
+        assert_eq!(typed("2gT"), [Action::PreviousTab(2)]);
+
+        let mut pending = Pending::default();
+        assert_eq!(pending.feed(Key::CtrlTab), Some(Action::NextTab));
+        assert_eq!(
+            pending.feed(Key::CtrlShiftTab),
+            Some(Action::PreviousTab(1))
+        );
+        assert_eq!(pending.feed(Key::Char('2')), None);
+        assert_eq!(pending.feed(Key::CtrlTab), Some(Action::GotoTab(2)));
     }
 
     #[test]

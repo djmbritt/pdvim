@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use iced::widget::canvas::{self, Canvas};
-use iced::widget::{Column, column, container, image, row, stack, text};
+use iced::widget::{Column, Row, column, container, image, row, stack, text};
 use iced::{
     Color, Element, Event, Fill, Font, Point, Rectangle, Renderer, Size, Subscription, Task, Theme,
     keyboard, mouse, window,
@@ -40,6 +40,12 @@ const LIST_SELECTED: Color = Color::from_rgb8(0x3a, 0x3a, 0x3a);
 const LIST_BORDER: Color = Color::from_rgb8(0x40, 0x40, 0x40);
 /// The colour of the number in front of each entry.
 const LIST_NUMBER: Color = Color::from_rgb8(0x80, 0x80, 0x80);
+/// The colour of the tab bar, and of the tabs not in view.
+const TABS: Color = Color::from_rgb8(0x18, 0x18, 0x18);
+/// The colour of the tab in view.
+const TAB_CURRENT: Color = Color::from_rgb8(0x30, 0x30, 0x30);
+/// The colour of the names of tabs not in view.
+const TAB_TEXT: Color = Color::from_rgb8(0x90, 0x90, 0x90);
 
 /// The size of status bar text, in pixels.
 const BAR_TEXT_SIZE: f32 = 13.0;
@@ -68,13 +74,16 @@ pub enum Message {
     Wheel(mouse::ScrollDelta),
     /// The window was asked to close.
     CloseRequested,
-    /// A document finished opening, or failed to.
+    /// A document finished opening, or failed to, for the request with
+    /// this number.
     Opened(u64, PathBuf, Result<Opened, backend::Error>),
-    /// A page finished rendering, or failed to.
+    /// A page of the document with this number finished rendering, or
+    /// failed to.
     Rendered(u64, u32, RenderKey, Result<image::Handle, backend::Error>),
-    /// A search finished, or failed.
+    /// A search in the document with this number finished, or failed.
     Found(u64, Search, Result<Vec<Hit>, backend::Error>),
-    /// The margins of every page were measured, or could not be.
+    /// The margins of every page of the document with this number were
+    /// measured, or could not be.
     Measured(u64, Result<Vec<Rect>, backend::Error>),
 }
 
@@ -111,6 +120,9 @@ struct Results {
 
 /// An open document.
 struct Document {
+    /// Tells answers meant for this document apart from those meant for
+    /// another, or for one since closed.
+    id: u64,
     path: PathBuf,
     backend: Backend,
     reader: Reader,
@@ -135,6 +147,46 @@ struct Document {
     results: Results,
 }
 
+/// A tab: a document, or none yet, and the document being opened in it.
+#[derive(Default)]
+struct Tab {
+    document: Option<Document>,
+    /// The request for the document being opened in this tab, and its
+    /// path. The document already in the tab stays until it is ready.
+    opening: Option<(u64, PathBuf)>,
+}
+
+impl Tab {
+    /// The name of the tab: the file name of its document.
+    fn name(&self) -> String {
+        let path = self
+            .document
+            .as_ref()
+            .map(|document| &document.path)
+            .or_else(|| self.opening.as_ref().map(|(_, path)| path));
+        path.and_then(|path| path.file_name()).map_or_else(
+            || "[empty]".to_owned(),
+            |name| name.to_string_lossy().into_owned(),
+        )
+    }
+
+    /// Whether this document is in the tab, or on its way.
+    fn holds(&self, path: &Path) -> bool {
+        self.document
+            .as_ref()
+            .is_some_and(|document| document.path == path)
+            || self
+                .opening
+                .as_ref()
+                .is_some_and(|(_, opening)| opening == path)
+    }
+
+    /// Whether nothing is in the tab, nor on its way.
+    const fn is_empty(&self) -> bool {
+        self.document.is_none() && self.opening.is_none()
+    }
+}
+
 /// What the bottom line says when nothing is being typed.
 enum Notice {
     None,
@@ -144,10 +196,12 @@ enum Notice {
 
 /// The state of the whole program.
 pub struct App {
-    document: Option<Document>,
-    /// Counts opened documents, so answers meant for an earlier one can be
-    /// told apart and dropped.
-    generation: u64,
+    /// The tabs, never fewer than one.
+    tabs: Vec<Tab>,
+    /// The index of the tab in view.
+    current: usize,
+    /// The last number given to a document or a request to open one.
+    last_id: u64,
     history: Option<History>,
     /// The size of the area for pages, in logical pixels.
     area: Size,
@@ -165,9 +219,9 @@ pub struct App {
     scroll_step: f32,
 }
 
-/// Runs the reader, opening a document first if one is given.
-pub fn run(path: Option<PathBuf>) -> iced::Result {
-    iced::application(move || App::boot(path.clone()), App::update, App::view)
+/// Runs the reader, opening each document given in a tab of its own.
+pub fn run(paths: Vec<PathBuf>) -> iced::Result {
+    iced::application(move || App::boot(paths.clone()), App::update, App::view)
         .title(App::title)
         .subscription(|_: &App| App::subscription())
         .theme(|_: &App| Some(Theme::Dark))
@@ -183,14 +237,15 @@ pub fn run(path: Option<PathBuf>) -> iced::Result {
 }
 
 impl App {
-    fn boot(path: Option<PathBuf>) -> (Self, Task<Message>) {
+    fn boot(paths: Vec<PathBuf>) -> (Self, Task<Message>) {
         let (history, notice) = match History::open() {
             Ok(history) => (Some(history), Notice::None),
             Err(error) => (None, Notice::Error(format!("history is off: {error}"))),
         };
         let mut app = Self {
-            document: None,
-            generation: 0,
+            tabs: vec![Tab::default()],
+            current: 0,
+            last_id: 0,
             history,
             area: Size::ZERO,
             scale_factor: 1.0,
@@ -203,18 +258,19 @@ impl App {
             scroll_step: 40.0,
         };
         // Started without a document, it offers the ones read lately.
-        let task = if let Some(path) = path {
-            app.open(path)
-        } else {
+        if paths.is_empty() {
             app.picker = Picker::new(app.recent_documents());
-            Task::none()
-        };
-        (app, task)
+        }
+        let tasks: Vec<_> = paths
+            .into_iter()
+            .map(|path| app.open_in_tab(path))
+            .collect();
+        app.current = 0;
+        (app, Task::batch(tasks))
     }
 
     fn title(&self) -> String {
-        self.document
-            .as_ref()
+        self.document()
             .and_then(|document| document.path.file_name())
             .map_or_else(
                 || "pdvim".to_owned(),
@@ -234,7 +290,7 @@ impl App {
             Message::Keyboard(event) => self.on_keyboard(event),
             Message::Resized(area) => {
                 self.area = area;
-                if let Some(document) = &mut self.document {
+                for document in self.tabs.iter_mut().filter_map(|tab| tab.document.as_mut()) {
                     document.reader.set_window((area.width, area.height));
                 }
                 // The window may have moved to a display with another scale.
@@ -253,35 +309,17 @@ impl App {
                 Task::none()
             }
             Message::CloseRequested => self.quit(),
-            Message::Opened(generation, path, result) => {
-                if generation == self.generation {
-                    self.on_opened(path, result);
-                    let trimmed = self
-                        .document
-                        .as_ref()
-                        .is_some_and(|document| document.returning.is_some());
-                    if trimmed {
-                        return Task::batch([self.set_trim(true), self.render_missing()]);
-                    }
-                }
+            Message::Opened(request, path, result) => self.on_opened(request, path, result),
+            Message::Rendered(id, page, key, result) => {
+                self.on_rendered(id, page, key, result);
                 Task::none()
             }
-            Message::Rendered(generation, page, key, result) => {
-                if generation == self.generation {
-                    self.on_rendered(page, key, result);
-                }
+            Message::Measured(id, result) => {
+                self.on_measured(id, result);
                 Task::none()
             }
-            Message::Measured(generation, result) => {
-                if generation == self.generation {
-                    self.on_measured(result);
-                }
-                Task::none()
-            }
-            Message::Found(generation, search, result) => {
-                if generation == self.generation {
-                    self.on_found(search, result);
-                }
+            Message::Found(id, search, result) => {
+                self.on_found(id, search, result);
                 Task::none()
             }
         };
@@ -326,7 +364,7 @@ impl App {
         match picker.feed(key) {
             Some(Choice::Open(path)) => {
                 self.picker = None;
-                self.open(path)
+                self.open_in_tab(path)
             }
             Some(Choice::Close) => {
                 self.picker = None;
@@ -358,7 +396,7 @@ impl App {
                 return Vec::new();
             }
         };
-        let open = self.document.as_ref().map(|document| &document.path);
+        let open = self.document().map(|document| &document.path);
         paths
             .into_iter()
             .filter(|path| Some(path) != open && path.is_file())
@@ -411,26 +449,41 @@ impl App {
 
     fn run_command(&mut self, command: Command) -> Task<Message> {
         match command {
-            Command::Quit => return self.quit(),
-            Command::Open(path) => return self.open(path),
+            Command::Quit => return self.close_tab(),
+            Command::QuitAll => return self.quit(),
+            Command::Open(path) | Command::TabOpen(Some(path)) => return self.open_in_tab(path),
             Command::Recent => self.show_recent(),
+            Command::TabOpen(None) => {
+                self.tabs.push(Tab::default());
+                self.go_to_tab(self.tabs.len().saturating_sub(1));
+                self.show_recent();
+            }
+            Command::TabClose => {
+                if self.tabs.len() > 1 {
+                    return self.close_tab();
+                }
+                self.notice = Notice::Error("cannot close the last tab".to_owned());
+            }
+            Command::TabNext(Some(tab)) => self.go_to_tab(index(tab)),
+            Command::TabNext(None) => self.step_tab(1),
+            Command::TabPrevious => self.step_tab(-1),
             Command::Goto(page) => {
-                if let Some(document) = &mut self.document {
+                if let Some(document) = self.document_mut() {
                     document.reader.go_to_page(page.saturating_sub(1));
                 }
             }
             Command::NoHighlight => {
-                if let Some(document) = &mut self.document {
+                if let Some(document) = self.document_mut() {
                     document.results.shown = false;
                 }
             }
             Command::Set(setting) => match setting {
                 Setting::Recolor(recolor) => {
-                    if let Some(document) = &mut self.document {
+                    if let Some(document) = self.document_mut() {
                         document.recolor = recolor;
                     }
                 }
-                Setting::Trim(trim) => return self.set_trim(trim),
+                Setting::Trim(trim) => return self.set_trim(self.current, trim),
                 Setting::RecolorPaper(paper) => self.palette.paper = paper,
                 Setting::RecolorInk(ink) => self.palette.ink = ink,
                 Setting::ScrollStep(step) => self.scroll_step = step,
@@ -442,7 +495,20 @@ impl App {
     /// Carries out an action from the keyboard.
     fn act(&mut self, action: Action) -> Task<Message> {
         match action {
-            Action::Quit => return self.quit(),
+            Action::Quit => return self.close_tab(),
+            Action::NextTab => {
+                self.step_tab(1);
+                return Task::none();
+            }
+            Action::PreviousTab(count) => {
+                let back = i64::from(count).saturating_neg();
+                self.step_tab(back);
+                return Task::none();
+            }
+            Action::GotoTab(tab) => {
+                self.go_to_tab(index(tab));
+                return Task::none();
+            }
             Action::OpenPrompt(prompt) => {
                 self.prompt = Some((prompt, String::new()));
                 return Task::none();
@@ -454,16 +520,13 @@ impl App {
             Action::SearchNext => return self.step_search(true),
             Action::SearchPrevious => return self.step_search(false),
             Action::ToggleTrim => {
-                let trim = self
-                    .document
-                    .as_ref()
-                    .is_some_and(|document| !document.trim);
-                return self.set_trim(trim);
+                let trim = self.document().is_some_and(|document| !document.trim);
+                return self.set_trim(self.current, trim);
             }
             _ => {}
         }
         let step = self.scroll_step;
-        let Some(document) = &mut self.document else {
+        let Some(document) = self.document_mut() else {
             return Task::none();
         };
         let reader = &mut document.reader;
@@ -490,6 +553,9 @@ impl App {
             Action::Quit
             | Action::OpenPrompt(_)
             | Action::ShowRecent
+            | Action::NextTab
+            | Action::PreviousTab(_)
+            | Action::GotoTab(_)
             | Action::SearchNext
             | Action::SearchPrevious
             | Action::ToggleTrim => {}
@@ -504,7 +570,7 @@ impl App {
             mouse::ScrollDelta::Pixels { x, y } => (-x, -y),
         };
         let zooming = self.modifiers.control();
-        let Some(document) = &mut self.document else {
+        let Some(document) = self.document_mut() else {
             return;
         };
         if !zooming {
@@ -516,33 +582,65 @@ impl App {
         }
     }
 
-    /// Starts opening a document. The one on screen stays until the new one
-    /// is ready.
-    fn open(&mut self, path: PathBuf) -> Task<Message> {
+    /// Starts opening a document in a new tab, or in the tab in view if
+    /// that is empty. A document already open, or on its way, is brought
+    /// into view instead.
+    fn open_in_tab(&mut self, path: PathBuf) -> Task<Message> {
         // The history is keyed by the real path, so that a file reached by
         // two routes is one document.
         let path = std::fs::canonicalize(&path).unwrap_or(path);
-        self.generation = self.generation.saturating_add(1);
-        let generation = self.generation;
+        if let Some(index) = self.tabs.iter().position(|tab| tab.holds(&path)) {
+            self.go_to_tab(index);
+            return Task::none();
+        }
+        if !self.tabs.get(self.current).is_some_and(Tab::is_empty) {
+            self.tabs.push(Tab::default());
+            self.go_to_tab(self.tabs.len().saturating_sub(1));
+        }
+        let request = self.next_id();
+        let Some(tab) = self.tabs.get_mut(self.current) else {
+            return Task::none();
+        };
+        tab.opening = Some((request, path.clone()));
         self.notice = Notice::Info(format!("opening {}", tilde(&path)));
         Task::perform(backend::open(path.clone()), move |result| {
-            Message::Opened(generation, path, result)
+            Message::Opened(request, path, result)
         })
     }
 
-    fn on_opened(&mut self, path: PathBuf, result: Result<Opened, backend::Error>) {
+    /// Puts a document that finished opening in the tab that asked for it.
+    fn on_opened(
+        &mut self,
+        request: u64,
+        path: PathBuf,
+        result: Result<Opened, backend::Error>,
+    ) -> Task<Message> {
+        let Some(index) = self
+            .tabs
+            .iter()
+            .position(|tab| tab.opening.as_ref().is_some_and(|(id, _)| *id == request))
+        else {
+            return Task::none();
+        };
         let opened = match result {
             Ok(opened) => opened,
             Err(error) => {
                 self.notice = Notice::Error(error.to_string());
-                return;
+                if let Some(tab) = self.tabs.get_mut(index) {
+                    tab.opening = None;
+                }
+                // A tab opened for this document alone has no use now.
+                if self.tabs.len() > 1 && self.tabs.get(index).is_some_and(Tab::is_empty) {
+                    self.remove_tab(index);
+                }
+                return Task::none();
             }
         };
-        self.remember();
-        self.notice = Notice::None;
+        let id = self.next_id();
         let mut reader = Reader::new(opened.sizes, (self.area.width, self.area.height));
         let mut recolor = false;
         let mut returning = None;
+        let mut notice = Notice::None;
         match self.history.as_ref().map(|history| history.load(&path)) {
             Some(Ok(Some(view))) => {
                 reader.restore(view);
@@ -551,10 +649,16 @@ impl App {
                 // known, so it is restored again when they are.
                 returning = view.trim.then_some(view);
             }
-            Some(Err(error)) => self.notice = Notice::Error(error.to_string()),
+            Some(Err(error)) => notice = Notice::Error(error.to_string()),
             Some(Ok(None)) | None => {}
         }
-        self.document = Some(Document {
+        let trimmed = returning.is_some();
+        let Some(tab) = self.tabs.get_mut(index) else {
+            return Task::none();
+        };
+        tab.opening = None;
+        let left = tab.document.replace(Document {
+            id,
             path,
             backend: opened.backend,
             reader,
@@ -568,15 +672,24 @@ impl App {
             failed: HashMap::new(),
             results: Results::default(),
         });
+        self.notice = notice;
+        if let Some(left) = &left {
+            self.remember(left);
+        }
+        if trimmed {
+            self.set_trim(index, true)
+        } else {
+            Task::none()
+        }
     }
 
     /// Hides or shows the blank margins of every page. The margins are
     /// measured the first time they are hidden, which takes a moment.
-    fn set_trim(&mut self, trim: bool) -> Task<Message> {
-        let generation = self.generation;
-        let Some(document) = &mut self.document else {
+    fn set_trim(&mut self, tab: usize, trim: bool) -> Task<Message> {
+        let Some(document) = self.tabs.get_mut(tab).and_then(|tab| tab.document.as_mut()) else {
             return Task::none();
         };
+        let id = document.id;
         document.trim = trim;
         if !trim {
             document.returning = None;
@@ -593,12 +706,12 @@ impl App {
         document.measuring = true;
         self.notice = Notice::Info("measuring margins".to_owned());
         Task::perform(document.backend.measure(), move |result| {
-            Message::Measured(generation, result)
+            Message::Measured(id, result)
         })
     }
 
-    fn on_measured(&mut self, result: Result<Vec<Rect>, backend::Error>) {
-        let Some(document) = &mut self.document else {
+    fn on_measured(&mut self, id: u64, result: Result<Vec<Rect>, backend::Error>) {
+        let Some(document) = document_by_id(&mut self.tabs, id) else {
             return;
         };
         document.measuring = false;
@@ -625,11 +738,12 @@ impl App {
 
     fn on_rendered(
         &mut self,
+        id: u64,
         page: u32,
         key: RenderKey,
         result: Result<image::Handle, backend::Error>,
     ) {
-        let Some(document) = &mut self.document else {
+        let Some(document) = document_by_id(&mut self.tabs, id) else {
             return;
         };
         document.rendering.remove(&page);
@@ -647,12 +761,12 @@ impl App {
     /// Asks for every page that is in view, or about to be, and is not yet
     /// rendered the way it is wanted now. Pages far from view are dropped.
     fn render_missing(&mut self) -> Task<Message> {
-        let generation = self.generation;
         let palette = self.palette;
         let scale_factor = self.scale_factor;
-        let Some(document) = &mut self.document else {
+        let Some(document) = current_document(&mut self.tabs, self.current) else {
             return Task::none();
         };
+        let id = document.id;
         if self.area.width < 1.0 || self.area.height < 1.0 {
             return Task::none();
         }
@@ -704,7 +818,7 @@ impl App {
                 let handle = result.map(|bitmap| {
                     image::Handle::from_rgba(bitmap.width, bitmap.height, bitmap.pixels)
                 });
-                Message::Rendered(generation, page, wanted, handle)
+                Message::Rendered(id, page, wanted, handle)
             }));
         }
         Task::batch(tasks)
@@ -712,10 +826,10 @@ impl App {
 
     /// Starts a search. An empty needle repeats the last one.
     fn search(&mut self, needle: &str, forward: bool) -> Task<Message> {
-        let generation = self.generation;
-        let Some(document) = &mut self.document else {
+        let Some(document) = current_document(&mut self.tabs, self.current) else {
             return Task::none();
         };
+        let id = document.id;
         let needle = if needle.is_empty() {
             match &document.results.search {
                 Some(last) => last.needle.clone(),
@@ -727,13 +841,11 @@ impl App {
         self.notice = Notice::Info(format!("searching for {needle}"));
         let finding = document.backend.search(needle.clone());
         let search = Search { needle, forward };
-        Task::perform(finding, move |result| {
-            Message::Found(generation, search, result)
-        })
+        Task::perform(finding, move |result| Message::Found(id, search, result))
     }
 
-    fn on_found(&mut self, search: Search, result: Result<Vec<Hit>, backend::Error>) {
-        let Some(document) = &mut self.document else {
+    fn on_found(&mut self, id: u64, search: Search, result: Result<Vec<Hit>, backend::Error>) {
+        let Some(document) = document_by_id(&mut self.tabs, id) else {
             return;
         };
         let hits = match result {
@@ -764,13 +876,13 @@ impl App {
             current: None,
             shown: true,
         };
-        self.jump_to(current);
+        jump_to(document, current, &mut self.notice);
     }
 
     /// Moves to the next hit in the direction of the last search, or
     /// against it.
     fn step_search(&mut self, same_direction: bool) -> Task<Message> {
-        let Some(document) = &mut self.document else {
+        let Some(document) = current_document(&mut self.tabs, self.current) else {
             return Task::none();
         };
         let results = &mut document.results;
@@ -792,34 +904,76 @@ impl App {
                 .checked_sub(1)
                 .unwrap_or_else(|| count.saturating_sub(1)),
         };
-        self.jump_to(Some(next));
+        jump_to(document, Some(next), &mut self.notice);
         Task::none()
     }
 
-    /// Makes a hit the current one and brings it into view.
-    fn jump_to(&mut self, index: Option<usize>) {
-        let Some(document) = &mut self.document else {
-            return;
-        };
-        let Some((index, hit)) =
-            index.and_then(|index| Some((index, *document.results.hits.get(index)?)))
-        else {
-            return;
-        };
-        document.results.current = Some(index);
-        document.reader.reveal(hit.page, hit.area);
-        if !matches!(self.notice, Notice::Error(_)) {
-            self.notice = Notice::Info(format!(
-                "match {} of {}",
-                index.saturating_add(1),
-                document.results.hits.len()
-            ));
-        }
+    /// The document in the tab in view.
+    fn document(&self) -> Option<&Document> {
+        self.tabs
+            .get(self.current)
+            .and_then(|tab| tab.document.as_ref())
     }
 
-    /// Records where the open document is being left.
-    fn remember(&mut self) {
-        let (Some(history), Some(document)) = (&self.history, &self.document) else {
+    fn document_mut(&mut self) -> Option<&mut Document> {
+        current_document(&mut self.tabs, self.current)
+    }
+
+    /// A number not given to any document or request before.
+    const fn next_id(&mut self) -> u64 {
+        self.last_id = self.last_id.saturating_add(1);
+        self.last_id
+    }
+
+    /// Brings a tab into view. A tab past the last brings the last.
+    fn go_to_tab(&mut self, index: usize) {
+        self.current = index.min(self.tabs.len().saturating_sub(1));
+    }
+
+    /// Moves a number of tabs forward, or back when negative, going round
+    /// from the last to the first and the other way.
+    fn step_tab(&mut self, by: i64) {
+        let count = i64::try_from(self.tabs.len()).unwrap_or(i64::MAX);
+        let current = i64::try_from(self.current).unwrap_or(0);
+        let next = current
+            .saturating_add(by)
+            .checked_rem_euclid(count)
+            .unwrap_or(0);
+        self.go_to_tab(usize::try_from(next).unwrap_or(0));
+    }
+
+    /// Closes the tab in view, and the program with its last tab.
+    fn close_tab(&mut self) -> Task<Message> {
+        if self.tabs.len() <= 1 {
+            return self.quit();
+        }
+        if let Some(document) = self
+            .tabs
+            .get_mut(self.current)
+            .and_then(|tab| tab.document.take())
+        {
+            self.remember(&document);
+        }
+        self.remove_tab(self.current);
+        Task::none()
+    }
+
+    /// Takes a tab away. The tab after it comes into view in its place, or
+    /// the one before when it was the last.
+    fn remove_tab(&mut self, index: usize) {
+        if index >= self.tabs.len() || self.tabs.len() <= 1 {
+            return;
+        }
+        self.tabs.remove(index);
+        if self.current > index {
+            self.current = self.current.saturating_sub(1);
+        }
+        self.go_to_tab(self.current);
+    }
+
+    /// Records where a document is being left.
+    fn remember(&mut self, document: &Document) {
+        let Some(history) = &self.history else {
             return;
         };
         // A view still waiting for the margins is the one to keep.
@@ -831,8 +985,16 @@ impl App {
         }
     }
 
+    /// Records where every document is being left, and closes the program.
     fn quit(&mut self) -> Task<Message> {
-        self.remember();
+        let documents: Vec<_> = self
+            .tabs
+            .iter_mut()
+            .filter_map(|tab| tab.document.take())
+            .collect();
+        for document in &documents {
+            self.remember(document);
+        }
         iced::exit()
     }
 
@@ -843,7 +1005,38 @@ impl App {
         if let Some(picker) = &self.picker {
             layers = layers.push(list(picker));
         }
-        column![layers, self.bar()].into()
+        match self.tab_bar() {
+            Some(tabs) => column![tabs, layers, self.bar()].into(),
+            None => column![layers, self.bar()].into(),
+        }
+    }
+
+    /// The line at the top naming each tab, when there is more than one.
+    fn tab_bar(&self) -> Option<Element<'_, Message>> {
+        if self.tabs.len() < 2 {
+            return None;
+        }
+        let tabs = self.tabs.iter().enumerate().map(|(index, tab)| {
+            let current = index == self.current;
+            let name = format!("{} {}", index.saturating_add(1), tab.name());
+            let label = text(name)
+                .size(BAR_TEXT_SIZE)
+                .font(Font::MONOSPACE)
+                .color(if current { BAR_TEXT } else { TAB_TEXT })
+                .wrapping(text::Wrapping::None);
+            container(label)
+                .padding([3, 8])
+                .width(Fill)
+                .clip(true)
+                .style(move |_| container::background(if current { TAB_CURRENT } else { TABS }))
+                .into()
+        });
+        Some(
+            container(Row::with_children(tabs).spacing(1))
+                .width(Fill)
+                .style(|_| container::background(BAR))
+                .into(),
+        )
     }
 
     /// The line at the bottom: the prompt while typing, otherwise a notice
@@ -863,14 +1056,13 @@ impl App {
             (None, Notice::Error(message)) => label(message.clone(), BAR_ERROR),
             (None, Notice::Info(message)) => label(message.clone(), BAR_TEXT),
             (None, Notice::None) => label(
-                self.document
-                    .as_ref()
+                self.document()
                     .map(|document| tilde(&document.path))
                     .unwrap_or_default(),
                 BAR_TEXT,
             ),
         };
-        let position = self.document.as_ref().map_or_else(String::new, |document| {
+        let position = self.document().map_or_else(String::new, |document| {
             let reader = &document.reader;
             format!(
                 "{}/{}  {}%",
@@ -987,7 +1179,7 @@ impl canvas::Program<Message> for Pages<'_> {
         let app = self.0;
         let mut frame = canvas::Frame::new(renderer, bounds.size());
         frame.fill_rectangle(Point::ORIGIN, bounds.size(), BACKDROP);
-        let Some(document) = &app.document else {
+        let Some(document) = app.document() else {
             return vec![frame.into_geometry()];
         };
         // Until a page is rendered, a blank sheet stands in for it.
@@ -1033,7 +1225,7 @@ impl canvas::Program<Message> for Marks<'_> {
         _cursor: mouse::Cursor,
     ) -> Vec<canvas::Geometry> {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
-        let Some(document) = &self.0.document else {
+        let Some(document) = self.0.document() else {
             return vec![frame.into_geometry()];
         };
         let results = &document.results;
@@ -1083,6 +1275,8 @@ fn translate(
             Named::PageDown => Some(Key::PageDown),
             Named::Home => Some(Key::Home),
             Named::End => Some(Key::End),
+            Named::Tab if modifiers.control() && modifiers.shift() => Some(Key::CtrlShiftTab),
+            Named::Tab if modifiers.control() => Some(Key::CtrlTab),
             Named::Space if modifiers.shift() => Some(Key::ShiftSpace),
             Named::Space => Some(Key::Char(' ')),
             _ => None,
@@ -1096,6 +1290,42 @@ fn translate(
             .filter(|character| !character.is_control())
             .map(Key::Char),
     }
+}
+
+/// The document in the tab in view, taking only the tabs, so that other
+/// parts of the app stay free to change alongside.
+fn current_document(tabs: &mut [Tab], current: usize) -> Option<&mut Document> {
+    tabs.get_mut(current).and_then(|tab| tab.document.as_mut())
+}
+
+/// The open document with this number, in whichever tab it is.
+fn document_by_id(tabs: &mut [Tab], id: u64) -> Option<&mut Document> {
+    tabs.iter_mut()
+        .filter_map(|tab| tab.document.as_mut())
+        .find(|document| document.id == id)
+}
+
+/// Makes a hit the current one and brings it into view.
+fn jump_to(document: &mut Document, index: Option<usize>, notice: &mut Notice) {
+    let Some((index, hit)) =
+        index.and_then(|index| Some((index, *document.results.hits.get(index)?)))
+    else {
+        return;
+    };
+    document.results.current = Some(index);
+    document.reader.reveal(hit.page, hit.area);
+    if !matches!(notice, Notice::Error(_)) {
+        *notice = Notice::Info(format!(
+            "match {} of {}",
+            index.saturating_add(1),
+            document.results.hits.len()
+        ));
+    }
+}
+
+/// The index of a tab counted from 1.
+fn index(tab: u32) -> usize {
+    usize::try_from(tab.saturating_sub(1)).unwrap_or(usize::MAX)
 }
 
 /// A count of steps as a factor.

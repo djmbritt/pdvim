@@ -13,6 +13,7 @@ pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.r
 - Trimming of blank page margins
 - Per-document memory of page, zoom, fit, and rotation, stored in SQLite
 - A list of recently read documents to reopen from
+- Tabs, with vim's `gt` / `gT`, `Ctrl-Tab` / `Ctrl-Shift-Tab`, and `:tabedit`
 
 ## Building
 
@@ -27,10 +28,12 @@ The binary is written to `target/release/pdvim`.
 ## Usage
 
 ```sh
-pdvim [FILE]
+pdvim [FILE]...
 ```
 
-If you start pdvim without a file, it shows the documents you read most recently. Pick one, or open another file with `:open`.
+Each file opens in a tab of its own. If you start pdvim without a file, it shows the documents you read most recently. Pick one, or open another file with `:open`.
+
+`:open` and the recent list put each document in a new tab, unless the tab in view is empty. A document that is already open in a tab is brought into view instead.
 
 ## Keys
 
@@ -63,6 +66,13 @@ The mouse wheel also scrolls.
 | `Ctrl-r`              | Turn recoloring on or off        |
 | `t`                   | Turn margin trimming on or off   |
 
+### Tabs
+
+| Key                                       | Action                        |
+| ----------------------------------------- | ----------------------------- |
+| `gt`, `Ctrl-Tab` / `gT`, `Ctrl-Shift-Tab` | Go to the next / previous tab |
+| `{n}gt`, `{n}Ctrl-Tab`                    | Go to tab _n_                 |
+
 ### Search and prompt
 
 | Key                       | Action                                                 |
@@ -72,22 +82,27 @@ The mouse wheel also scrolls.
 | `:`                       | Open the command prompt                                |
 | `o`                       | Show recent documents                                  |
 | `Esc`, `Ctrl-c`, `Ctrl-[` | Cancel a half-typed command and hide search highlights |
-| `q`                       | Quit                                                   |
+| `q`                       | Close the tab, and quit after the last one             |
 
 ## Commands
 
-| Command                           | Action                                                               |
-| --------------------------------- | -------------------------------------------------------------------- |
-| `:{n}`                            | Go to page _n_                                                       |
-| `:o[pen] {file}`                  | Open a document (`~` expands to your home directory)                 |
-| `:rec[ent]`                       | Show recent documents                                                |
-| `:noh[lsearch]`                   | Hide search highlights                                               |
-| `:set recolor [true\|false]`      | Turn recoloring on or off                                            |
-| `:set trim [true\|false]`         | Turn margin trimming on or off                                       |
-| `:set recolor-lightcolor #rrggbb` | Set the color white paper becomes when recolored (default `#1a1a1a`) |
-| `:set recolor-darkcolor #rrggbb`  | Set the color black ink becomes when recolored (default `#dddddd`)   |
-| `:set scroll-step {pixels}`       | Set how far one `j` or `k` scrolls                                   |
-| `:q[uit]`                         | Quit                                                                 |
+| Command                               | Action                                                               |
+| ------------------------------------- | -------------------------------------------------------------------- |
+| `:{n}`                                | Go to page _n_                                                       |
+| `:o[pen] {file}`                      | Open a document in a new tab (`~` expands to your home directory)    |
+| `:rec[ent]`                           | Show recent documents                                                |
+| `:noh[lsearch]`                       | Hide search highlights                                               |
+| `:set recolor [true\|false]`          | Turn recoloring on or off                                            |
+| `:set trim [true\|false]`             | Turn margin trimming on or off                                       |
+| `:set recolor-lightcolor #rrggbb`     | Set the color white paper becomes when recolored (default `#1a1a1a`) |
+| `:set recolor-darkcolor #rrggbb`      | Set the color black ink becomes when recolored (default `#dddddd`)   |
+| `:set scroll-step {pixels}`           | Set how far one `j` or `k` scrolls                                   |
+| `:tabe[dit] {file}`, `:tabnew [file]` | Open a document in a new tab, or open an empty tab                   |
+| `:tabn[ext] [n]`                      | Go to the next tab, or to tab _n_                                    |
+| `:tabp[revious]`                      | Go to the previous tab                                               |
+| `:tabc[lose]`                         | Close the tab, unless it is the last                                 |
+| `:q[uit]`                             | Close the tab, and quit after the last one                           |
+| `:qa[ll]`                             | Quit                                                                 |
 
 If you name a boolean setting without a value, it is turned on.
 
@@ -95,13 +110,13 @@ If you name a boolean setting without a value, it is turned on.
 
 `o` or `:recent` lists up to 20 documents you read before, the most recent first. The open document and files that no longer exist are left out.
 
-| Key                                        | Action                        |
-| ------------------------------------------ | ----------------------------- |
-| `j` / `k`, arrow keys, `Ctrl-n` / `Ctrl-p` | Move the selection down / up  |
-| `gg`, `Home` / `G`, `End`                  | Select the first / last entry |
-| `Enter`, `l`, `o`                          | Open the selected document    |
-| `1`–`9`                                    | Open that entry               |
-| `Esc`, `Ctrl-c`, `q`                       | Close the list                |
+| Key                                        | Action                                  |
+| ------------------------------------------ | --------------------------------------- |
+| `j` / `k`, arrow keys, `Ctrl-n` / `Ctrl-p` | Move the selection down / up            |
+| `gg`, `Home` / `G`, `End`                  | Select the first / last entry           |
+| `Enter`, `l`, `o`                          | Open the selected document in a new tab |
+| `1`–`9`                                    | Open that entry in a new tab            |
+| `Esc`, `Ctrl-c`, `q`                       | Close the list                          |
 
 ## Reading history
 

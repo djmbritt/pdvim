@@ -22,20 +22,18 @@ mod recolor;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: pdvim [FILE]";
+const USAGE: &str = "usage: pdvim [FILE]...";
 
 fn main() -> ExitCode {
-    let mut arguments = std::env::args_os().skip(1);
-    let path = arguments.next().map(PathBuf::from);
-    if arguments.next().is_some() {
-        eprintln!("{USAGE}");
-        return ExitCode::from(2);
-    }
-    if path.as_deref().is_some_and(|path| path.starts_with("-")) {
+    let paths: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
+    if paths
+        .iter()
+        .any(|path| path.as_os_str().as_encoded_bytes().starts_with(b"-"))
+    {
         println!("{USAGE}");
         return ExitCode::SUCCESS;
     }
-    match app::run(path) {
+    match app::run(paths) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("pdvim: {error}");

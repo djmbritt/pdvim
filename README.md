@@ -10,6 +10,7 @@ pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.r
 - Search forwards and backwards with `/` and `?`, then jump between matches with `n` and `N`
 - Zoom, fit to width, fit to page, and rotate
 - Recoloring for dark backgrounds, with colors you choose (like Zathura's `recolor`), following the system's light or dark theme by default
+- Themes, including the four [Catppuccin](https://catppuccin.com) flavors, for the bars, lists and recolored pages
 - Trimming of blank page margins
 - Per-document memory of page, zoom, fit, and rotation, stored in SQLite
 - A list of recently read documents to reopen from
@@ -142,8 +143,11 @@ A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t
 | `:noh[lsearch]`                        | Hide search highlights                                               |
 | `:set recolor [true\|false\|auto]`     | Turn recoloring on or off, or follow the system's theme (default)    |
 | `:set trim [true\|false]`              | Turn margin trimming on or off                                       |
-| `:set recolor-lightcolor #rrggbb`      | Set the color white paper becomes when recolored (default `#1a1a1a`) |
-| `:set recolor-darkcolor #rrggbb`       | Set the color black ink becomes when recolored (default `#dddddd`)   |
+| `:set recolor-lightcolor #rrggbb`      | Set the color white paper becomes when recolored (default: theme's)  |
+| `:set recolor-darkcolor #rrggbb`       | Set the color black ink becomes when recolored (default: theme's)    |
+| `:set theme {name}\|auto`              | Set the theme, or follow the system's light or dark theme (default)  |
+| `:set theme-dark {name}`               | Set the theme followed while the system is dark                      |
+| `:set theme-light {name}`              | Set the theme followed while the system is light                     |
 | `:set scroll-step {pixels}`            | Set how far one `j` or `k` scrolls                                   |
 | `:set confirm-quit [true\|false]`      | Ask before quitting (default on)                                     |
 | `:set confirm-tab-close [true\|false]` | Ask before closing a tab while others are open (default on)          |
@@ -198,8 +202,8 @@ recolor = true
 trim = true
 scroll-step = 60
 confirm-quit = true
-recolor-lightcolor = "#1a1a1a"
-recolor-darkcolor = "#dddddd"
+# Always Catppuccin Macchiato, whatever the system's theme.
+theme = "catppuccin-macchiato"
 
 [keys.normal]
 # Move between tabs with Ctrl-n and Ctrl-p.
@@ -214,7 +218,9 @@ recolor-darkcolor = "#dddddd"
 "Y" = "yank"
 ```
 
-`[settings]` takes the same names and values as `:set`. With `confirm-quit` on, as it is by default, pdvim asks `quit pdvim? (y/n)` before quitting: when you close the last tab, use `:qa`, or close the window. Press `y` to quit, or any other key to stay. If the window is closed again while pdvim is asking, for example by a window manager that insists, it quits without asking. With `confirm-tab-close` on, also the default, pdvim asks `close tab {name}? (y/n)` before closing a tab with `q`, `:q`, or `:tabclose` while other tabs are open. Closing the last tab quits pdvim, so `confirm-quit` decides whether that asks. `recolor` is `"auto"` by default: pdvim recolors every document while the system prefers a dark theme, shows them as printed while it prefers a light one, and changes as soon as the system does. The tab bar, status bar and lists turn light or dark with it, whatever `recolor` is set to. pdvim reads the preference from the desktop's color-scheme setting (`org.freedesktop.appearance` through the desktop portal on Linux). `R` still turns recoloring on or off for the document in view, until the system's theme changes again. With `recolor` set to `true` or `false`, it and `trim` decide how a document starts the first time you open it. After that, the document is restored the way you left it.
+`[settings]` takes the same names and values as `:set`. With `confirm-quit` on, as it is by default, pdvim asks `quit pdvim? (y/n)` before quitting: when you close the last tab, use `:qa`, or close the window. Press `y` to quit, or any other key to stay. If the window is closed again while pdvim is asking, for example by a window manager that insists, it quits without asking. With `confirm-tab-close` on, also the default, pdvim asks `close tab {name}? (y/n)` before closing a tab with `q`, `:q`, or `:tabclose` while other tabs are open. Closing the last tab quits pdvim, so `confirm-quit` decides whether that asks. `recolor` is `"auto"` by default: pdvim recolors every document while the system prefers a dark theme, shows them as printed while it prefers a light one, and changes as soon as the system does. pdvim reads the preference from the desktop's color-scheme setting (`org.freedesktop.appearance` through the desktop portal on Linux). `R` still turns recoloring on or off for the document in view, until the system's theme changes again. With `recolor` set to `true` or `false`, it and `trim` decide how a document starts the first time you open it. After that, the document is restored the way you left it.
+
+`theme` sets the colors of the tab bar, the status bar, the lists and the backdrop behind the pages, and the colors pages are recolored in unless `recolor-lightcolor` and `recolor-darkcolor` set their own. The themes are `catppuccin-latte` (light), `catppuccin-frappe`, `catppuccin-macchiato`, `catppuccin-mocha`, `pdvim-dark` and `pdvim-light`. With `theme = "auto"`, the default, pdvim uses `theme-dark` (`catppuccin-mocha`) while the system prefers a dark theme and `theme-light` (`catppuccin-latte`) while it prefers a light one, whatever `recolor` is set to.
 
 `[keys.<mode>]` binds keys to that mode's actions, on top of the default keys. Bind keys to `"none"` to remove a default. Keys put straight in `[keys]` are bound in normal mode, as before modes could be configured. The modes are:
 

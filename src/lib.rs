@@ -34,6 +34,7 @@ mod outline;
 mod reader;
 mod recent;
 mod recolor;
+mod theme;
 mod visual;
 
 pub use app::run;

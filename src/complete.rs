@@ -9,6 +9,7 @@ use crate::bindings::Mode;
 use crate::command;
 use crate::input::Binding;
 use crate::keymap::Bindable;
+use crate::theme::Theme;
 
 /// The kinds of file offered after `open`: the documents pdvim reads. MuPDF
 /// is built with PDF only, so other kinds would not open.
@@ -77,6 +78,9 @@ pub fn complete(line: &str) -> Completion {
                 words(last_word, ["true", "false"])
             }
             Some("recolor") => words(last_word, ["true", "false", "auto"]),
+            Some("theme") => words(last_word, std::iter::once("auto").chain(Theme::names())),
+            Some("theme-dark" | "theme-light") => words(last_word, Theme::names()),
+            Some("recolor-darkcolor" | "recolor-lightcolor") => words(last_word, ["theme"]),
             _ => Vec::new(),
         },
         // A mode may come first.

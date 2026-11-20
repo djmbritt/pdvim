@@ -21,11 +21,23 @@ recolor = "auto"
 # Hide the blank margins of pages.
 trim = false
 
-# The color white paper becomes when recolored.
-recolor-lightcolor = "#1a1a1a"
+# The theme: the colors of the tab bar, the status bar, the lists and the
+# backdrop behind the pages, and the colors pages are recolored in. "auto"
+# follows the system's light or dark theme, using theme-dark while it is
+# dark and theme-light while it is light. The themes are pdvim-dark,
+# pdvim-light, catppuccin-latte (light), catppuccin-frappe,
+# catppuccin-macchiato and catppuccin-mocha.
+theme = "auto"
+theme-dark = "catppuccin-mocha"
+theme-light = "catppuccin-latte"
 
-# The color black ink becomes when recolored.
-recolor-darkcolor = "#dddddd"
+# The color white paper becomes when recolored, as #rrggbb, or "theme" for
+# the theme's background color.
+recolor-lightcolor = "theme"
+
+# The color black ink becomes when recolored, as #rrggbb, or "theme" for
+# the theme's text color.
+recolor-darkcolor = "theme"
 
 # How far one press of `j` or `k` scrolls, in pixels.
 scroll-step = 40

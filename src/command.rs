@@ -6,6 +6,7 @@ use crate::bindings::{Bound, Mode};
 use crate::input::{Binding, Key};
 use crate::keymap::{self, Bindable};
 use crate::recolor::{InvalidColour, Rgb};
+use crate::theme::Theme;
 
 /// A command, parsed.
 #[derive(Debug, Clone, PartialEq)]
@@ -52,12 +53,19 @@ pub enum Setting {
     Recolor(Recolor),
     /// Whether the blank margins of pages are hidden.
     Trim(bool),
-    /// What light colours such as white paper become when recoloured. Named
-    /// `recolor-lightcolor`, as in Zathura.
-    RecolorPaper(Rgb),
-    /// What dark colours such as black ink become when recoloured. Named
-    /// `recolor-darkcolor`, as in Zathura.
-    RecolorInk(Rgb),
+    /// What light colours such as white paper become when recoloured, or
+    /// the theme's colour. Named `recolor-lightcolor`, as in Zathura.
+    RecolorPaper(Option<Rgb>),
+    /// What dark colours such as black ink become when recoloured, or the
+    /// theme's colour. Named `recolor-darkcolor`, as in Zathura.
+    RecolorInk(Option<Rgb>),
+    /// The theme, or none to follow the system's: `theme-dark` while it is
+    /// dark, `theme-light` while it is light.
+    Theme(Option<Theme>),
+    /// The theme while the system's is dark, when following it.
+    ThemeDark(Theme),
+    /// The theme while the system's is light, when following it.
+    ThemeLight(Theme),
     /// How far one press of `j` scrolls, in pixels.
     ScrollStep(f32),
     /// Whether to ask before quitting.
@@ -91,6 +99,8 @@ pub enum Error {
     NotBoolean(String),
     #[error("`{0}` is not true, false or auto")]
     NotRecolor(String),
+    #[error("unknown theme: {0}")]
+    UnknownTheme(String),
     #[error("`{0}` is not a positive number")]
     NotPositive(String),
     #[error(transparent)]
@@ -132,7 +142,7 @@ pub fn canonical(name: &str) -> Option<&'static str> {
 }
 
 /// The names of the settings `:set` knows.
-pub const SETTINGS: [&str; 8] = [
+pub const SETTINGS: [&str; 11] = [
     "confirm-quit",
     "confirm-tab-close",
     "highlight-color",
@@ -140,6 +150,9 @@ pub const SETTINGS: [&str; 8] = [
     "recolor-darkcolor",
     "recolor-lightcolor",
     "scroll-step",
+    "theme",
+    "theme-dark",
+    "theme-light",
     "trim",
 ];
 
@@ -258,8 +271,12 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
             },
         },
         "trim" => parse_switch(value).map(Setting::Trim),
-        "recolor-darkcolor" => Ok(Setting::RecolorInk(value.parse()?)),
-        "recolor-lightcolor" => Ok(Setting::RecolorPaper(value.parse()?)),
+        "recolor-darkcolor" => Ok(Setting::RecolorInk(themed(value)?)),
+        "recolor-lightcolor" => Ok(Setting::RecolorPaper(themed(value)?)),
+        "theme" if value == "auto" => Ok(Setting::Theme(None)),
+        "theme" => theme(value).map(|theme| Setting::Theme(Some(theme))),
+        "theme-dark" => theme(value).map(Setting::ThemeDark),
+        "theme-light" => theme(value).map(Setting::ThemeLight),
         "confirm-quit" => parse_switch(value).map(Setting::ConfirmQuit),
         "confirm-tab-close" => parse_switch(value).map(Setting::ConfirmTabClose),
         "highlight-color" => Ok(Setting::HighlightColour(value.parse()?)),
@@ -269,6 +286,19 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
         },
         other => Err(Error::UnknownSetting(other.to_owned())),
     }
+}
+
+/// Parses a colour, or `theme` for the theme's.
+fn themed(value: &str) -> Result<Option<Rgb>, Error> {
+    if value == "theme" {
+        return Ok(None);
+    }
+    Ok(Some(value.parse()?))
+}
+
+/// Parses the name of a theme.
+fn theme(value: &str) -> Result<Theme, Error> {
+    Theme::named(value).ok_or_else(|| Error::UnknownTheme(value.to_owned()))
 }
 
 /// Parses the value of a boolean setting. Named alone, it is switched on.
@@ -331,9 +361,31 @@ mod tests {
         );
         assert_eq!(
             parse("set recolor-darkcolor #102030"),
-            Ok(Some(Command::Set(Setting::RecolorInk(Rgb(
+            Ok(Some(Command::Set(Setting::RecolorInk(Some(Rgb(
                 0x10, 0x20, 0x30
+            ))))))
+        );
+        assert_eq!(
+            parse("set recolor-darkcolor theme"),
+            Ok(Some(Command::Set(Setting::RecolorInk(None))))
+        );
+        assert_eq!(
+            parse("set theme catppuccin-frappe"),
+            Ok(Some(Command::Set(Setting::Theme(Some(
+                Theme::CatppuccinFrappe
             )))))
+        );
+        assert_eq!(
+            parse("set theme auto"),
+            Ok(Some(Command::Set(Setting::Theme(None))))
+        );
+        assert_eq!(
+            parse("set theme-light pdvim-light"),
+            Ok(Some(Command::Set(Setting::ThemeLight(Theme::PdvimLight))))
+        );
+        assert_eq!(
+            parse("set theme-dark auto"),
+            Err(Error::UnknownTheme("auto".into()))
         );
         assert_eq!(
             parse("set trim"),

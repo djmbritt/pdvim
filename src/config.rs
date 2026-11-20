@@ -183,7 +183,7 @@ mod tests {
             [
                 Command::Set(Setting::ScrollStep(60.0)),
                 Command::Set(Setting::Recolor(Recolor::On)),
-                Command::Set(Setting::RecolorInk(Rgb(0x10, 0x20, 0x30))),
+                Command::Set(Setting::RecolorInk(Some(Rgb(0x10, 0x20, 0x30)))),
                 Command::Map(vec![Key::Ctrl('n')], Bound::Normal(Binding::NextTab)),
                 Command::Unmap(Mode::Normal, vec![Key::Char('g'), Key::Char('g')]),
                 Command::Map(vec![Key::Char('Y')], Bound::Visual(visual::Binding::Yank)),

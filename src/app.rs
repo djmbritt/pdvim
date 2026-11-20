@@ -26,60 +26,8 @@ use crate::outline::{self, Outline};
 use crate::reader::Reader;
 use crate::recent::{self, Choice, Picker};
 use crate::recolor::{Palette, Rgb};
+use crate::theme::{self, Colours};
 use crate::visual::{self, Kind, Spot, Visual};
-
-/// The colours of everything around the pages: the bars, the lists and
-/// the backdrop. They follow the system's light or dark theme.
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Chrome {
-    /// The colour behind the pages.
-    backdrop: Color,
-    /// The status bar, its text, and an error in it.
-    bar: Color,
-    bar_text: Color,
-    bar_error: Color,
-    /// The lists over the pages: their background, the selected entry,
-    /// their frame, and quieter text such as numbers and hints.
-    list: Color,
-    list_selected: Color,
-    list_border: Color,
-    list_number: Color,
-    /// The tab bar and the tabs not in view, the tab in view, and the
-    /// names of tabs not in view.
-    tabs: Color,
-    tab_current: Color,
-    tab_text: Color,
-}
-
-impl Chrome {
-    const DARK: Self = Self {
-        backdrop: Color::from_rgb8(0x10, 0x10, 0x10),
-        bar: Color::from_rgb8(0x20, 0x20, 0x20),
-        bar_text: Color::from_rgb8(0xd0, 0xd0, 0xd0),
-        bar_error: Color::from_rgb8(0xff, 0x6b, 0x6b),
-        list: Color::from_rgb8(0x1a, 0x1a, 0x1a),
-        list_selected: Color::from_rgb8(0x3a, 0x3a, 0x3a),
-        list_border: Color::from_rgb8(0x40, 0x40, 0x40),
-        list_number: Color::from_rgb8(0x80, 0x80, 0x80),
-        tabs: Color::from_rgb8(0x18, 0x18, 0x18),
-        tab_current: Color::from_rgb8(0x30, 0x30, 0x30),
-        tab_text: Color::from_rgb8(0x90, 0x90, 0x90),
-    };
-
-    const LIGHT: Self = Self {
-        backdrop: Color::from_rgb8(0xd4, 0xd4, 0xd4),
-        bar: Color::from_rgb8(0xe8, 0xe8, 0xe8),
-        bar_text: Color::from_rgb8(0x20, 0x20, 0x20),
-        bar_error: Color::from_rgb8(0xc0, 0x1c, 0x1c),
-        list: Color::from_rgb8(0xf6, 0xf6, 0xf6),
-        list_selected: Color::from_rgb8(0xd6, 0xd6, 0xd6),
-        list_border: Color::from_rgb8(0xb4, 0xb4, 0xb4),
-        list_number: Color::from_rgb8(0x6a, 0x6a, 0x6a),
-        tabs: Color::from_rgb8(0xdc, 0xdc, 0xdc),
-        tab_current: Color::from_rgb8(0xfa, 0xfa, 0xfa),
-        tab_text: Color::from_rgb8(0x5a, 0x5a, 0x5a),
-    };
-}
 
 /// The colour laid over every search result.
 const HIT: Color = Color::from_rgba8(0xff, 0xd0, 0x00, 0.35);
@@ -387,7 +335,15 @@ pub struct App {
     /// The selection, in visual mode.
     visual: Option<Visual>,
     notice: Notice,
-    palette: Palette,
+    /// What recoloured paper and ink become, when set rather than taken
+    /// from the theme.
+    paper: Option<Rgb>,
+    ink: Option<Rgb>,
+    /// The theme, when set rather than following the system's.
+    theme: Option<theme::Theme>,
+    /// The themes followed while the system's is dark, and light.
+    theme_dark: theme::Theme,
+    theme_light: theme::Theme,
     /// The colour text is highlighted in.
     highlight_colour: Rgb,
     /// How far one press of `j` scrolls, in logical pixels.
@@ -458,7 +414,11 @@ impl App {
             lines_wanted: None,
             visual: None,
             notice,
-            palette: Palette::default(),
+            paper: None,
+            ink: None,
+            theme: None,
+            theme_dark: theme::Theme::PdvimDark,
+            theme_light: theme::Theme::PdvimLight,
             highlight_colour: Rgb(0xff, 0xff, 0x00),
             scroll_step: 40.0,
             fresh: Fresh::default(),
@@ -1365,8 +1325,11 @@ impl App {
                     }
                     self.fresh.trim = trim;
                 }
-                Setting::RecolorPaper(paper) => self.palette.paper = paper,
-                Setting::RecolorInk(ink) => self.palette.ink = ink,
+                Setting::RecolorPaper(paper) => self.paper = paper,
+                Setting::RecolorInk(ink) => self.ink = ink,
+                Setting::Theme(theme) => self.theme = theme,
+                Setting::ThemeDark(theme) => self.theme_dark = theme,
+                Setting::ThemeLight(theme) => self.theme_light = theme,
                 Setting::HighlightColour(colour) => self.highlight_colour = colour,
                 Setting::ScrollStep(step) => self.scroll_step = step,
                 Setting::ConfirmQuit(confirm) => self.confirm_quit = confirm,
@@ -1694,7 +1657,7 @@ impl App {
     /// Asks for every page that is in view, or about to be, and is not yet
     /// rendered the way it is wanted now. Pages far from view are dropped.
     fn render_missing(&mut self) -> Task<Message> {
-        let palette = self.palette;
+        let palette = self.palette();
         let scale_factor = self.scale_factor;
         let Some(document) = current_document(&mut self.tabs, self.current) else {
             return Task::none();
@@ -1959,22 +1922,34 @@ impl App {
         iced::exit()
     }
 
-    /// The colours around the pages: light while the system prefers a
-    /// light theme, dark otherwise.
-    fn chrome(&self) -> Chrome {
-        if self.system_dark == Some(false) {
-            Chrome::LIGHT
+    /// The theme in force: the one set, or the one for the system's
+    /// theme, dark unless it is known to be light.
+    fn current_theme(&self) -> theme::Theme {
+        let followed = if self.system_dark == Some(false) {
+            self.theme_light
         } else {
-            Chrome::DARK
-        }
+            self.theme_dark
+        };
+        self.theme.unwrap_or(followed)
     }
 
-    /// The theme for what is not given colours of its own.
+    /// The colours around the pages.
+    fn chrome(&self) -> Colours {
+        *self.current_theme().colours()
+    }
+
+    /// The iced theme, for what is not given colours of its own.
     fn theme(&self) -> Theme {
-        if self.system_dark == Some(false) {
-            Theme::Light
-        } else {
-            Theme::Dark
+        self.current_theme().iced()
+    }
+
+    /// What recoloured pages are drawn in: the colours set, or the
+    /// theme's.
+    fn palette(&self) -> Palette {
+        let themed = self.current_theme().colours().recolor;
+        Palette {
+            paper: self.paper.unwrap_or(themed.paper),
+            ink: self.ink.unwrap_or(themed.ink),
         }
     }
 
@@ -2217,7 +2192,7 @@ fn narrowed(line: &str) -> Option<Completing> {
 
 /// The completions on offer, in a band over the bottom of the pages. A
 /// long list is shown a part at a time, the part with the selected one.
-fn completions(completing: &Completing, chrome: Chrome) -> Element<'_, Message> {
+fn completions(completing: &Completing, chrome: Colours) -> Element<'_, Message> {
     let selected = completing.selected;
     let first = selected.map_or(0, |index| {
         index
@@ -2277,7 +2252,7 @@ fn completions(completing: &Completing, chrome: Chrome) -> Element<'_, Message> 
 fn cheat_sheet<'a>(
     help: &'a Help,
     keymaps: &Keymaps,
-    chrome: Chrome,
+    chrome: Colours,
     rows: usize,
 ) -> Element<'a, Message> {
     let label = |content: &str, colour: Color| {
@@ -2376,7 +2351,7 @@ fn cheat_sheet<'a>(
 fn contents<'a>(
     sidebar: &'a Outline,
     keymaps: &Keymaps,
-    chrome: Chrome,
+    chrome: Colours,
     rows: usize,
 ) -> Element<'a, Message> {
     let label = |content: String, colour: Color| {
@@ -2470,7 +2445,7 @@ fn contents<'a>(
 
 /// The list of recent documents, drawn over the pages. The first nine are
 /// numbered, for the digit that opens each.
-fn list(picker: &Picker, chrome: Chrome) -> Element<'_, Message> {
+fn list(picker: &Picker, chrome: Colours) -> Element<'_, Message> {
     let label = |content: String, colour: Color| {
         text(content)
             .size(LIST_TEXT_SIZE)
@@ -2567,7 +2542,7 @@ impl canvas::Program<Message> for Pages<'_> {
         };
         // Until a page is rendered, a blank sheet stands in for it.
         let paper = if document.recolor {
-            colour(app.palette.paper)
+            colour(app.palette().paper)
         } else {
             Color::WHITE
         };

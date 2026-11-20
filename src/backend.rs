@@ -53,6 +53,8 @@ pub enum Error {
     Links(String),
     #[error("cannot read the text: {0}")]
     Text(String),
+    #[error("cannot highlight: {0}")]
+    Highlight(String),
     #[error("the document was closed")]
     Closed,
 }
@@ -142,6 +144,21 @@ enum Request {
     Measure(oneshot::Sender<Result<Vec<Rect>, Error>>),
     Links(Vec<u32>, oneshot::Sender<Result<PageLinks, Error>>),
     Text(Vec<u32>, oneshot::Sender<Result<PageText, Error>>),
+    Highlight(Highlight, oneshot::Sender<Result<Vec<Annotation>, Error>>),
+    Unhighlight(Vec<Annotation>, oneshot::Sender<Result<(), Error>>),
+}
+
+/// An annotation pdvim added to a page: the page, counted from 0, and the
+/// number of the annotation's object in the file.
+pub type Annotation = (u32, i32);
+
+/// Text to highlight in the file, and in what colour.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Highlight {
+    /// The pages, counted from 0, each with the areas to cover on it, one
+    /// to a line of text, on the unturned page in points.
+    pub pages: Vec<(u32, Vec<Rect>)>,
+    pub colour: Rgb,
 }
 
 /// A handle to the worker that owns an open document. The worker stops
@@ -182,6 +199,30 @@ impl Backend {
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
+    /// Highlights text by adding highlight annotations to the PDF, and
+    /// saves the file. What was in the file when it was opened is left as
+    /// it was, with the changes written after it.
+    /// Answers with the annotations added, to take away again on undo.
+    pub fn highlight(
+        &self,
+        highlight: Highlight,
+    ) -> impl Future<Output = Result<Vec<Annotation>, Error>> + use<> {
+        let (reply, answer) = oneshot::channel();
+        let _ = self.requests.send(Request::Highlight(highlight, reply));
+        async move { answer.await.unwrap_or(Err(Error::Closed)) }
+    }
+
+    /// Takes away annotations that highlighting added, and saves the file
+    /// the same way.
+    pub fn unhighlight(
+        &self,
+        annotations: Vec<Annotation>,
+    ) -> impl Future<Output = Result<(), Error>> + use<> {
+        let (reply, answer) = oneshot::channel();
+        let _ = self.requests.send(Request::Unhighlight(annotations, reply));
+        async move { answer.await.unwrap_or(Err(Error::Closed)) }
+    }
+
     /// Finds the part of every page that is not blank margin, in points
     /// from the top-left corner of the unturned page. A blank page keeps
     /// its whole area.
@@ -215,6 +256,7 @@ pub fn open(path: PathBuf) -> impl Future<Output = Result<Opened, Error>> {
             };
             Worker {
                 document,
+                path,
                 inbox,
                 deferred: VecDeque::new(),
             }
@@ -284,6 +326,111 @@ fn page_links(document: &Document, number: u32) -> Result<Vec<Link>, mupdf::Erro
         })
         .collect();
     Ok(links)
+}
+
+/// Adds a highlight annotation to each page, over the areas given, and
+/// saves the file incrementally. Answers with the
+/// annotations added.
+fn highlight_in_file(
+    document: &Document,
+    path: &Path,
+    highlight: &Highlight,
+) -> Result<Vec<Annotation>, Error> {
+    let failed = |error: mupdf::Error| Error::Highlight(error.to_string());
+    let (pdf, name) = writable(document, path)?;
+    let Rgb(red, green, blue) = highlight.colour;
+    let colour = mupdf::color::AnnotationColor::Rgb {
+        red: f32::from(red) / 255.0,
+        green: f32::from(green) / 255.0,
+        blue: f32::from(blue) / 255.0,
+    };
+    let mut added = Vec::new();
+    for (number, areas) in &highlight.pages {
+        let page = pdf.load_page(page_number(*number)).map_err(failed)?;
+        let bounds = page.bounds().map_err(failed)?;
+        let mut page = mupdf::pdf::PdfPage::try_from(page).map_err(failed)?;
+        let quads: Vec<mupdf::Quad> = areas
+            .iter()
+            .map(|area| {
+                mupdf::Quad::from(mupdf::Rect {
+                    x0: bounds.x0 + area.left,
+                    y0: bounds.y0 + area.top,
+                    x1: bounds.x0 + area.right,
+                    y1: bounds.y0 + area.bottom,
+                })
+            })
+            .collect();
+        let mut annotation = page
+            .create_annotation(mupdf::pdf::PdfAnnotationType::Highlight)
+            .map_err(failed)?;
+        annotation.set_color(colour).map_err(failed)?;
+        annotation.set_quad_points(quads).map_err(failed)?;
+        annotation.update().map_err(failed)?;
+        added.push((*number, annotation.xref().map_err(failed)?));
+    }
+    save(&pdf, &name)?;
+    Ok(added)
+}
+
+/// Takes away annotations that highlighting added, and saves the file
+/// incrementally. Annotations no longer there are passed over.
+fn unhighlight_in_file(
+    document: &Document,
+    path: &Path,
+    annotations: &[Annotation],
+) -> Result<(), Error> {
+    let failed = |error: mupdf::Error| Error::Highlight(error.to_string());
+    let (pdf, name) = writable(document, path)?;
+    let mut pages: Vec<u32> = annotations.iter().map(|(page, _)| *page).collect();
+    pages.sort_unstable();
+    pages.dedup();
+    for number in pages {
+        let page = pdf.load_page(page_number(number)).map_err(failed)?;
+        let mut page = mupdf::pdf::PdfPage::try_from(page).map_err(failed)?;
+        let doomed: Vec<_> = page
+            .annotations()
+            .filter(|annotation| {
+                annotation
+                    .xref()
+                    .is_ok_and(|xref| annotations.contains(&(number, xref)))
+            })
+            .collect();
+        for annotation in doomed {
+            page.delete_annotation(annotation).map_err(failed)?;
+        }
+    }
+    save(&pdf, &name)
+}
+
+/// The document as a PDF that can be saved incrementally, and the file's
+/// name. A file MuPDF had to repair to open cannot be saved that way, and
+/// is left alone, as is any file that is not a PDF.
+fn writable(document: &Document, path: &Path) -> Result<(mupdf::pdf::PdfDocument, String), Error> {
+    let pdf = mupdf::pdf::PdfDocument::try_from(document.clone())
+        .map_err(|_| Error::Highlight("only PDF files can be highlighted".to_owned()))?;
+    if !pdf.can_be_saved_incrementally() {
+        return Err(Error::Highlight(
+            "the file is damaged, so it cannot be saved safely".to_owned(),
+        ));
+    }
+    let Some(name) = path.to_str() else {
+        return Err(Error::Highlight(format!(
+            "{} is not a path MuPDF can write to",
+            path.display()
+        )));
+    };
+    Ok((pdf, name.to_owned()))
+}
+
+/// Saves a PDF incrementally: what was in its file when it was opened is
+/// left as it was, and every change since is written after it. MuPDF
+/// rewrites that tail on each save, so the file can shrink when a change is
+/// taken back.
+fn save(pdf: &mupdf::pdf::PdfDocument, name: &str) -> Result<(), Error> {
+    let mut options = mupdf::pdf::PdfWriteOptions::default();
+    options.set_incremental(true);
+    pdf.save_with_options(name, options)
+        .map_err(|error| Error::Highlight(error.to_string()))
 }
 
 /// The box around a quad, measured from the corner of the page.
@@ -359,6 +506,9 @@ fn reason(error: &mupdf::Error, path: &str) -> String {
 /// The thread that owns a document and answers requests about it.
 struct Worker {
     document: Document,
+    /// The file the document was opened from, which highlights are saved
+    /// to.
+    path: PathBuf,
     inbox: mpsc::Receiver<Request>,
     /// Long requests that arrived while another was under way.
     deferred: VecDeque<Request>,
@@ -394,6 +544,16 @@ impl Worker {
                 }
                 Request::Links(pages, reply) => {
                     let _ = reply.send(self.links(&pages));
+                }
+                Request::Highlight(highlight, reply) => {
+                    let _ = reply.send(highlight_in_file(&self.document, &self.path, &highlight));
+                }
+                Request::Unhighlight(annotations, reply) => {
+                    let _ = reply.send(unhighlight_in_file(
+                        &self.document,
+                        &self.path,
+                        &annotations,
+                    ));
                 }
                 Request::Text(pages, reply) => {
                     let _ = reply.send(
@@ -709,6 +869,79 @@ mod tests {
             .map(|character| character.area.left)
             .collect();
         assert!(lefts.is_sorted(), "{lefts:?}");
+    }
+
+    #[test]
+    fn highlights_are_saved_after_what_the_file_had() {
+        let path = std::env::temp_dir().join(format!("pdvim-highlight-{}.pdf", std::process::id()));
+        let original = text_pdf();
+        std::fs::write(&path, &original).unwrap();
+        let document = Document::open(path.to_str().unwrap()).unwrap();
+        let line = page_text(&document, 0).unwrap()[0]
+            .chars
+            .iter()
+            .map(|character| character.area)
+            .reduce(|area, other| Rect {
+                left: area.left.min(other.left),
+                top: area.top.min(other.top),
+                right: area.right.max(other.right),
+                bottom: area.bottom.max(other.bottom),
+            })
+            .unwrap();
+        let highlight = Highlight {
+            pages: vec![(0, vec![line])],
+            colour: Rgb(0xff, 0xff, 0x00),
+        };
+        let first = highlight_in_file(&document, &path, &highlight).unwrap();
+        highlight_in_file(&document, &path, &highlight).unwrap();
+        assert_eq!(first.len(), 1);
+
+        // The original bytes are untouched, with the change after them.
+        let saved = std::fs::read(&path).unwrap();
+        assert!(saved.len() > original.len());
+        assert_eq!(&saved[..original.len()], original.as_slice());
+
+        // Opened afresh, the page has both highlights, over the line.
+        let reopened = Document::open(path.to_str().unwrap()).unwrap();
+        let page = mupdf::pdf::PdfPage::try_from(reopened.load_page(0).unwrap()).unwrap();
+        let highlights: Vec<_> = page
+            .annotations()
+            .filter(|annotation| {
+                annotation.r#type().ok() == Some(mupdf::pdf::PdfAnnotationType::Highlight)
+            })
+            .collect();
+        assert_eq!(highlights.len(), 2);
+        let quads = highlights[0].quad_points().unwrap();
+        assert_eq!(quads.len(), 1);
+        assert!(
+            (quads[0].ul.x - line.left).abs() < 0.5,
+            "{:?} {line:?}",
+            quads[0]
+        );
+        assert!(
+            (quads[0].ll.y - line.bottom).abs() < 0.5,
+            "{:?} {line:?}",
+            quads[0]
+        );
+        drop(highlights);
+        drop(page);
+
+        // Taking the first away leaves the second. MuPDF rewrites what it
+        // added since the file was opened, so the file may shrink, but what
+        // was there when it was opened stays as it was.
+        unhighlight_in_file(&document, &path, &first).unwrap();
+        let after = std::fs::read(&path).unwrap();
+        assert!(after.len() > original.len());
+        assert_eq!(&after[..original.len()], original.as_slice());
+        let reopened = Document::open(path.to_str().unwrap()).unwrap();
+        let page = mupdf::pdf::PdfPage::try_from(reopened.load_page(0).unwrap()).unwrap();
+        let left: Vec<i32> = page
+            .annotations()
+            .filter_map(|annotation| annotation.xref().ok())
+            .collect();
+        assert_eq!(left.len(), 1);
+        assert!(!left.contains(&first[0].1));
+        std::fs::remove_file(&path).unwrap();
     }
 
     #[test]

@@ -68,7 +68,7 @@ The mouse wheel also scrolls.
 | `s`                   | Fit the page width to the window |
 | `a`                   | Fit the whole page in the window |
 | `r`                   | Rotate                           |
-| `Ctrl-r`              | Turn recoloring on or off        |
+| `R`                   | Turn recoloring on or off        |
 | `t`                   | Turn margin trimming on or off   |
 
 ### Links
@@ -100,7 +100,12 @@ After `v` or `V`, each line of text in view gets a label of two letters. Type a 
 | `o`                       | Move the cursor to the other end of the selection          |
 | `v` / `V`                 | Switch to selecting characters / lines, or leave           |
 | `y`                       | Copy the selection to the clipboard, and leave             |
+| `H`                       | Highlight the selection in the PDF file, and leave         |
 | `Esc`, `Ctrl-c`           | Leave without copying                                      |
+
+`H` saves the highlight into the PDF file as a standard highlight annotation, so other PDF readers show it too. pdvim saves the file incrementally: everything that was in it when pdvim opened it stays byte for byte as it was, and the changes are written after it. It can't highlight a PDF that MuPDF had to repair to open, or one it can't write to, and says so instead.
+
+Press `u` to take back the last highlight, and `Ctrl-r` to put back the last one taken back. Each saves the file the same way, incrementally. pdvim remembers what to undo for each open document until you close it.
 
 A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t`, and `T` look along the cursor's line only, and the cursor stays put if the character isn't there. The keys in visual mode can't be changed.
 
@@ -138,6 +143,7 @@ A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t
 | `:set scroll-step {pixels}`            | Set how far one `j` or `k` scrolls                                   |
 | `:set confirm-quit [true\|false]`      | Ask before quitting                                                  |
 | `:set confirm-tab-close [true\|false]` | Ask before closing a tab while others are open                       |
+| `:set highlight-color #rrggbb`         | Set the color `H` in visual mode highlights in (default `#ffff00`)   |
 | `:map {keys} {action}`                 | Bind keys to an action (see [Keys](#keys-1))                         |
 | `:unmap {keys}`                        | Remove a key binding                                                 |
 | `:mapclear`                            | Remove every key binding                                             |
@@ -154,7 +160,7 @@ If you name a boolean setting without a value, it is turned on.
 
 You can also run any [action](#actions) by name, as in `:scroll-down` or `:next-tab`. A number after it works like a count typed before a key: `:zoom-to 150` zooms to 150%, and `:first-page 12` goes to page 12.
 
-Press `Tab` in the command prompt to complete what you're typing: command and action names, setting names and their values, action names after `:map`, and file paths after `:open`, `:tabedit`, and `:tabnew`. Paths offer folders and the document types pdvim opens. If more than one completion fits, `Tab` fills in as much as they share and lists them above the prompt. Press `Tab` again to go through the list, and `Shift-Tab` to go back. While the list is open, it narrows as you type, and it closes when nothing fits.
+Press `Tab` in the command prompt to complete what you're typing: command and action names, setting names and their values, action names after `:map`, and file paths after `:open`, `:tabedit`, and `:tabnew`. Paths offer folders and PDF files. If more than one completion fits, `Tab` fills in as much as they share and lists them above the prompt. Press `Tab` again to go through the list, and `Shift-Tab` to go back. While the list is open, it narrows as you type, and it closes when nothing fits.
 
 ## Recent documents
 
@@ -232,7 +238,7 @@ The keys used in the command prompt, the recent-documents list, the cheat sheet,
 | `zoom-reset`                          | `z 0`                                       |
 | `fit-width` / `fit-page`              | `s` / `a`                                   |
 | `rotate`                              | `r`                                         |
-| `toggle-recolor`                      | `ctrl+r`                                    |
+| `toggle-recolor`                      | `R`                                         |
 | `toggle-trim`                         | `t`                                         |
 | `search-forward` / `search-backward`  | `/` / `?`                                   |
 | `search-next` / `search-previous`     | `n` / `N`                                   |
@@ -244,6 +250,7 @@ The keys used in the command prompt, the recent-documents list, the cheat sheet,
 | `help`                                | none                                        |
 | `follow-link`                         | `f`                                         |
 | `visual` / `visual-line`              | `v` / `V`                                   |
+| `undo` / `redo`                       | `u` / `ctrl+r`                              |
 
 With a count, `first-page` and `last-page` go to that page, `zoom-to` zooms to that percentage, and `next-tab` goes to that tab.
 

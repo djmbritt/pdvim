@@ -53,12 +53,14 @@ struct Find {
 }
 
 /// What a key typed in visual mode comes to.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Outcome {
     /// Stay in visual mode.
     Stay,
     /// Copy this text, and leave.
     Copy(String),
+    /// Highlight these areas, each a line's on a page, and leave.
+    Highlight(Vec<(u32, Rect)>),
     /// Leave without copying.
     Leave,
 }
@@ -151,6 +153,7 @@ impl Visual {
         match key {
             Key::Escape | Key::Ctrl('c' | '[') => return Outcome::Leave,
             Key::Char('y') => return Outcome::Copy(self.text(text)),
+            Key::Char('H') => return Outcome::Highlight(self.areas(text)),
             Key::Char('o') => std::mem::swap(&mut self.anchor, &mut self.cursor),
             // The kind in force leaves; the other kind switches to it.
             Key::Char('v' | 'V') => {
@@ -668,6 +671,14 @@ mod tests {
         let mut visual = Visual::new(Kind::Characters, spot(0, 0, 8));
         keys(&mut visual, &text, "^");
         assert_eq!(visual.cursor(), spot(0, 0, 3));
+    }
+
+    #[test]
+    fn capital_h_highlights_what_is_selected() {
+        let text = text();
+        let mut visual = Visual::new(Kind::Characters, spot(0, 0, 4));
+        let expected = visual.areas(&text);
+        assert_eq!(keys(&mut visual, &text, "H"), Outcome::Highlight(expected));
     }
 
     #[test]

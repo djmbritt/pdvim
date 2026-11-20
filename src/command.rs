@@ -63,6 +63,8 @@ pub enum Setting {
     ConfirmQuit(bool),
     /// Whether to ask before closing a tab, when others are left.
     ConfirmTabClose(bool),
+    /// The colour text is highlighted in.
+    HighlightColour(Rgb),
 }
 
 /// Why a command could not be understood.
@@ -119,9 +121,10 @@ pub fn canonical(name: &str) -> Option<&'static str> {
 }
 
 /// The names of the settings `:set` knows.
-pub const SETTINGS: [&str; 7] = [
+pub const SETTINGS: [&str; 8] = [
     "confirm-quit",
     "confirm-tab-close",
+    "highlight-color",
     "recolor",
     "recolor-darkcolor",
     "recolor-lightcolor",
@@ -228,6 +231,7 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
         "recolor-lightcolor" => Ok(Setting::RecolorPaper(value.parse()?)),
         "confirm-quit" => parse_switch(value).map(Setting::ConfirmQuit),
         "confirm-tab-close" => parse_switch(value).map(Setting::ConfirmTabClose),
+        "highlight-color" => Ok(Setting::HighlightColour(value.parse()?)),
         "scroll-step" => match value.parse::<f32>() {
             Ok(step) if step.is_finite() && step > 0.0 => Ok(Setting::ScrollStep(step)),
             _ => Err(Error::NotPositive(value.to_owned())),

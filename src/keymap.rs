@@ -54,11 +54,15 @@ pub enum Binding {
     Visual,
     /// Label the lines in view, to start selecting whole lines at one.
     VisualLine,
+    /// Take back the last highlight.
+    Undo,
+    /// Put back the last highlight taken back.
+    Redo,
 }
 
 impl Binding {
     /// Every binding with its name.
-    const NAMES: [(Self, &'static str); 37] = [
+    const NAMES: [(Self, &'static str); 39] = [
         (Self::ScrollDown, "scroll-down"),
         (Self::ScrollUp, "scroll-up"),
         (Self::ScrollLeft, "scroll-left"),
@@ -96,6 +100,8 @@ impl Binding {
         (Self::FollowLink, "follow-link"),
         (Self::Visual, "visual"),
         (Self::VisualLine, "visual-line"),
+        (Self::Undo, "undo"),
+        (Self::Redo, "redo"),
     ];
 
     /// The names of every binding.
@@ -173,6 +179,8 @@ impl Binding {
             Self::FollowLink => Action::FollowLink,
             Self::Visual => Action::Visual { lines: false },
             Self::VisualLine => Action::Visual { lines: true },
+            Self::Undo => Action::Undo,
+            Self::Redo => Action::Redo,
         }
     }
 }
@@ -277,7 +285,7 @@ impl Default for Keymap {
     /// The bindings pdvim starts with.
     fn default() -> Self {
         use Binding as B;
-        const DEFAULTS: [(&str, Binding); 56] = [
+        const DEFAULTS: [(&str, Binding); 58] = [
             ("j", B::ScrollDown),
             ("down", B::ScrollDown),
             ("k", B::ScrollUp),
@@ -315,7 +323,7 @@ impl Default for Keymap {
             ("s", B::FitWidth),
             ("a", B::FitPage),
             ("r", B::Rotate),
-            ("ctrl+r", B::ToggleRecolor),
+            ("R", B::ToggleRecolor),
             ("t", B::ToggleTrim),
             ("n", B::SearchNext),
             ("N", B::SearchPrevious),
@@ -326,6 +334,8 @@ impl Default for Keymap {
             ("f", B::FollowLink),
             ("v", B::Visual),
             ("V", B::VisualLine),
+            ("u", B::Undo),
+            ("ctrl+r", B::Redo),
             ("g t", B::NextTab),
             ("ctrl+tab", B::NextTab),
             ("g T", B::PreviousTab),
@@ -448,7 +458,7 @@ mod tests {
     #[test]
     fn every_default_binding_parses() {
         let keymap = Keymap::default();
-        assert_eq!(keymap.bindings.len(), 56);
+        assert_eq!(keymap.bindings.len(), 58);
     }
 
     #[test]

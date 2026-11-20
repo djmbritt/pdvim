@@ -34,6 +34,10 @@ confirm-quit = false
 # decides about that.
 confirm-tab-close = false
 
+# The color H in visual mode highlights text in. Highlights are saved into
+# the PDF file, so other readers show them too.
+highlight-color = "#ffff00"
+
 [keys]
 
 # Bind keys to an action by name, or to "none" to remove a default.
@@ -92,7 +96,7 @@ confirm-tab-close = false
 "s" = "fit-width"
 "a" = "fit-page"
 "r" = "rotate"
-"ctrl+r" = "toggle-recolor"
+"R" = "toggle-recolor"
 "t" = "toggle-trim"
 
 # Search and prompts
@@ -114,6 +118,10 @@ confirm-tab-close = false
 # move with h j k l, w b e, 0 $, and press y to copy
 "v" = "visual"
 "V" = "visual-line"
+
+# Highlights: take back the last one, or put back the last one taken back
+"u" = "undo"
+"ctrl+r" = "redo"
 
 # Tabs
 "g t" = "next-tab"

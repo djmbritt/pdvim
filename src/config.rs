@@ -132,7 +132,7 @@ pub fn path() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::DEFAULT_SCROLL_STEP;
+    use crate::app::{DEFAULT_HIGHLIGHT, DEFAULT_SCROLL_STEP};
     use crate::command::Setting;
     use crate::input::Key;
     use crate::keymap::Keymap;
@@ -227,6 +227,7 @@ mod tests {
             [
                 Setting::ConfirmQuit(false),
                 Setting::ConfirmTabClose(false),
+                Setting::HighlightColour(DEFAULT_HIGHLIGHT),
                 Setting::Recolor(false),
                 Setting::RecolorInk(palette.ink),
                 Setting::RecolorPaper(palette.paper),

@@ -10,7 +10,7 @@ use iced::{
     keyboard, mouse, window,
 };
 
-use crate::backend::{self, Backend, Hit, Link, Opened, RenderJob, Target};
+use crate::backend::{self, Annotation, Backend, Highlight, Hit, Link, Opened, RenderJob, Target};
 use crate::command::{self, Command, Setting};
 use crate::complete::{self, Candidate};
 use crate::config;
@@ -88,6 +88,10 @@ const LIST_WIDTH: f32 = 720.0;
 /// How far one notch of a mouse wheel scrolls, in scroll steps.
 const WHEEL_STEPS: f32 = 3.0;
 
+/// The colour text is highlighted in unless set otherwise: highlighter
+/// yellow.
+pub const DEFAULT_HIGHLIGHT: Rgb = Rgb(0xff, 0xff, 0x00);
+
 /// How far one press of `j` scrolls unless set otherwise, in logical pixels.
 pub const DEFAULT_SCROLL_STEP: f32 = 40.0;
 
@@ -122,9 +126,35 @@ pub enum Message {
     /// The links on some pages of the document with this number were
     /// found, or could not be.
     LinksFound(u64, Result<backend::PageLinks, backend::Error>),
+    /// Text in the document with this number was highlighted and the file
+    /// saved, or not; done afresh, or redone.
+    Highlighted(
+        u64,
+        Highlight,
+        Result<Vec<Annotation>, backend::Error>,
+        Redone,
+    ),
+    /// A highlight in the document with this number was taken back and
+    /// the file saved, or not.
+    Unhighlighted(u64, Edit, Result<(), backend::Error>),
     /// The text on some pages of the document with this number was read,
     /// or could not be.
     TextFound(u64, Vec<u32>, Result<backend::PageText, backend::Error>),
+}
+
+/// A change made to a document's file, to take back and put back.
+#[derive(Debug, Clone)]
+pub struct Edit {
+    highlight: Highlight,
+    /// The annotations the highlight added.
+    annotations: Vec<Annotation>,
+}
+
+/// Whether a highlight was made afresh or put back by redo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Redone {
+    No,
+    Yes,
 }
 
 /// What a rendered page was rendered for. A cached page whose key differs
@@ -137,6 +167,8 @@ pub struct RenderKey {
     palette: Option<Palette>,
     /// Whether only the part of the page inside its margins was rendered.
     trimmed: bool,
+    /// How many times the document had been changed, as by highlighting.
+    edition: u32,
 }
 
 /// A search that was asked for.
@@ -177,6 +209,13 @@ struct Document {
     /// The view to go back to once the margins are measured, for a document
     /// that was left with its margins trimmed.
     returning: Option<View>,
+    /// How many times the document has been changed, as by highlighting.
+    /// Pages rendered before the last change are rendered again.
+    edition: u32,
+    /// The changes made to the file, the last made last, to undo.
+    undo: Vec<Edit>,
+    /// The changes undone, the last undone last, to redo.
+    redo: Vec<Edit>,
     /// The rendered pages, and what each was rendered for.
     pages: HashMap<u32, (image::Handle, RenderKey)>,
     /// What each page being rendered right now is rendered for.
@@ -306,6 +345,8 @@ pub struct App {
     visual: Option<Visual>,
     notice: Notice,
     palette: Palette,
+    /// The colour text is highlighted in.
+    highlight_colour: Rgb,
     /// How far one press of `j` scrolls, in logical pixels.
     scroll_step: f32,
     /// How a document with no view in the history starts.
@@ -362,6 +403,7 @@ impl App {
             visual: None,
             notice,
             palette: Palette::default(),
+            highlight_colour: DEFAULT_HIGHLIGHT,
             scroll_step: DEFAULT_SCROLL_STEP,
             fresh: Fresh::default(),
             confirm_quit: false,
@@ -465,6 +507,14 @@ impl App {
             }
             Message::TextFound(id, pages, result) => {
                 self.on_text(id, &pages, result);
+                Task::none()
+            }
+            Message::Highlighted(id, highlight, result, redone) => {
+                self.on_highlighted(id, highlight, result, redone);
+                Task::none()
+            }
+            Message::Unhighlighted(id, edit, result) => {
+                self.on_unhighlighted(id, edit, result);
                 Task::none()
             }
             Message::LinksFound(id, result) => {
@@ -811,6 +861,10 @@ impl App {
                 self.visual = None;
                 Task::none()
             }
+            visual::Outcome::Highlight(areas) => {
+                self.visual = None;
+                self.highlight(areas)
+            }
             visual::Outcome::Copy(text) => {
                 self.visual = None;
                 let count = text.chars().count();
@@ -821,6 +875,131 @@ impl App {
                 iced::clipboard::write(text)
             }
         }
+    }
+
+    /// Highlights text in the file of the document in view, a line's area
+    /// at a time.
+    fn highlight(&mut self, areas: Vec<(u32, Rect)>) -> Task<Message> {
+        let colour = self.highlight_colour;
+        let Some(document) = self.document() else {
+            return Task::none();
+        };
+        let mut pages: Vec<(u32, Vec<Rect>)> = Vec::new();
+        for (page, area) in areas {
+            match pages.last_mut() {
+                Some((last, lines)) if *last == page => lines.push(area),
+                _ => pages.push((page, vec![area])),
+            }
+        }
+        if pages.is_empty() {
+            return Task::none();
+        }
+        let id = document.id;
+        let highlight = Highlight { pages, colour };
+        let saving = document.backend.highlight(highlight.clone());
+        self.notice = Notice::Info("highlighting".to_owned());
+        Task::perform(saving, move |result| {
+            Message::Highlighted(id, highlight, result, Redone::No)
+        })
+    }
+
+    fn on_highlighted(
+        &mut self,
+        id: u64,
+        highlight: Highlight,
+        result: Result<Vec<Annotation>, backend::Error>,
+        redone: Redone,
+    ) {
+        let Some(document) = document_by_id(&mut self.tabs, id) else {
+            return;
+        };
+        match result {
+            Ok(annotations) => {
+                document.undo.push(Edit {
+                    highlight,
+                    annotations,
+                });
+                // A new change ends what could be redone.
+                if redone == Redone::No {
+                    document.redo.clear();
+                }
+                // Every page is rendered afresh to show the change.
+                document.edition = document.edition.saturating_add(1);
+                let done = if redone == Redone::Yes {
+                    "highlight put back"
+                } else {
+                    "highlighted"
+                };
+                self.notice =
+                    Notice::Info(format!("{done}, and saved to {}", tilde(&document.path)));
+            }
+            Err(error) => {
+                // What failed to be redone can be tried again.
+                if redone == Redone::Yes {
+                    document.redo.push(Edit {
+                        highlight,
+                        annotations: Vec::new(),
+                    });
+                }
+                self.notice = Notice::Error(error.to_string());
+            }
+        }
+    }
+
+    /// Takes back the last highlight of the document in view.
+    fn undo(&mut self) -> Task<Message> {
+        let Some(document) = self.document_mut() else {
+            return Task::none();
+        };
+        let Some(edit) = document.undo.pop() else {
+            self.notice = Notice::Info("nothing to undo".to_owned());
+            return Task::none();
+        };
+        let id = document.id;
+        let saving = document.backend.unhighlight(edit.annotations.clone());
+        self.notice = Notice::Info("undoing".to_owned());
+        Task::perform(saving, move |result| {
+            Message::Unhighlighted(id, edit, result)
+        })
+    }
+
+    fn on_unhighlighted(&mut self, id: u64, edit: Edit, result: Result<(), backend::Error>) {
+        let Some(document) = document_by_id(&mut self.tabs, id) else {
+            return;
+        };
+        match result {
+            Ok(()) => {
+                document.redo.push(edit);
+                document.edition = document.edition.saturating_add(1);
+                self.notice = Notice::Info(format!(
+                    "highlight taken back, and saved to {}",
+                    tilde(&document.path)
+                ));
+            }
+            Err(error) => {
+                // Still there, so still to undo.
+                document.undo.push(edit);
+                self.notice = Notice::Error(error.to_string());
+            }
+        }
+    }
+
+    /// Puts back the last highlight taken back in the document in view.
+    fn redo(&mut self) -> Task<Message> {
+        let Some(document) = self.document_mut() else {
+            return Task::none();
+        };
+        let Some(edit) = document.redo.pop() else {
+            self.notice = Notice::Info("nothing to redo".to_owned());
+            return Task::none();
+        };
+        let id = document.id;
+        let highlight = edit.highlight;
+        let saving = document.backend.highlight(highlight.clone());
+        self.notice = Notice::Info("redoing".to_owned());
+        Task::perform(saving, move |result| {
+            Message::Highlighted(id, highlight, result, Redone::Yes)
+        })
     }
 
     /// Keeps the cursor in view, and reads the pages it may move into next.
@@ -1001,6 +1180,7 @@ impl App {
                 }
                 Setting::RecolorPaper(paper) => self.palette.paper = paper,
                 Setting::RecolorInk(ink) => self.palette.ink = ink,
+                Setting::HighlightColour(colour) => self.highlight_colour = colour,
                 Setting::ScrollStep(step) => self.scroll_step = step,
                 Setting::ConfirmQuit(confirm) => self.confirm_quit = confirm,
                 Setting::ConfirmTabClose(confirm) => self.confirm_tab_close = confirm,
@@ -1035,6 +1215,8 @@ impl App {
                 return Task::none();
             }
             Action::FollowLink => return self.label_links(),
+            Action::Undo => return self.undo(),
+            Action::Redo => return self.redo(),
             Action::Visual { lines } => {
                 let kind = if lines { Kind::Lines } else { Kind::Characters };
                 return self.label_lines(kind);
@@ -1082,6 +1264,8 @@ impl App {
             | Action::ShowHelp
             | Action::FollowLink
             | Action::Visual { .. }
+            | Action::Undo
+            | Action::Redo
             | Action::NextTab
             | Action::PreviousTab(_)
             | Action::GotoTab(_)
@@ -1207,6 +1391,9 @@ impl App {
             contents: None,
             measuring: false,
             returning,
+            edition: 0,
+            undo: Vec::new(),
+            redo: Vec::new(),
             pages: HashMap::new(),
             rendering: HashMap::new(),
             failed: HashMap::new(),
@@ -1332,6 +1519,7 @@ impl App {
             rotation: job.rotation,
             palette: job.palette,
             trimmed,
+            edition: document.edition,
         };
 
         let visible = document.reader.visible_pages();

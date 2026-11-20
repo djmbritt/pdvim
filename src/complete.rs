@@ -8,8 +8,9 @@ use std::path::{Path, PathBuf};
 use crate::command;
 use crate::keymap::Binding;
 
-/// The kinds of file offered after `open`: the documents MuPDF reads.
-const DOCUMENTS: [&str; 7] = ["pdf", "epub", "xps", "oxps", "cbz", "fb2", "mobi"];
+/// The kinds of file offered after `open`: the documents pdvim reads. MuPDF
+/// is built with PDF only, so other kinds would not open.
+const DOCUMENTS: [&str; 1] = ["pdf"];
 
 /// One way the word being typed could end.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -219,7 +220,7 @@ mod tests {
             ]
         );
         assert_eq!(texts(&complete("qu")), ["quit"]);
-        assert_eq!(texts(&complete("r")), ["recent", "rotate"]);
+        assert_eq!(texts(&complete("r")), ["recent", "redo", "rotate"]);
         assert_eq!(texts(&complete("  rec")), ["recent"]);
         assert_eq!(complete("  rec").start, 2);
         assert_eq!(texts(&complete("map")), ["map", "mapclear"]);
@@ -259,7 +260,13 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("Papers")).unwrap();
         std::fs::create_dir_all(root.join(".hidden")).unwrap();
-        for file in ["paper one.pdf", "Book.EPUB", "notes.txt", ".secret.pdf"] {
+        for file in [
+            "paper one.pdf",
+            "Book.PDF",
+            "story.epub",
+            "notes.txt",
+            ".secret.pdf",
+        ] {
             std::fs::write(root.join(file), "").unwrap();
         }
         let base = format!("{}/", root.display());
@@ -271,7 +278,7 @@ mod tests {
             .iter()
             .map(|candidate| candidate.label.as_str())
             .collect();
-        assert_eq!(labels, ["Book.EPUB", "paper one.pdf", "Papers/"]);
+        assert_eq!(labels, ["Book.PDF", "paper one.pdf", "Papers/"]);
         assert!(
             completion
                 .candidates

@@ -101,6 +101,10 @@ pub enum Action {
     Visual {
         lines: bool,
     },
+    /// Take back the last highlight.
+    Undo,
+    /// Put back the last highlight taken back.
+    Redo,
     /// Go to the next tab, or the first after the last.
     NextTab,
     /// Go back a number of tabs, round to the last from the first.
@@ -318,9 +322,6 @@ mod tests {
             pending.feed(Key::ShiftSpace, &keymap),
             Some(Action::FullScreen(-1))
         );
-        assert_eq!(
-            pending.feed(Key::Ctrl('r'), &keymap),
-            Some(Action::ToggleRecolor)
-        );
+        assert_eq!(pending.feed(Key::Ctrl('r'), &keymap), Some(Action::Redo));
     }
 }

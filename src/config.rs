@@ -154,11 +154,10 @@ pub fn path() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::{DEFAULT_HIGHLIGHT, DEFAULT_SCROLL_STEP};
     use crate::bindings::{Bound, DEFAULTS};
     use crate::command::Setting;
     use crate::input::{Binding, Key};
-    use crate::recolor::{Palette, Rgb};
+    use crate::recolor::Rgb;
     use crate::visual;
 
     #[test]
@@ -249,34 +248,31 @@ mod tests {
         );
     }
 
-    /// The built-in configuration must give the settings the values the
-    /// program starts with, so that it never says something untrue.
+    /// The built-in configuration is where every setting gets its
+    /// default, so it must set every one.
     #[test]
-    fn the_built_in_settings_are_the_defaults() {
+    fn the_built_in_configuration_sets_every_setting() {
         let (commands, problems) = parse(DEFAULTS);
         assert_eq!(problems, []);
-        let settings: Vec<_> = commands
-            .into_iter()
-            .filter_map(|command| match command {
-                Command::Set(setting) => Some(setting),
-                Command::Map(..) => None,
-                other => panic!("unexpected in the defaults: {other:?}"),
-            })
+        let set: Vec<_> = DEFAULTS
+            .lines()
+            .filter_map(|line| line.split_once(" = "))
+            .map(|(name, _)| name.trim())
+            .filter(|name| command::SETTINGS.contains(name))
             .collect();
-        let palette = Palette::default();
-        assert_eq!(
-            settings,
-            [
-                Setting::Recolor(false),
-                Setting::Trim(false),
-                Setting::RecolorPaper(palette.paper),
-                Setting::RecolorInk(palette.ink),
-                Setting::ScrollStep(DEFAULT_SCROLL_STEP),
-                Setting::ConfirmQuit(false),
-                Setting::ConfirmTabClose(false),
-                Setting::HighlightColour(DEFAULT_HIGHLIGHT),
-            ]
-        );
+        for name in command::SETTINGS {
+            assert_eq!(
+                set.iter().filter(|&&known| known == name).count(),
+                1,
+                "{name} is not set once in defaults.toml"
+            );
+        }
+        for command in commands {
+            assert!(
+                matches!(command, Command::Set(_) | Command::Map(..)),
+                "unexpected in the defaults: {command:?}"
+            );
+        }
     }
 
     #[test]

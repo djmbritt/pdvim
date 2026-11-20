@@ -69,8 +69,8 @@ The mouse wheel also scrolls.
 | `+`, `zi` / `-`, `zo` | Zoom in / out                    |
 | `=`, `z0`             | Zoom to 100%                     |
 | `{n}=`, `{n}zz`       | Zoom to _n_%                     |
-| `s`                   | Fit the page width to the window |
-| `a`                   | Fit the whole page in the window |
+| `s`, `zw`             | Fit the page width to the window |
+| `zp`                  | Fit the whole page in the window |
 | `r`                   | Rotate                           |
 | `R`                   | Turn recoloring on or off        |
 | `t`                   | Turn margin trimming on or off   |
@@ -145,8 +145,8 @@ A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t
 | `:set recolor-lightcolor #rrggbb`      | Set the color white paper becomes when recolored (default `#1a1a1a`) |
 | `:set recolor-darkcolor #rrggbb`       | Set the color black ink becomes when recolored (default `#dddddd`)   |
 | `:set scroll-step {pixels}`            | Set how far one `j` or `k` scrolls                                   |
-| `:set confirm-quit [true\|false]`      | Ask before quitting                                                  |
-| `:set confirm-tab-close [true\|false]` | Ask before closing a tab while others are open                       |
+| `:set confirm-quit [true\|false]`      | Ask before quitting (default on)                                     |
+| `:set confirm-tab-close [true\|false]` | Ask before closing a tab while others are open (default on)          |
 | `:set highlight-color #rrggbb`         | Set the color `H` in visual mode highlights in (default `#ffff00`)   |
 | `:map [mode] {keys} {action}`          | Bind keys to an action (see [Keys](#keys-1))                         |
 | `:unmap [mode] {keys}`                 | Remove a key binding                                                 |
@@ -214,7 +214,7 @@ recolor-darkcolor = "#dddddd"
 "Y" = "yank"
 ```
 
-`[settings]` takes the same names and values as `:set`. With `confirm-quit` on, pdvim asks `quit pdvim? (y/n)` before quitting: when you close the last tab, use `:qa`, or close the window. Press `y` to quit, or any other key to stay. If the window is closed again while pdvim is asking, for example by a window manager that insists, it quits without asking. With `confirm-tab-close` on, pdvim asks `close tab {name}? (y/n)` before closing a tab with `q`, `:q`, or `:tabclose` while other tabs are open. Closing the last tab quits pdvim, so `confirm-quit` decides whether that asks. `recolor` and `trim` decide how a document starts the first time you open it. After that, the document is restored the way you left it.
+`[settings]` takes the same names and values as `:set`. With `confirm-quit` on, as it is by default, pdvim asks `quit pdvim? (y/n)` before quitting: when you close the last tab, use `:qa`, or close the window. Press `y` to quit, or any other key to stay. If the window is closed again while pdvim is asking, for example by a window manager that insists, it quits without asking. With `confirm-tab-close` on, also the default, pdvim asks `close tab {name}? (y/n)` before closing a tab with `q`, `:q`, or `:tabclose` while other tabs are open. Closing the last tab quits pdvim, so `confirm-quit` decides whether that asks. `recolor` and `trim` decide how a document starts the first time you open it. After that, the document is restored the way you left it.
 
 `[keys.<mode>]` binds keys to that mode's actions, on top of the default keys. Bind keys to `"none"` to remove a default. Keys put straight in `[keys]` are bound in normal mode, as before modes could be configured. The modes are:
 
@@ -259,7 +259,7 @@ The actions of normal mode, and their default keys:
 | `zoom-in` / `zoom-out`                | `+`, `z i`, `z I` / `-`, `z o`, `z O`       |
 | `zoom-to`                             | `=`, `z z`, `z Z`                           |
 | `zoom-reset`                          | `z 0`                                       |
-| `fit-width` / `fit-page`              | `s` / `a`                                   |
+| `fit-width` / `fit-page`              | `s`, `z w` / `z p`                          |
 | `rotate`                              | `r`                                         |
 | `toggle-recolor`                      | `R`                                         |
 | `toggle-trim`                         | `t`                                         |

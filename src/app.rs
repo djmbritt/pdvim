@@ -11,7 +11,7 @@ use iced::{
 };
 
 use crate::backend::{self, Annotation, Backend, Highlight, Hit, Link, Opened, RenderJob, Target};
-use crate::bindings::Keymaps;
+use crate::bindings::{self, Keymaps};
 use crate::command::{self, Command, Setting};
 use crate::complete::{self, Candidate};
 use crate::config;
@@ -93,13 +93,6 @@ const LIST_WIDTH: f32 = 720.0;
 
 /// How far one notch of a mouse wheel scrolls, in scroll steps.
 const WHEEL_STEPS: f32 = 3.0;
-
-/// The colour text is highlighted in unless set otherwise: highlighter
-/// yellow.
-pub const DEFAULT_HIGHLIGHT: Rgb = Rgb(0xff, 0xff, 0x00);
-
-/// How far one press of `j` scrolls unless set otherwise, in logical pixels.
-pub const DEFAULT_SCROLL_STEP: f32 = 40.0;
 
 /// How many pages beyond the visible ones are rendered ahead of need.
 const RENDER_AHEAD: u32 = 1;
@@ -410,7 +403,9 @@ impl App {
             area: Size::ZERO,
             scale_factor: 1.0,
             modifiers: keyboard::Modifiers::default(),
-            keymaps: Keymaps::default(),
+            // Bindings and settings come from the built-in configuration,
+            // carried out in `configure`; these hold only until then.
+            keymaps: Keymaps::empty(),
             pending: Pending::new(),
             prompt_pending: Pending::new(),
             prompt: None,
@@ -425,8 +420,8 @@ impl App {
             visual: None,
             notice,
             palette: Palette::default(),
-            highlight_colour: DEFAULT_HIGHLIGHT,
-            scroll_step: DEFAULT_SCROLL_STEP,
+            highlight_colour: Rgb(0xff, 0xff, 0x00),
+            scroll_step: 40.0,
             fresh: Fresh::default(),
             confirm_quit: false,
             confirm_tab_close: false,
@@ -447,8 +442,15 @@ impl App {
         (app, Task::batch(tasks))
     }
 
-    /// Carries out the configuration file, and shows its first problem.
+    /// Carries out the built-in configuration, then the configuration file
+    /// over it, and shows the file's first problem.
     fn configure(&mut self) {
+        // The built-in configuration is tested to have no problems.
+        let (defaults, _) = config::parse(bindings::DEFAULTS);
+        for command in defaults {
+            // No document is open yet, so nothing here starts a task.
+            let _ = self.run_command(command);
+        }
         let text = match config::read() {
             Ok(text) => text,
             Err(error) => {

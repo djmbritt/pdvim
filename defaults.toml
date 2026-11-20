@@ -28,12 +28,12 @@ scroll-step = 40
 # Ask "quit pdvim? (y/n)" before quitting: when the last tab is closed,
 # with :qa, or when the window is closed. Press y to quit, any other key to
 # stay. Closing the window again while asked quits without asking.
-confirm-quit = false
+confirm-quit = true
 
 # Ask "close tab ...? (y/n)" before closing a tab with q, :q or :tabclose
 # while other tabs are open. Closing the last tab quits, so confirm-quit
 # decides about that.
-confirm-tab-close = false
+confirm-tab-close = true
 
 # The color H in visual mode highlights text in. Highlights are saved into
 # the PDF file, so other readers show them too.
@@ -103,7 +103,8 @@ highlight-color = "#ffff00"
 "z Z" = "zoom-to"
 "z 0" = "zoom-reset"
 "s" = "fit-width"
-"a" = "fit-page"
+"z w" = "fit-width"
+"z p" = "fit-page"
 "r" = "rotate"
 "R" = "toggle-recolor"
 "t" = "toggle-trim"

@@ -59,6 +59,9 @@ const LIST_WIDTH: f32 = 720.0;
 /// How far one notch of a mouse wheel scrolls, in scroll steps.
 const WHEEL_STEPS: f32 = 3.0;
 
+/// How far one press of `j` scrolls unless set otherwise, in logical pixels.
+pub const DEFAULT_SCROLL_STEP: f32 = 40.0;
+
 /// How many pages beyond the visible ones are rendered ahead of need.
 const RENDER_AHEAD: u32 = 1;
 /// How many pages beyond the visible ones are kept once rendered.
@@ -264,7 +267,7 @@ impl App {
             picker: None,
             notice,
             palette: Palette::default(),
-            scroll_step: 40.0,
+            scroll_step: DEFAULT_SCROLL_STEP,
             recolor: false,
             trim: false,
         };

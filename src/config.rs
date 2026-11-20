@@ -132,9 +132,11 @@ pub fn path() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::DEFAULT_SCROLL_STEP;
     use crate::command::Setting;
     use crate::input::Key;
-    use crate::recolor::Rgb;
+    use crate::keymap::Keymap;
+    use crate::recolor::{Palette, Rgb};
 
     #[test]
     fn settings_and_keys_are_read() {
@@ -195,6 +197,39 @@ mod tests {
                 "keys.nope: unknown key: nope",
                 "settings.colour: unknown setting: colour",
                 "settings.trim: `maybe` is not true or false",
+            ]
+        );
+    }
+
+    /// The example shipped with pdvim must say exactly what the defaults
+    /// are, so that it is never out of date.
+    #[test]
+    fn the_example_is_the_defaults() {
+        let (commands, problems) = parse(include_str!("../config.example.toml"));
+        assert_eq!(problems, []);
+
+        let mut keymap = Keymap::default();
+        keymap.clear();
+        let mut settings = Vec::new();
+        for command in commands {
+            match command {
+                Command::Map(keys, binding) => keymap.bind(keys, binding),
+                Command::Set(setting) => settings.push(setting),
+                other => panic!("unexpected in the example: {other:?}"),
+            }
+        }
+        assert_eq!(keymap.sorted(), Keymap::default().sorted());
+
+        // The entries of a table come in order of name.
+        let palette = Palette::default();
+        assert_eq!(
+            settings,
+            [
+                Setting::Recolor(false),
+                Setting::RecolorInk(palette.ink),
+                Setting::RecolorPaper(palette.paper),
+                Setting::ScrollStep(DEFAULT_SCROLL_STEP),
+                Setting::Trim(false),
             ]
         );
     }

@@ -126,6 +126,15 @@ If you name a boolean setting without a value, it is turned on.
 
 pdvim reads `$XDG_CONFIG_HOME/pdvim/config.toml` when it starts. If `XDG_CONFIG_HOME` is not set, it reads `~/.config/pdvim/config.toml`. You don't need the file.
 
+[`config.example.toml`](config.example.toml) lists every setting and key binding at its default. To start from it, copy it into place and change what you like:
+
+```sh
+mkdir -p ~/.config/pdvim
+cp config.example.toml ~/.config/pdvim/config.toml
+```
+
+A shorter file works too, since anything you leave out keeps its default:
+
 ```toml
 [settings]
 # Recolor and trim documents that have not been opened before.

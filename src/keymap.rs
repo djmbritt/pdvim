@@ -332,6 +332,19 @@ impl Keymap {
         self.bindings.clear();
     }
 
+    /// Every binding, sorted, so that two keymaps can be compared whatever
+    /// order their bindings were made in.
+    #[cfg(test)]
+    pub fn sorted(&self) -> Vec<(String, Binding)> {
+        let mut bindings: Vec<_> = self
+            .bindings
+            .iter()
+            .map(|(keys, binding)| (format!("{keys:?}"), *binding))
+            .collect();
+        bindings.sort_by(|left, right| left.0.cmp(&right.0));
+        bindings
+    }
+
     /// What a sequence of keys amounts to. A whole sequence wins over a
     /// longer one it starts, so binding `g` hides `gg`.
     pub fn lookup(&self, keys: &[Key]) -> Match {

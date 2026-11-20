@@ -1,0 +1,108 @@
+# An example configuration for pdvim, with every setting and key binding
+# at its default.
+#
+# Copy it to ~/.config/pdvim/config.toml (or $XDG_CONFIG_HOME/pdvim/) and
+# change what you like. You only need the entries you change: anything left
+# out keeps its default. pdvim reads the file when it starts.
+
+[settings]
+
+# Recolor pages for a dark background. This and `trim` apply to documents
+# opened for the first time; after that, each document is restored the way
+# you left it.
+recolor = false
+
+# Hide the blank margins of pages.
+trim = false
+
+# The color white paper becomes when recolored.
+recolor-lightcolor = "#1a1a1a"
+
+# The color black ink becomes when recolored.
+recolor-darkcolor = "#dddddd"
+
+# How far one press of `j` or `k` scrolls, in pixels.
+scroll-step = 40
+
+[keys]
+
+# Bind keys to an action by name, or to "none" to remove a default.
+#
+# A key is a single character ("j", "G", "?") or a name: space, escape,
+# enter, backspace, up, down, left, right, pageup, pagedown, home, end.
+# Put ctrl+ or shift+ in front for modifiers: "ctrl+d", "shift+space",
+# "ctrl+shift+tab". "shift+q" is the same as "Q".
+#
+# Separate the keys of a sequence with spaces: "g g". If one binding is the
+# start of a longer one, the shorter one wins.
+#
+# A count typed before the keys is passed on: with one, first-page and
+# last-page go to that page, zoom-to zooms to that percentage, and
+# next-tab goes to that tab.
+
+# Scrolling
+"j" = "scroll-down"
+"down" = "scroll-down"
+"k" = "scroll-up"
+"up" = "scroll-up"
+"h" = "scroll-left"
+"left" = "scroll-left"
+"l" = "scroll-right"
+"right" = "scroll-right"
+"ctrl+d" = "scroll-half-down"
+"ctrl+u" = "scroll-half-up"
+"ctrl+f" = "scroll-full-down"
+"space" = "scroll-full-down"
+"ctrl+b" = "scroll-full-up"
+"shift+space" = "scroll-full-up"
+
+# Pages
+"J" = "next-page"
+"pagedown" = "next-page"
+"K" = "previous-page"
+"pageup" = "previous-page"
+"g g" = "first-page"
+"home" = "first-page"
+"G" = "last-page"
+"end" = "last-page"
+"H" = "page-top"
+"L" = "page-bottom"
+
+# Zoom and view
+"+" = "zoom-in"
+"z i" = "zoom-in"
+"z I" = "zoom-in"
+"-" = "zoom-out"
+"z o" = "zoom-out"
+"z O" = "zoom-out"
+"=" = "zoom-to"
+"z z" = "zoom-to"
+"z Z" = "zoom-to"
+"z 0" = "zoom-reset"
+"s" = "fit-width"
+"a" = "fit-page"
+"r" = "rotate"
+"ctrl+r" = "toggle-recolor"
+"t" = "toggle-trim"
+
+# Search and prompts
+"/" = "search-forward"
+"?" = "search-backward"
+"n" = "search-next"
+"N" = "search-previous"
+":" = "command-prompt"
+"o" = "recent"
+
+# Tabs
+"g t" = "next-tab"
+"ctrl+tab" = "next-tab"
+"g T" = "previous-tab"
+"ctrl+shift+tab" = "previous-tab"
+
+# Cancel a half-typed command and hide search highlights
+"escape" = "abort"
+"ctrl+c" = "abort"
+"ctrl+[" = "abort"
+
+# Close the tab, and quit after the last one
+"q" = "quit"

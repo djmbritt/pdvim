@@ -28,10 +28,10 @@ scroll-step = 40
 
 # Bind keys to an action by name, or to "none" to remove a default.
 #
-# A key is a single character ("j", "G", "?") or a name: space, escape,
+# A key is a single character ("j", "G", "?") or a name: space, tab, escape,
 # enter, backspace, up, down, left, right, pageup, pagedown, home, end.
 # Put ctrl+ or shift+ in front for modifiers: "ctrl+d", "shift+space",
-# "ctrl+shift+tab". "shift+q" is the same as "Q".
+# "shift+tab", "ctrl+shift+tab". "shift+q" is the same as "Q".
 #
 # Separate the keys of a sequence with spaces: "g g". If one binding is the
 # start of a longer one, the shorter one wins.

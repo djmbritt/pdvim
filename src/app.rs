@@ -12,6 +12,7 @@ use iced::{
 
 use crate::backend::{self, Backend, Hit, Opened, RenderJob};
 use crate::command::{self, Command, Setting};
+use crate::complete::{self, Candidate};
 use crate::config;
 use crate::history::{Fit, History, View};
 use crate::input::{Action, Key, Pending, Prompt};
@@ -48,6 +49,9 @@ const TABS: Color = Color::from_rgb8(0x18, 0x18, 0x18);
 const TAB_CURRENT: Color = Color::from_rgb8(0x30, 0x30, 0x30);
 /// The colour of the names of tabs not in view.
 const TAB_TEXT: Color = Color::from_rgb8(0x90, 0x90, 0x90);
+
+/// How many completions the list above the prompt shows at a time.
+const COMPLETIONS_SHOWN: usize = 60;
 
 /// The size of status bar text, in pixels.
 const BAR_TEXT_SIZE: f32 = 13.0;
@@ -192,6 +196,18 @@ impl Tab {
     }
 }
 
+/// The completions on offer for the word being typed at the prompt.
+struct Completing {
+    /// Where the word starts in the line, in bytes.
+    start: usize,
+    candidates: Vec<Candidate>,
+    /// The candidate now in the line, once Tab has been pressed again.
+    selected: Option<usize>,
+    /// Whether the list was narrowed by typing since Tab was last pressed,
+    /// so that the next Tab completes afresh rather than going through it.
+    typed: bool,
+}
+
 /// What the bottom line says when nothing is being typed.
 enum Notice {
     None,
@@ -217,6 +233,8 @@ pub struct App {
     pending: Pending,
     /// The prompt being typed into, and the text so far.
     prompt: Option<(Prompt, String)>,
+    /// The completions shown above the prompt, while there are any.
+    completing: Option<Completing>,
     /// The list of recent documents, while it is shown.
     picker: Option<Picker>,
     notice: Notice,
@@ -264,6 +282,7 @@ impl App {
             keymap: Keymap::default(),
             pending: Pending::default(),
             prompt: None,
+            completing: None,
             picker: None,
             notice,
             palette: Palette::default(),
@@ -452,7 +471,14 @@ impl App {
         let Some((prompt, mut line)) = self.prompt.take() else {
             return Task::none();
         };
+        let completing = self.completing.take();
+        let before = line.clone();
         match key {
+            Key::Tab | Key::ShiftTab if prompt == Prompt::Command => {
+                self.completing = complete_line(&mut line, completing, key == Key::Tab);
+                self.prompt = Some((prompt, line));
+                return Task::none();
+            }
             Key::Enter => return self.submit(prompt, &line),
             Key::Escape | Key::Ctrl('c' | '[') => return Task::none(),
             Key::Backspace | Key::Ctrl('h') => {
@@ -470,6 +496,12 @@ impl App {
             Key::ShiftSpace => line.push(' '),
             _ => {}
         }
+        // A list once shown follows what is typed, until nothing fits.
+        self.completing = if line == before {
+            completing
+        } else {
+            completing.and_then(|_| narrowed(&line))
+        };
         self.prompt = Some((prompt, line));
         Task::none()
     }
@@ -528,6 +560,7 @@ impl App {
                 }
             }
             Command::MapClear => self.keymap.clear(),
+            Command::Run(binding, count) => return self.act(binding.action(count)),
             // With no document in view, these set what documents not seen
             // before start with.
             Command::Set(setting) => match setting {
@@ -1068,6 +1101,9 @@ impl App {
         if let Some(picker) = &self.picker {
             layers = layers.push(list(picker));
         }
+        if let Some(completing) = &self.completing {
+            layers = layers.push(completions(completing));
+        }
         match self.tab_bar() {
             Some(tabs) => column![tabs, layers, self.bar()].into(),
             None => column![layers, self.bar()].into(),
@@ -1146,6 +1182,125 @@ impl App {
             .style(|_| container::background(BAR))
             .into()
     }
+}
+
+/// Completes the word at the end of a command line. The first press
+/// completes as far as every candidate agrees, and lists them if there are
+/// several; the presses after go through them in turn. Returns what is
+/// listed, if anything.
+fn complete_line(
+    line: &mut String,
+    completing: Option<Completing>,
+    forward: bool,
+) -> Option<Completing> {
+    if let Some(mut completing) = completing.filter(|completing| !completing.typed) {
+        let count = completing.candidates.len();
+        let last = count.saturating_sub(1);
+        let next = match (completing.selected, forward) {
+            (None, true) => 0,
+            (None, false) => last,
+            (Some(index), true) => index.saturating_add(1).checked_rem(count).unwrap_or(0),
+            (Some(index), false) => index.checked_sub(1).unwrap_or(last),
+        };
+        completing.selected = Some(next);
+        if let Some(candidate) = completing.candidates.get(next) {
+            line.truncate(completing.start);
+            line.push_str(&candidate.text);
+        }
+        return Some(completing);
+    }
+    let complete::Completion { start, candidates } = complete::complete(line);
+    let typed = line.len().saturating_sub(start);
+    match candidates.as_slice() {
+        [] => None,
+        [only] => {
+            line.truncate(start);
+            line.push_str(&only.text);
+            if only.whole {
+                line.push(' ');
+            }
+            None
+        }
+        _ => {
+            let shared = complete::common_start(&candidates);
+            if shared.len() > typed {
+                let shared = shared.to_owned();
+                line.truncate(start);
+                line.push_str(&shared);
+            }
+            Some(Completing {
+                start,
+                candidates,
+                selected: None,
+                typed: false,
+            })
+        }
+    }
+}
+
+/// The list for a line that was typed into while a list was shown, or
+/// none when nothing fits it.
+fn narrowed(line: &str) -> Option<Completing> {
+    let complete::Completion { start, candidates } = complete::complete(line);
+    (!candidates.is_empty()).then_some(Completing {
+        start,
+        candidates,
+        selected: None,
+        typed: true,
+    })
+}
+
+/// The completions on offer, in a band over the bottom of the pages. A
+/// long list is shown a part at a time, the part with the selected one.
+fn completions(completing: &Completing) -> Element<'_, Message> {
+    let selected = completing.selected;
+    let first = selected.map_or(0, |index| {
+        index
+            .checked_div(COMPLETIONS_SHOWN)
+            .unwrap_or(0)
+            .saturating_mul(COMPLETIONS_SHOWN)
+    });
+    let shown = completing
+        .candidates
+        .iter()
+        .enumerate()
+        .skip(first)
+        .take(COMPLETIONS_SHOWN)
+        .map(|(index, candidate)| {
+            let current = selected == Some(index);
+            container(
+                text(candidate.label.as_str())
+                    .size(BAR_TEXT_SIZE)
+                    .font(Font::MONOSPACE)
+                    .color(if current { BAR_TEXT } else { TAB_TEXT })
+                    .wrapping(text::Wrapping::None),
+            )
+            .padding([1, 4])
+            .style(move |_| {
+                if current {
+                    container::background(TAB_CURRENT)
+                } else {
+                    container::Style::default()
+                }
+            })
+            .into()
+        });
+    let mut entries = Row::with_children(shown).spacing(8);
+    let count = completing.candidates.len();
+    if count > COMPLETIONS_SHOWN {
+        let place = selected.map_or(0, |index| index.saturating_add(1));
+        entries = entries.push(
+            text(format!("({place} of {count})"))
+                .size(BAR_TEXT_SIZE)
+                .font(Font::MONOSPACE)
+                .color(LIST_NUMBER),
+        );
+    }
+    let band = container(entries.wrap().vertical_spacing(2))
+        .padding([4, 8])
+        .width(Fill)
+        .style(|_| container::background(BAR));
+    container(band).align_bottom(Fill).clip(true).into()
 }
 
 /// The list of recent documents, drawn over the pages. The first nine are
@@ -1340,6 +1495,8 @@ fn translate(
             Named::End => Some(Key::End),
             Named::Tab if modifiers.control() && modifiers.shift() => Some(Key::CtrlShiftTab),
             Named::Tab if modifiers.control() => Some(Key::CtrlTab),
+            Named::Tab if modifiers.shift() => Some(Key::ShiftTab),
+            Named::Tab => Some(Key::Tab),
             Named::Space if modifiers.shift() => Some(Key::ShiftSpace),
             Named::Space => Some(Key::Char(' ')),
             _ => None,
@@ -1418,4 +1575,84 @@ fn tilde(path: &Path) -> String {
             || path.display().to_string(),
             |rest| format!("~/{}", rest.display()),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Presses Tab or Shift-Tab on a line, in order, and returns the line
+    /// after each press and whether a list is shown.
+    fn presses(start: &str, forward: &[bool]) -> Vec<(String, bool)> {
+        let mut line = start.to_owned();
+        let mut completing = None;
+        forward
+            .iter()
+            .map(|&forward| {
+                completing = complete_line(&mut line, completing.take(), forward);
+                (line.clone(), completing.is_some())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn one_candidate_is_put_in_whole() {
+        assert_eq!(presses("rec", &[true]), [("recent ".to_owned(), false)]);
+        assert_eq!(
+            presses("set trim f", &[true]),
+            [("set trim false ".to_owned(), false)]
+        );
+    }
+
+    #[test]
+    fn several_are_completed_as_far_as_they_agree_then_gone_through() {
+        let lines: Vec<_> = presses("tabn", &[true, true, true, false, false])
+            .into_iter()
+            .map(|(line, listed)| {
+                assert!(listed);
+                line
+            })
+            .collect();
+        assert_eq!(lines, ["tabne", "tabnew", "tabnext", "tabnew", "tabnext"]);
+    }
+
+    #[test]
+    fn going_back_from_the_start_wraps_to_the_end() {
+        let (line, _) = presses("tabn", &[true, false]).pop().unwrap();
+        assert_eq!(line, "tabnext");
+    }
+
+    #[test]
+    fn typing_narrows_the_list_and_tab_then_completes_afresh() {
+        let mut line = "tab".to_owned();
+        let completing = complete_line(&mut line, None, true);
+        assert_eq!(line, "tab");
+        line.push_str("ne");
+        let completing = completing.and_then(|_| narrowed(&line));
+        let labels: Vec<_> = completing
+            .as_ref()
+            .unwrap()
+            .candidates
+            .iter()
+            .map(|candidate| candidate.label.as_str())
+            .collect();
+        assert_eq!(labels, ["tabnew", "tabnext"]);
+        // Tab now starts over: no further shared start, so the list stays
+        // and the next Tab picks the first.
+        let completing = complete_line(&mut line, completing, true);
+        assert_eq!(line, "tabne");
+        complete_line(&mut line, completing, true);
+        assert_eq!(line, "tabnew");
+        // Nothing fits: no list.
+        assert!(narrowed("tabz").is_none());
+    }
+
+    #[test]
+    fn nothing_to_complete_changes_nothing() {
+        assert_eq!(presses("zzz", &[true]), [("zzz".to_owned(), false)]);
+        assert_eq!(
+            presses("set scroll-step ", &[true]),
+            [("set scroll-step ".to_owned(), false)]
+        );
+    }
 }

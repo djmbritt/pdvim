@@ -14,6 +14,7 @@ pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.r
 - Per-document memory of page, zoom, fit, and rotation, stored in SQLite
 - A list of recently read documents to reopen from
 - A configuration file for settings and key bindings
+- `Tab` completion of commands, settings, and file paths in the command prompt
 - Tabs, with vim's `gt` / `gT`, `Ctrl-Tab` / `Ctrl-Shift-Tab`, and `:tabedit`
 
 ## Building
@@ -110,6 +111,10 @@ The mouse wheel also scrolls.
 
 If you name a boolean setting without a value, it is turned on.
 
+You can also run any [action](#actions) by name, as in `:scroll-down` or `:next-tab`. A number after it works like a count typed before a key: `:zoom-to 150` zooms to 150%, and `:first-page 12` goes to page 12.
+
+Press `Tab` in the command prompt to complete what you're typing: command and action names, setting names and their values, action names after `:map`, and file paths after `:open`, `:tabedit`, and `:tabnew`. Paths offer folders and the document types pdvim opens. If more than one completion fits, `Tab` fills in as much as they share and lists them above the prompt. Press `Tab` again to go through the list, and `Shift-Tab` to go back. While the list is open, it narrows as you type, and it closes when nothing fits.
+
 ## Recent documents
 
 `o` or `:recent` lists up to 20 documents you read before, the most recent first. The open document and files that no longer exist are left out.
@@ -161,7 +166,7 @@ If an entry has a mistake, pdvim skips it, shows the first mistake in the status
 
 ### Keys
 
-Write a key as a single character, such as `j`, `G`, or `?`, or by name: `space`, `escape`, `enter`, `backspace`, `up`, `down`, `left`, `right`, `pageup`, `pagedown`, `home`, or `end`. Put `ctrl+` or `shift+` in front for a key with modifiers: `ctrl+d`, `shift+space`, `ctrl+tab`, `ctrl+shift+tab`. `shift+q` is the same as `Q`.
+Write a key as a single character, such as `j`, `G`, or `?`, or by name: `space`, `tab`, `escape`, `enter`, `backspace`, `up`, `down`, `left`, `right`, `pageup`, `pagedown`, `home`, or `end`. Put `ctrl+` or `shift+` in front for a key with modifiers: `ctrl+d`, `shift+space`, `shift+tab`, `ctrl+tab`, `ctrl+shift+tab`. `shift+q` is the same as `Q`.
 
 Separate the keys of a sequence with spaces, as in `"g g"` or `"z i"`. A count typed before the keys is passed to the action, as with the built-in keys. If one binding is the start of a longer one, the shorter one wins: binding `g` hides `g g`.
 

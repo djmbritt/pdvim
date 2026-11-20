@@ -17,6 +17,8 @@ pub enum Key {
     Enter,
     Backspace,
     ShiftSpace,
+    Tab,
+    ShiftTab,
     /// Tab pressed with control held.
     CtrlTab,
     /// Tab pressed with control and shift held.
@@ -163,6 +165,8 @@ impl std::fmt::Display for Key {
             Self::Enter => formatter.write_str("enter"),
             Self::Backspace => formatter.write_str("backspace"),
             Self::ShiftSpace => formatter.write_str("shift+space"),
+            Self::Tab => formatter.write_str("tab"),
+            Self::ShiftTab => formatter.write_str("shift+tab"),
             Self::CtrlTab => formatter.write_str("ctrl+tab"),
             Self::CtrlShiftTab => formatter.write_str("ctrl+shift+tab"),
             Self::Up => formatter.write_str("up"),

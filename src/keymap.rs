@@ -86,6 +86,11 @@ impl Binding {
         (Self::Quit, "quit"),
     ];
 
+    /// The names of every binding.
+    pub fn names() -> impl Iterator<Item = &'static str> {
+        Self::NAMES.iter().map(|(_, name)| *name)
+    }
+
     /// The binding with this name.
     pub fn named(name: &str) -> Option<Self> {
         Self::NAMES
@@ -198,6 +203,8 @@ fn parse_key(written: &str) -> Result<Key, Error> {
     let mut characters = name.chars();
     let single = characters.next().filter(|_| characters.next().is_none());
     let key = match (single, name.to_ascii_lowercase().as_str(), ctrl, shift) {
+        (_, "tab", false, false) => Key::Tab,
+        (_, "tab", false, true) => Key::ShiftTab,
         (_, "tab", true, false) => Key::CtrlTab,
         (_, "tab", true, true) => Key::CtrlShiftTab,
         (_, "space", false, false) => Key::Char(' '),
@@ -375,6 +382,10 @@ mod tests {
             Ok(vec![Key::Char(' '), Key::ShiftSpace])
         );
         assert_eq!(parse_keys("ctrl+shift+tab"), Ok(vec![Key::CtrlShiftTab]));
+        assert_eq!(
+            parse_keys("tab shift+tab"),
+            Ok(vec![Key::Tab, Key::ShiftTab])
+        );
         assert_eq!(parse_keys("ESC"), Ok(vec![Key::Escape]));
         assert_eq!(
             parse_keys("+ ctrl++"),
@@ -397,7 +408,6 @@ mod tests {
             parse_keys("shift+1"),
             Err(Error::UnknownKey("shift+1".into()))
         );
-        assert_eq!(parse_keys("tab"), Err(Error::UnknownKey("tab".into())));
     }
 
     #[test]

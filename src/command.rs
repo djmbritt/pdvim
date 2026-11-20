@@ -33,6 +33,9 @@ pub enum Command {
     Unmap(Vec<Key>),
     /// Unbind every key sequence.
     MapClear,
+    /// Do what a key binding does, as if its keys were pressed after a
+    /// count.
+    Run(Binding, Option<u32>),
     /// Close the tab in view, and the program with its last tab.
     Quit,
     /// Close every tab and the program.
@@ -77,6 +80,46 @@ pub enum Error {
     UnexpectedArgument(&'static str),
 }
 
+/// Every command by its full name, and the shorter names it also goes by.
+const NAMES: [(&str, &[&str]); 14] = [
+    ("map", &[]),
+    ("mapclear", &[]),
+    ("nohlsearch", &["noh", "nohl"]),
+    ("open", &["o"]),
+    ("qall", &["qa", "quita", "quitall"]),
+    ("quit", &["q"]),
+    ("recent", &["rec"]),
+    ("set", &[]),
+    ("tabclose", &["tabc"]),
+    ("tabedit", &["tabe"]),
+    ("tabnew", &[]),
+    ("tabnext", &["tabn"]),
+    ("tabprevious", &["tabp", "tabN", "tabNext"]),
+    ("unmap", &[]),
+];
+
+/// The full names of the commands, in alphabetical order.
+pub fn names() -> impl Iterator<Item = &'static str> {
+    NAMES.iter().map(|(name, _)| *name)
+}
+
+/// The full name of a command, given that or a shorter one.
+pub fn canonical(name: &str) -> Option<&'static str> {
+    NAMES
+        .iter()
+        .find(|(full, short)| *full == name || short.contains(&name))
+        .map(|(full, _)| *full)
+}
+
+/// The names of the settings `:set` knows.
+pub const SETTINGS: [&str; 5] = [
+    "recolor",
+    "recolor-darkcolor",
+    "recolor-lightcolor",
+    "scroll-step",
+    "trim",
+];
+
 /// Parses the text typed after `:`. Blank input is no command at all.
 pub fn parse(line: &str) -> Result<Option<Command>, Error> {
     let line = line.trim();
@@ -89,14 +132,27 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
     let (name, argument) = line
         .split_once(char::is_whitespace)
         .map_or((line, ""), |(name, rest)| (name, rest.trim()));
-    let command = match name {
-        "q" | "quit" => Command::Quit,
-        "qa" | "qall" | "quita" | "quitall" => Command::QuitAll,
-        "tabe" | "tabedit" | "tabnew" => {
+    // Any action can be run by name, with a count after it.
+    let Some(canonical) = canonical(name) else {
+        let binding = Binding::named(name).ok_or_else(|| Error::Unknown(name.to_owned()))?;
+        let count = if argument.is_empty() {
+            None
+        } else {
+            match argument.parse::<u32>() {
+                Ok(count) if count > 0 => Some(count),
+                _ => return Err(Error::NotPositive(argument.to_owned())),
+            }
+        };
+        return Ok(Some(Command::Run(binding, count)));
+    };
+    let command = match canonical {
+        "quit" => Command::Quit,
+        "qall" => Command::QuitAll,
+        "tabedit" | "tabnew" => {
             Command::TabOpen((!argument.is_empty()).then(|| expand_home(argument)))
         }
-        "tabc" | "tabclose" => Command::TabClose,
-        "tabn" | "tabnext" => {
+        "tabclose" => Command::TabClose,
+        "tabnext" => {
             if argument.is_empty() {
                 Command::TabNext(None)
             } else {
@@ -106,15 +162,15 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
                 }
             }
         }
-        "tabp" | "tabprevious" | "tabN" | "tabNext" => Command::TabPrevious,
-        "o" | "open" => {
+        "tabprevious" => Command::TabPrevious,
+        "open" => {
             if argument.is_empty() {
                 return Err(Error::MissingArgument("open"));
             }
             Command::Open(expand_home(argument))
         }
-        "rec" | "recent" => Command::Recent,
-        "noh" | "nohl" | "nohlsearch" => Command::NoHighlight,
+        "recent" => Command::Recent,
+        "nohlsearch" => Command::NoHighlight,
         "set" => Command::Set(parse_setting(argument)?),
         // The keys may have spaces between them, so the action is the
         // last word.
@@ -265,6 +321,39 @@ mod tests {
             parse("set recolor-lightcolor red"),
             Err(Error::Colour(_))
         ));
+    }
+
+    #[test]
+    fn actions_run_by_name_with_a_count() {
+        assert_eq!(
+            parse("scroll-down"),
+            Ok(Some(Command::Run(Binding::ScrollDown, None)))
+        );
+        assert_eq!(
+            parse("zoom-to 150"),
+            Ok(Some(Command::Run(Binding::ZoomTo, Some(150))))
+        );
+        assert_eq!(parse("zoom-to x"), Err(Error::NotPositive("x".into())));
+        // A command of the same name comes first.
+        assert_eq!(parse("quit"), Ok(Some(Command::Quit)));
+        assert_eq!(parse("recent"), Ok(Some(Command::Recent)));
+    }
+
+    #[test]
+    fn every_listed_setting_is_known() {
+        for name in SETTINGS {
+            assert!(
+                !matches!(setting(name, ""), Err(Error::UnknownSetting(_))),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_command_name_parses() {
+        for name in names() {
+            assert!(!matches!(parse(name), Err(Error::Unknown(_))), "{name}");
+        }
     }
 
     #[test]

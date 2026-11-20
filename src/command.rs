@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use crate::input::Key;
+use crate::keymap::{self, Binding};
 use crate::recolor::{InvalidColour, Rgb};
 
 /// A command, parsed.
@@ -25,6 +27,12 @@ pub enum Command {
     Set(Setting),
     /// Hide the search highlights.
     NoHighlight,
+    /// Bind a key sequence.
+    Map(Vec<Key>, Binding),
+    /// Unbind a key sequence.
+    Unmap(Vec<Key>),
+    /// Unbind every key sequence.
+    MapClear,
     /// Close the tab in view, and the program with its last tab.
     Quit,
     /// Close every tab and the program.
@@ -63,6 +71,10 @@ pub enum Error {
     NotPositive(String),
     #[error(transparent)]
     Colour(#[from] InvalidColour),
+    #[error(transparent)]
+    Keys(#[from] keymap::Error),
+    #[error("{0} takes no argument")]
+    UnexpectedArgument(&'static str),
 }
 
 /// Parses the text typed after `:`. Blank input is no command at all.
@@ -104,6 +116,28 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
         "rec" | "recent" => Command::Recent,
         "noh" | "nohl" | "nohlsearch" => Command::NoHighlight,
         "set" => Command::Set(parse_setting(argument)?),
+        // The keys may have spaces between them, so the action is the
+        // last word.
+        "map" => {
+            let (keys, action) = argument
+                .rsplit_once(char::is_whitespace)
+                .ok_or(Error::MissingArgument("map"))?;
+            let binding = Binding::named(action)
+                .ok_or_else(|| keymap::Error::UnknownAction(action.to_owned()))?;
+            Command::Map(keymap::parse_keys(keys)?, binding)
+        }
+        "unmap" => {
+            if argument.is_empty() {
+                return Err(Error::MissingArgument("unmap"));
+            }
+            Command::Unmap(keymap::parse_keys(argument)?)
+        }
+        "mapclear" => {
+            if !argument.is_empty() {
+                return Err(Error::UnexpectedArgument("mapclear"));
+            }
+            Command::MapClear
+        }
         _ => return Err(Error::Unknown(name.to_owned())),
     };
     Ok(Some(command))
@@ -115,6 +149,11 @@ fn parse_setting(argument: &str) -> Result<Setting, Error> {
     let (name, value) = argument
         .split_once(char::is_whitespace)
         .map_or((argument, ""), |(name, rest)| (name, rest.trim()));
+    setting(name, value)
+}
+
+/// Parses a setting given by name, with its value as text.
+pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
     match name {
         "" => Err(Error::MissingArgument("set")),
         "recolor" => parse_switch(value).map(Setting::Recolor),
@@ -236,6 +275,40 @@ mod tests {
         assert_eq!(parse("rec"), Ok(Some(Command::Recent)));
         assert_eq!(parse("recent"), Ok(Some(Command::Recent)));
         assert_eq!(parse("qa"), Ok(Some(Command::QuitAll)));
+    }
+
+    #[test]
+    fn map_commands_parse() {
+        assert_eq!(
+            parse("map ctrl+n next-tab"),
+            Ok(Some(Command::Map(vec![Key::Ctrl('n')], Binding::NextTab)))
+        );
+        assert_eq!(
+            parse("map  g x   quit "),
+            Ok(Some(Command::Map(
+                vec![Key::Char('g'), Key::Char('x')],
+                Binding::Quit
+            )))
+        );
+        assert_eq!(
+            parse("unmap g g"),
+            Ok(Some(Command::Unmap(vec![Key::Char('g'), Key::Char('g')])))
+        );
+        assert_eq!(parse("mapclear"), Ok(Some(Command::MapClear)));
+        assert_eq!(parse("map j"), Err(Error::MissingArgument("map")));
+        assert_eq!(parse("unmap"), Err(Error::MissingArgument("unmap")));
+        assert_eq!(
+            parse("map j fly"),
+            Err(Error::Keys(keymap::Error::UnknownAction("fly".into())))
+        );
+        assert_eq!(
+            parse("map nope quit"),
+            Err(Error::Keys(keymap::Error::UnknownKey("nope".into())))
+        );
+        assert_eq!(
+            parse("mapclear now"),
+            Err(Error::UnexpectedArgument("mapclear"))
+        );
     }
 
     #[test]

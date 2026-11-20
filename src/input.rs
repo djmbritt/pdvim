@@ -1,8 +1,10 @@
 //! Turning key presses into actions, the way vi does.
 //!
-//! A command is an optional count, then one or two keys: `j`, `12G`, `gg`,
-//! `zi`. [`Pending`] holds what has been typed so far and yields an
-//! [`Action`] once a command is complete.
+//! A command is an optional count, then a sequence of keys bound in the
+//! [`Keymap`]: `j`, `12G`, `gg`, `zi`. [`Pending`] holds what has been typed
+//! so far and yields an [`Action`] once a bound sequence is complete.
+
+use crate::keymap::{Keymap, Match};
 
 /// A key press, reduced to what the reader distinguishes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,7 +106,8 @@ pub enum Action {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Pending {
     count: Option<u32>,
-    prefix: Option<char>,
+    /// The keys typed after the count, the start of a bound sequence.
+    keys: Vec<Key>,
 }
 
 impl Pending {
@@ -114,19 +117,18 @@ impl Pending {
             .count
             .map(|count| count.to_string())
             .unwrap_or_default();
-        shown.extend(self.prefix);
+        let keys: Vec<String> = self.keys.iter().map(ToString::to_string).collect();
+        shown.push_str(&keys.join(" "));
         shown
     }
 
-    /// Takes the next key. Returns an action once a command is complete;
-    /// keys that mean nothing clear what was typed.
-    pub fn feed(&mut self, key: Key) -> Option<Action> {
-        if let Some(prefix) = self.prefix.take() {
-            let action = self.after_prefix(prefix, key);
-            self.count = None;
-            return action;
-        }
-        if let Key::Char(digit @ '0'..='9') = key
+    /// Takes the next key. Returns an action once a bound sequence is
+    /// complete; keys that are bound to nothing clear what was typed.
+    pub fn feed(&mut self, key: Key, keymap: &Keymap) -> Option<Action> {
+        // A digit is part of a count, unless it comes in the middle of a
+        // sequence, as in `z0`. A count cannot start with 0.
+        if self.keys.is_empty()
+            && let Key::Char(digit @ '0'..='9') = key
             && let Some(value) = digit.to_digit(10)
             && (self.count.is_some() || value != 0)
         {
@@ -134,82 +136,44 @@ impl Pending {
             self.count = Some(count.saturating_mul(10).saturating_add(value));
             return None;
         }
-        if let Key::Char(prefix @ ('g' | 'z')) = key {
-            self.prefix = Some(prefix);
-            return None;
-        }
-        let count = self.count.take();
-        Self::single(key, count)
-    }
-
-    /// The action for the key that follows `g` or `z`.
-    fn after_prefix(&self, prefix: char, key: Key) -> Option<Action> {
-        match (prefix, key) {
-            ('g', Key::Char('g')) => Some(self.count.map_or(Action::GotoFirst, Action::GotoPage)),
-            ('g', Key::Char('t')) => Some(self.count.map_or(Action::NextTab, Action::GotoTab)),
-            ('g', Key::Char('T')) => Some(Action::PreviousTab(self.count.unwrap_or(1))),
-            ('z', Key::Char('i' | 'I')) => Some(Action::ZoomIn),
-            ('z', Key::Char('o' | 'O')) => Some(Action::ZoomOut),
-            ('z', Key::Char('0')) => Some(Action::ZoomTo(100)),
-            ('z', Key::Char('z' | 'Z')) => Some(Action::ZoomTo(self.count.unwrap_or(100))),
-            (_, Key::Escape | Key::Ctrl('c' | '[')) => Some(Action::Abort),
-            _ => None,
+        self.keys.push(key);
+        match keymap.lookup(&self.keys) {
+            Match::Prefix => None,
+            Match::Bound(binding) => {
+                let count = self.count.take();
+                self.keys.clear();
+                Some(binding.action(count))
+            }
+            Match::None => {
+                *self = Self::default();
+                None
+            }
         }
     }
+}
 
-    /// The action for a key that is a whole command by itself.
-    fn single(key: Key, count: Option<u32>) -> Option<Action> {
-        let times = i32::try_from(count.unwrap_or(1)).unwrap_or(i32::MAX);
-        let back = times.saturating_neg();
-        let action = match key {
-            Key::Char('j') | Key::Down => Action::Scroll {
-                right: 0,
-                down: times,
-            },
-            Key::Char('k') | Key::Up => Action::Scroll {
-                right: 0,
-                down: back,
-            },
-            Key::Char('l') | Key::Right => Action::Scroll {
-                right: times,
-                down: 0,
-            },
-            Key::Char('h') | Key::Left => Action::Scroll {
-                right: back,
-                down: 0,
-            },
-            Key::Ctrl('d') => Action::HalfScreen(times),
-            Key::Ctrl('u') => Action::HalfScreen(back),
-            Key::Ctrl('f') | Key::Char(' ') => Action::FullScreen(times),
-            Key::Ctrl('b') | Key::ShiftSpace => Action::FullScreen(back),
-            Key::Char('J') | Key::PageDown => Action::Page(times),
-            Key::Char('K') | Key::PageUp => Action::Page(back),
-            Key::Char('G') => count.map_or(Action::GotoLast, Action::GotoPage),
-            Key::Home => Action::GotoFirst,
-            Key::End => Action::GotoLast,
-            Key::Char('H') => Action::PageTop,
-            Key::Char('L') => Action::PageBottom,
-            Key::Char('+') => Action::ZoomIn,
-            Key::Char('-') => Action::ZoomOut,
-            Key::Char('=') => Action::ZoomTo(count.unwrap_or(100)),
-            Key::Char('s') => Action::FitWidth,
-            Key::Char('a') => Action::FitPage,
-            Key::Char('r') => Action::Rotate,
-            Key::Ctrl('r') => Action::ToggleRecolor,
-            Key::Char('t') => Action::ToggleTrim,
-            Key::CtrlTab => count.map_or(Action::NextTab, Action::GotoTab),
-            Key::CtrlShiftTab => Action::PreviousTab(count.unwrap_or(1)),
-            Key::Char('n') => Action::SearchNext,
-            Key::Char('N') => Action::SearchPrevious,
-            Key::Char(':') => Action::OpenPrompt(Prompt::Command),
-            Key::Char('/') => Action::OpenPrompt(Prompt::SearchForward),
-            Key::Char('?') => Action::OpenPrompt(Prompt::SearchBackward),
-            Key::Char('o') => Action::ShowRecent,
-            Key::Escape | Key::Ctrl('c' | '[') => Action::Abort,
-            Key::Char('q') => Action::Quit,
-            _ => return None,
-        };
-        Some(action)
+impl std::fmt::Display for Key {
+    /// Writes the key as it is written in the configuration.
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Char(' ') => formatter.write_str("space"),
+            Self::Char(character) => write!(formatter, "{character}"),
+            Self::Ctrl(character) => write!(formatter, "ctrl+{character}"),
+            Self::Escape => formatter.write_str("escape"),
+            Self::Enter => formatter.write_str("enter"),
+            Self::Backspace => formatter.write_str("backspace"),
+            Self::ShiftSpace => formatter.write_str("shift+space"),
+            Self::CtrlTab => formatter.write_str("ctrl+tab"),
+            Self::CtrlShiftTab => formatter.write_str("ctrl+shift+tab"),
+            Self::Up => formatter.write_str("up"),
+            Self::Down => formatter.write_str("down"),
+            Self::Left => formatter.write_str("left"),
+            Self::Right => formatter.write_str("right"),
+            Self::PageUp => formatter.write_str("pageup"),
+            Self::PageDown => formatter.write_str("pagedown"),
+            Self::Home => formatter.write_str("home"),
+            Self::End => formatter.write_str("end"),
+        }
     }
 }
 
@@ -219,9 +183,10 @@ mod tests {
 
     /// Feeds each character as a key and returns the actions that result.
     fn typed(keys: &str) -> Vec<Action> {
+        let keymap = Keymap::default();
         let mut pending = Pending::default();
         keys.chars()
-            .filter_map(|key| pending.feed(Key::Char(key)))
+            .filter_map(|key| pending.feed(Key::Char(key), &keymap))
             .collect()
     }
 
@@ -249,10 +214,14 @@ mod tests {
 
     #[test]
     fn two_key_commands_wait_for_the_second_key() {
+        let keymap = Keymap::default();
         let mut pending = Pending::default();
-        assert_eq!(pending.feed(Key::Char('g')), None);
+        assert_eq!(pending.feed(Key::Char('g'), &keymap), None);
         assert_eq!(pending.display(), "g");
-        assert_eq!(pending.feed(Key::Char('g')), Some(Action::GotoFirst));
+        assert_eq!(
+            pending.feed(Key::Char('g'), &keymap),
+            Some(Action::GotoFirst)
+        );
         assert_eq!(pending.display(), "");
         assert_eq!(typed("zi"), [Action::ZoomIn]);
         assert_eq!(typed("zo"), [Action::ZoomOut]);
@@ -266,37 +235,43 @@ mod tests {
         assert_eq!(typed("gT"), [Action::PreviousTab(1)]);
         assert_eq!(typed("2gT"), [Action::PreviousTab(2)]);
 
+        let keymap = Keymap::default();
         let mut pending = Pending::default();
-        assert_eq!(pending.feed(Key::CtrlTab), Some(Action::NextTab));
+        assert_eq!(pending.feed(Key::CtrlTab, &keymap), Some(Action::NextTab));
         assert_eq!(
-            pending.feed(Key::CtrlShiftTab),
+            pending.feed(Key::CtrlShiftTab, &keymap),
             Some(Action::PreviousTab(1))
         );
-        assert_eq!(pending.feed(Key::Char('2')), None);
-        assert_eq!(pending.feed(Key::CtrlTab), Some(Action::GotoTab(2)));
+        assert_eq!(pending.feed(Key::Char('2'), &keymap), None);
+        assert_eq!(
+            pending.feed(Key::CtrlTab, &keymap),
+            Some(Action::GotoTab(2))
+        );
     }
 
     #[test]
     fn a_leading_zero_is_not_a_count() {
+        let keymap = Keymap::default();
         let mut pending = Pending::default();
-        assert_eq!(pending.feed(Key::Char('0')), None);
+        assert_eq!(pending.feed(Key::Char('0'), &keymap), None);
         assert_eq!(pending.display(), "");
         assert_eq!(typed("10j"), [Action::Scroll { right: 0, down: 10 }]);
     }
 
     #[test]
     fn unknown_keys_and_escape_clear_what_was_typed() {
+        let keymap = Keymap::default();
         let mut pending = Pending::default();
-        assert_eq!(pending.feed(Key::Char('4')), None);
-        assert_eq!(pending.feed(Key::Char('g')), None);
+        assert_eq!(pending.feed(Key::Char('4'), &keymap), None);
+        assert_eq!(pending.feed(Key::Char('g'), &keymap), None);
         assert_eq!(pending.display(), "4g");
-        assert_eq!(pending.feed(Key::Char('x')), None);
+        assert_eq!(pending.feed(Key::Char('x'), &keymap), None);
         assert_eq!(pending.display(), "");
 
-        assert_eq!(pending.feed(Key::Char('7')), None);
-        assert_eq!(pending.feed(Key::Escape), Some(Action::Abort));
+        assert_eq!(pending.feed(Key::Char('7'), &keymap), None);
+        assert_eq!(pending.feed(Key::Escape, &keymap), Some(Action::Abort));
         assert_eq!(
-            pending.feed(Key::Char('j')),
+            pending.feed(Key::Char('j'), &keymap),
             Some(Action::Scroll { right: 0, down: 1 })
         );
     }
@@ -315,11 +290,24 @@ mod tests {
 
     #[test]
     fn control_and_named_keys_scroll() {
+        let keymap = Keymap::default();
         let mut pending = Pending::default();
-        assert_eq!(pending.feed(Key::Ctrl('d')), Some(Action::HalfScreen(1)));
-        assert_eq!(pending.feed(Key::Char('2')), None);
-        assert_eq!(pending.feed(Key::Ctrl('u')), Some(Action::HalfScreen(-2)));
-        assert_eq!(pending.feed(Key::ShiftSpace), Some(Action::FullScreen(-1)));
-        assert_eq!(pending.feed(Key::Ctrl('r')), Some(Action::ToggleRecolor));
+        assert_eq!(
+            pending.feed(Key::Ctrl('d'), &keymap),
+            Some(Action::HalfScreen(1))
+        );
+        assert_eq!(pending.feed(Key::Char('2'), &keymap), None);
+        assert_eq!(
+            pending.feed(Key::Ctrl('u'), &keymap),
+            Some(Action::HalfScreen(-2))
+        );
+        assert_eq!(
+            pending.feed(Key::ShiftSpace, &keymap),
+            Some(Action::FullScreen(-1))
+        );
+        assert_eq!(
+            pending.feed(Key::Ctrl('r'), &keymap),
+            Some(Action::ToggleRecolor)
+        );
     }
 }

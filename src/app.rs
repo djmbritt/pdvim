@@ -12,8 +12,10 @@ use iced::{
 
 use crate::backend::{self, Backend, Hit, Opened, RenderJob};
 use crate::command::{self, Command, Setting};
+use crate::config;
 use crate::history::{Fit, History, View};
 use crate::input::{Action, Key, Pending, Prompt};
+use crate::keymap::Keymap;
 use crate::layout::Rect;
 use crate::num;
 use crate::reader::Reader;
@@ -208,6 +210,7 @@ pub struct App {
     /// Physical pixels per logical pixel.
     scale_factor: f32,
     modifiers: keyboard::Modifiers,
+    keymap: Keymap,
     pending: Pending,
     /// The prompt being typed into, and the text so far.
     prompt: Option<(Prompt, String)>,
@@ -217,6 +220,11 @@ pub struct App {
     palette: Palette,
     /// How far one press of `j` scrolls, in logical pixels.
     scroll_step: f32,
+    /// Whether a document with no view in the history is recoloured.
+    recolor: bool,
+    /// Whether a document with no view in the history has its margins
+    /// trimmed.
+    trim: bool,
 }
 
 /// Runs the reader, opening each document given in a tab of its own.
@@ -250,12 +258,15 @@ impl App {
             area: Size::ZERO,
             scale_factor: 1.0,
             modifiers: keyboard::Modifiers::default(),
+            keymap: Keymap::default(),
             pending: Pending::default(),
             prompt: None,
             picker: None,
             notice,
             palette: Palette::default(),
             scroll_step: 40.0,
+            recolor: false,
+            trim: false,
         };
         // Started without a document, it offers the ones read lately.
         if paths.is_empty() {
@@ -266,7 +277,36 @@ impl App {
             .map(|path| app.open_in_tab(path))
             .collect();
         app.current = 0;
+        // The documents are still opening, so the defaults set here apply
+        // to them, and a problem here is shown over the opening notice.
+        app.configure();
         (app, Task::batch(tasks))
+    }
+
+    /// Carries out the configuration file, and shows its first problem.
+    fn configure(&mut self) {
+        let text = match config::read() {
+            Ok(text) => text,
+            Err(error) => {
+                self.notice = Notice::Error(error.to_string());
+                return;
+            }
+        };
+        let (commands, problems) = config::parse(&text);
+        for command in commands {
+            // No document is open yet, so nothing here starts a task.
+            let _ = self.run_command(command);
+        }
+        for problem in &problems {
+            eprintln!("pdvim: config.toml: {problem}");
+        }
+        if let Some(first) = problems.first() {
+            let more = match problems.len() {
+                1 => String::new(),
+                count => format!(" (and {} more)", count.saturating_sub(1)),
+            };
+            self.notice = Notice::Error(format!("config.toml: {first}{more}"));
+        }
     }
 
     fn title(&self) -> String {
@@ -349,7 +389,7 @@ impl App {
                     self.on_prompt_key(key)
                 } else {
                     self.pending
-                        .feed(key)
+                        .feed(key, &self.keymap)
                         .map_or_else(Task::none, |action| self.act(action))
                 }
             }
@@ -477,13 +517,27 @@ impl App {
                     document.results.shown = false;
                 }
             }
-            Command::Set(setting) => match setting {
-                Setting::Recolor(recolor) => {
-                    if let Some(document) = self.document_mut() {
-                        document.recolor = recolor;
-                    }
+            Command::Map(keys, binding) => self.keymap.bind(keys, binding),
+            Command::Unmap(keys) => {
+                if !self.keymap.unbind(&keys) {
+                    let written: Vec<String> = keys.iter().map(ToString::to_string).collect();
+                    self.notice = Notice::Error(format!("no such mapping: {}", written.join(" ")));
                 }
-                Setting::Trim(trim) => return self.set_trim(self.current, trim),
+            }
+            Command::MapClear => self.keymap.clear(),
+            // With no document in view, these set what documents not seen
+            // before start with.
+            Command::Set(setting) => match setting {
+                Setting::Recolor(recolor) => match self.document_mut() {
+                    Some(document) => document.recolor = recolor,
+                    None => self.recolor = recolor,
+                },
+                Setting::Trim(trim) => {
+                    if self.document().is_some() {
+                        return self.set_trim(self.current, trim);
+                    }
+                    self.trim = trim;
+                }
                 Setting::RecolorPaper(paper) => self.palette.paper = paper,
                 Setting::RecolorInk(ink) => self.palette.ink = ink,
                 Setting::ScrollStep(step) => self.scroll_step = step,
@@ -638,13 +692,15 @@ impl App {
         };
         let id = self.next_id();
         let mut reader = Reader::new(opened.sizes, (self.area.width, self.area.height));
-        let mut recolor = false;
+        let mut recolor = self.recolor;
+        let mut trim = self.trim;
         let mut returning = None;
         let mut notice = Notice::None;
         match self.history.as_ref().map(|history| history.load(&path)) {
             Some(Ok(Some(view))) => {
                 reader.restore(view);
                 recolor = view.recolor;
+                trim = view.trim;
                 // A trimmed view only makes sense once the margins are
                 // known, so it is restored again when they are.
                 returning = view.trim.then_some(view);
@@ -652,7 +708,6 @@ impl App {
             Some(Err(error)) => notice = Notice::Error(error.to_string()),
             Some(Ok(None)) | None => {}
         }
-        let trimmed = returning.is_some();
         let Some(tab) = self.tabs.get_mut(index) else {
             return Task::none();
         };
@@ -672,11 +727,16 @@ impl App {
             failed: HashMap::new(),
             results: Results::default(),
         });
-        self.notice = notice;
+        // Only the notice that the document was opening is done with.
+        if matches!(notice, Notice::Error(_)) {
+            self.notice = notice;
+        } else if matches!(self.notice, Notice::Info(_)) {
+            self.notice = Notice::None;
+        }
         if let Some(left) = &left {
             self.remember(left);
         }
-        if trimmed {
+        if trim {
             self.set_trim(index, true)
         } else {
             Task::none()

@@ -13,6 +13,7 @@ pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.r
 - Trimming of blank page margins
 - Per-document memory of page, zoom, fit, and rotation, stored in SQLite
 - A list of recently read documents to reopen from
+- A configuration file for settings and key bindings
 - Tabs, with vim's `gt` / `gT`, `Ctrl-Tab` / `Ctrl-Shift-Tab`, and `:tabedit`
 
 ## Building
@@ -97,6 +98,9 @@ The mouse wheel also scrolls.
 | `:set recolor-lightcolor #rrggbb`     | Set the color white paper becomes when recolored (default `#1a1a1a`) |
 | `:set recolor-darkcolor #rrggbb`      | Set the color black ink becomes when recolored (default `#dddddd`)   |
 | `:set scroll-step {pixels}`           | Set how far one `j` or `k` scrolls                                   |
+| `:map {keys} {action}`               | Bind keys to an action (see [Keys](#keys-1))                         |
+| `:unmap {keys}`                       | Remove a key binding                                                 |
+| `:mapclear`                           | Remove every key binding                                             |
 | `:tabe[dit] {file}`, `:tabnew [file]` | Open a document in a new tab, or open an empty tab                   |
 | `:tabn[ext] [n]`                      | Go to the next tab, or to tab _n_                                    |
 | `:tabp[revious]`                      | Go to the previous tab                                               |
@@ -117,6 +121,72 @@ If you name a boolean setting without a value, it is turned on.
 | `Enter`, `l`, `o`                          | Open the selected document in a new tab |
 | `1`–`9`                                    | Open that entry in a new tab            |
 | `Esc`, `Ctrl-c`, `q`                       | Close the list                          |
+
+## Configuration
+
+pdvim reads `$XDG_CONFIG_HOME/pdvim/config.toml` when it starts. If `XDG_CONFIG_HOME` is not set, it reads `~/.config/pdvim/config.toml`. You don't need the file.
+
+```toml
+[settings]
+# Recolor and trim documents that have not been opened before.
+recolor = true
+trim = true
+scroll-step = 60
+recolor-lightcolor = "#1a1a1a"
+recolor-darkcolor = "#dddddd"
+
+[keys]
+# Move between tabs with Ctrl-n and Ctrl-p.
+"ctrl+n" = "next-tab"
+"ctrl+p" = "previous-tab"
+# Quit with Q instead of q.
+"q" = "none"
+"shift+q" = "quit"
+```
+
+`[settings]` takes the same names and values as `:set`. `recolor` and `trim` decide how a document starts the first time you open it. After that, the document is restored the way you left it.
+
+`[keys]` binds keys to the [actions](#actions) below, on top of the default keys. Bind keys to `"none"` to remove a default.
+
+If an entry has a mistake, pdvim skips it, shows the first mistake in the status bar, and prints every mistake to standard error. If the file is not valid TOML, pdvim ignores all of it.
+
+### Keys
+
+Write a key as a single character, such as `j`, `G`, or `?`, or by name: `space`, `escape`, `enter`, `backspace`, `up`, `down`, `left`, `right`, `pageup`, `pagedown`, `home`, or `end`. Put `ctrl+` or `shift+` in front for a key with modifiers: `ctrl+d`, `shift+space`, `ctrl+tab`, `ctrl+shift+tab`. `shift+q` is the same as `Q`.
+
+Separate the keys of a sequence with spaces, as in `"g g"` or `"z i"`. A count typed before the keys is passed to the action, as with the built-in keys. If one binding is the start of a longer one, the shorter one wins: binding `g` hides `g g`.
+
+The `:map {keys} {action}`, `:unmap {keys}`, and `:mapclear` commands change the bindings while pdvim runs. They write keys the same way, as in `:map ctrl+n next-tab`.
+
+The keys used in the command prompt and in the recent-documents list can't be changed.
+
+### Actions
+
+| Action                                | Default keys                                |
+| ------------------------------------- | ------------------------------------------- |
+| `scroll-down` / `scroll-up`           | `j`, `down` / `k`, `up`                     |
+| `scroll-left` / `scroll-right`        | `h`, `left` / `l`, `right`                  |
+| `scroll-half-down` / `scroll-half-up` | `ctrl+d` / `ctrl+u`                         |
+| `scroll-full-down` / `scroll-full-up` | `ctrl+f`, `space` / `ctrl+b`, `shift+space` |
+| `next-page` / `previous-page`         | `J`, `pagedown` / `K`, `pageup`             |
+| `first-page` / `last-page`            | `g g`, `home` / `G`, `end`                  |
+| `page-top` / `page-bottom`            | `H` / `L`                                   |
+| `zoom-in` / `zoom-out`                | `+`, `z i`, `z I` / `-`, `z o`, `z O`       |
+| `zoom-to`                             | `=`, `z z`, `z Z`                           |
+| `zoom-reset`                          | `z 0`                                       |
+| `fit-width` / `fit-page`              | `s` / `a`                                   |
+| `rotate`                              | `r`                                         |
+| `toggle-recolor`                      | `ctrl+r`                                    |
+| `toggle-trim`                         | `t`                                         |
+| `search-forward` / `search-backward`  | `/` / `?`                                   |
+| `search-next` / `search-previous`     | `n` / `N`                                   |
+| `command-prompt`                      | `:`                                         |
+| `recent`                              | `o`                                         |
+| `next-tab` / `previous-tab`           | `g t`, `ctrl+tab` / `g T`, `ctrl+shift+tab` |
+| `abort`                               | `escape`, `ctrl+c`, `ctrl+[`                |
+| `quit`                                | `q`                                         |
+
+With a count, `first-page` and `last-page` go to that page, `zoom-to` zooms to that percentage, and `next-tab` goes to that tab.
 
 ## Reading history
 

@@ -2,7 +2,9 @@
 //!
 //! The pieces, from the inside out:
 //! - `layout` places pages in a column and `reader` scrolls and zooms over it;
-//! - `input` turns key presses into actions and `command` parses `:` commands;
+//! - `input` turns key presses into actions through the bindings in `keymap`,
+//!   and `command` parses `:` commands;
+//! - `config` reads those commands from the configuration file;
 //! - `backend` renders and searches documents with MuPDF on a worker thread;
 //! - `history` remembers where each document was left, and `recent` lists
 //!   the documents read lately to pick from;
@@ -11,8 +13,10 @@
 mod app;
 mod backend;
 mod command;
+mod config;
 mod history;
 mod input;
+mod keymap;
 mod layout;
 mod num;
 mod reader;

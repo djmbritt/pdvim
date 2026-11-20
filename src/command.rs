@@ -17,6 +17,8 @@ pub enum Command {
     Recent,
     /// Show the key bindings.
     Help,
+    /// Say which theme is in force.
+    ShowTheme,
     /// Open a new tab, with a document in it or empty.
     TabOpen(Option<PathBuf>),
     /// Close the tab in view, unless it is the last.
@@ -110,7 +112,7 @@ pub enum Error {
 }
 
 /// Every command by its full name, and the shorter names it also goes by.
-const NAMES: [(&str, &[&str]); 15] = [
+const NAMES: [(&str, &[&str]); 16] = [
     ("help", &["h"]),
     ("map", &[]),
     ("mapclear", &[]),
@@ -125,6 +127,7 @@ const NAMES: [(&str, &[&str]); 15] = [
     ("tabnew", &[]),
     ("tabnext", &["tabn"]),
     ("tabprevious", &["tabp", "tabN", "tabNext"]),
+    ("theme", &["colo", "colorscheme"]),
     ("unmap", &[]),
 ];
 
@@ -206,6 +209,9 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
             Command::Open(expand_home(argument))
         }
         "recent" => Command::Recent,
+        // As `:set theme`; with nothing after it, says which is in force.
+        "theme" if argument.is_empty() => Command::ShowTheme,
+        "theme" => Command::Set(setting("theme", argument)?),
         "help" => Command::Help,
         "nohlsearch" => Command::NoHighlight,
         "set" => Command::Set(parse_setting(argument)?),
@@ -475,6 +481,25 @@ mod tests {
         assert_eq!(parse("rec"), Ok(Some(Command::Recent)));
         assert_eq!(parse("recent"), Ok(Some(Command::Recent)));
         assert_eq!(parse("qa"), Ok(Some(Command::QuitAll)));
+    }
+
+    #[test]
+    fn theme_commands_parse() {
+        assert_eq!(parse("theme"), Ok(Some(Command::ShowTheme)));
+        assert_eq!(
+            parse("colo catppuccin-mocha"),
+            Ok(Some(Command::Set(Setting::Theme(Some(
+                Theme::CatppuccinMocha
+            )))))
+        );
+        assert_eq!(
+            parse("theme auto"),
+            Ok(Some(Command::Set(Setting::Theme(None))))
+        );
+        assert_eq!(
+            parse("colorscheme nord"),
+            Err(Error::UnknownTheme("nord".into()))
+        );
     }
 
     #[test]

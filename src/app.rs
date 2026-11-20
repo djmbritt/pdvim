@@ -1267,6 +1267,14 @@ impl App {
             Command::QuitAll => return self.quit(),
             Command::Open(path) | Command::TabOpen(Some(path)) => return self.open_in_tab(path),
             Command::Recent => self.show_recent(),
+            Command::ShowTheme => {
+                let theme = self.current_theme().name();
+                self.notice = Notice::Info(if self.theme.is_some() {
+                    format!("theme {theme}")
+                } else {
+                    format!("theme {theme}, following the system (auto)")
+                });
+            }
             Command::Help => self.show_help(),
             Command::TabOpen(None) => {
                 self.tabs.push(Tab::default());

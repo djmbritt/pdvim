@@ -145,7 +145,9 @@ A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t
 | `:set trim [true\|false]`              | Turn margin trimming on or off                                       |
 | `:set recolor-lightcolor #rrggbb`      | Set the color white paper becomes when recolored (default: theme's)  |
 | `:set recolor-darkcolor #rrggbb`       | Set the color black ink becomes when recolored (default: theme's)    |
-| `:set theme {name}\|auto`              | Set the theme, or follow the system's light or dark theme (default)  |
+| `:theme {name}\|auto`                  | Set the theme, or follow the system's (default); or `:colo[rscheme]` |
+| `:theme`                               | Show the theme in force                                              |
+| `:set theme {name}\|auto`              | The same as `:theme`                                                 |
 | `:set theme-dark {name}`               | Set the theme followed while the system is dark                      |
 | `:set theme-light {name}`              | Set the theme followed while the system is light                     |
 | `:set scroll-step {pixels}`            | Set how far one `j` or `k` scrolls                                   |

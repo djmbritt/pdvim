@@ -66,6 +66,9 @@ pub fn complete(line: &str) -> Completion {
         .saturating_sub(usize::from(!last_word.is_empty()));
     let candidates = match command::canonical(name) {
         // A path may have spaces in it, so it is everything after the name.
+        Some("theme") if words_before == 0 => {
+            words(last_word, std::iter::once("auto").chain(Theme::names()))
+        }
         Some("open" | "tabedit" | "tabnew") => {
             return Completion {
                 start: after,
@@ -271,6 +274,19 @@ mod tests {
         assert_eq!(
             texts(&complete("map ctrl+n ")).len(),
             Binding::names().count()
+        );
+    }
+
+    #[test]
+    fn themes_complete_after_theme() {
+        assert_eq!(
+            texts(&complete("colo catppuccin-m")),
+            ["catppuccin-macchiato", "catppuccin-mocha"]
+        );
+        assert_eq!(texts(&complete("theme au")), ["auto"]);
+        assert_eq!(
+            texts(&complete("set theme pdvim-")),
+            ["pdvim-dark", "pdvim-light"]
         );
     }
 

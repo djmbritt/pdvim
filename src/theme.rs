@@ -37,7 +37,6 @@ impl Theme {
     }
 
     /// The name of the theme.
-    #[cfg(test)]
     pub fn name(self) -> &'static str {
         Self::NAMES
             .iter()

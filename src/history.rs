@@ -61,7 +61,7 @@ pub struct View {
 /// Why the history could not be read or written.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("no data directory: neither XDG_DATA_HOME nor HOME is set")]
+    #[error("no data directory: none of XDG_DATA_HOME, LOCALAPPDATA or HOME is set")]
     NoDataDirectory,
     #[error("cannot create {0}: {1}")]
     CreateDirectory(PathBuf, std::io::Error),
@@ -195,16 +195,9 @@ fn now() -> i64 {
         })
 }
 
-/// The directory the database lives in: `$XDG_DATA_HOME/pdvim`, or
-/// `~/.local/share/pdvim` when that is not set.
+/// The directory the database lives in.
 fn data_directory() -> Option<PathBuf> {
-    let base = std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .filter(|path| path.is_absolute())
-        .or_else(|| {
-            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share"))
-        })?;
-    Some(base.join("pdvim"))
+    crate::dirs::data()
 }
 
 #[cfg(test)]

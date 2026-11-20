@@ -1,5 +1,9 @@
 //! The `pdvim` command: opens the files named on the command line.
 
+// On Windows, a program for the console gets a console window of its own
+// when started from the desktop.
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 use std::path::PathBuf;
 use std::process::ExitCode;
 

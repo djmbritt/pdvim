@@ -21,6 +21,7 @@ mod bindings;
 mod command;
 mod complete;
 mod config;
+mod dirs;
 #[doc(hidden)]
 pub mod fuzz;
 mod help;

@@ -1,7 +1,8 @@
 //! The configuration file, read once at startup.
 //!
 //! It lives at `$XDG_CONFIG_HOME/pdvim/config.toml`, or
-//! `~/.config/pdvim/config.toml` when that is not set, and has two tables:
+//! `~/.config/pdvim/config.toml` when that is not set
+//! (`%APPDATA%\pdvim\config.toml` on Windows), and has two tables:
 //!
 //! ```toml
 //! [settings]
@@ -144,11 +145,7 @@ fn keys(mode: Mode, written: &str, value: &Value) -> Result<Command, String> {
 
 /// Where the configuration file is looked for.
 pub fn path() -> Option<PathBuf> {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .filter(|path| path.is_absolute())
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
-    Some(base.join("pdvim").join("config.toml"))
+    Some(crate::dirs::config()?.join("config.toml"))
 }
 
 #[cfg(test)]

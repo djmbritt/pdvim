@@ -2762,7 +2762,25 @@ fn jump_to(document: &mut Document, index: Option<usize>, notice: &mut Notice) {
 /// Has the desktop's chosen program open a link, such as a web page in the
 /// browser, without waiting for it.
 fn open_externally(uri: &str) -> std::io::Result<()> {
-    let mut child = std::process::Command::new("xdg-open")
+    // A link comes from the document, which may have been made to harm:
+    // only web and mail addresses are handed on, never files or programs.
+    if !openable(uri) {
+        return Err(std::io::Error::other(
+            "only http, https and mailto links are opened",
+        ));
+    }
+    let mut command = if cfg!(target_os = "macos") {
+        std::process::Command::new("open")
+    } else if cfg!(windows) {
+        // Not through `cmd`, which would take `&` and `|` in the address
+        // as commands of its own.
+        let mut command = std::process::Command::new("rundll32");
+        command.arg("url.dll,FileProtocolHandler");
+        command
+    } else {
+        std::process::Command::new("xdg-open")
+    };
+    let mut child = command
         .arg(uri)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -2771,6 +2789,17 @@ fn open_externally(uri: &str) -> std::io::Result<()> {
     // Collect it once it is done, so it does not linger.
     std::thread::spawn(move || child.wait());
     Ok(())
+}
+
+/// Whether a link's address is one to hand to another program: a web or
+/// mail address.
+fn openable(uri: &str) -> bool {
+    let Some((scheme, _)) = uri.split_once(':') else {
+        return false;
+    };
+    ["http", "https", "mailto"]
+        .iter()
+        .any(|allowed| scheme.eq_ignore_ascii_case(allowed))
 }
 
 /// The index of a tab counted from 1.
@@ -2823,6 +2852,17 @@ mod tests {
                 (line.clone(), completing.is_some())
             })
             .collect()
+    }
+
+    #[test]
+    fn only_web_and_mail_links_are_opened() {
+        assert!(openable("https://example.com/a?b=c&d"));
+        assert!(openable("HTTP://example.com"));
+        assert!(openable("mailto:someone@example.com"));
+        assert!(!openable("file:///etc/passwd"));
+        assert!(!openable("javascript:alert(1)"));
+        assert!(!openable("--help"));
+        assert!(!openable("/usr/bin/xterm"));
     }
 
     #[test]

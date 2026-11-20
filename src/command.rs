@@ -318,7 +318,10 @@ fn parse_switch(value: &str) -> Result<bool, Error> {
 
 /// Replaces a leading `~` with the home directory, when there is one.
 fn expand_home(path: &str) -> PathBuf {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    // Windows names the home directory differently.
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from);
     match (path.strip_prefix('~'), home) {
         (Some(""), Some(home)) => home,
         (Some(rest), Some(home)) if rest.starts_with('/') => {

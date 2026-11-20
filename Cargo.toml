@@ -4,14 +4,29 @@ version = "0.1.0"
 edition = "2024"
 description = "A minimal, keyboard-driven PDF reader"
 license = "AGPL-3.0-or-later"
+repository = "https://github.com/djmbritt/pdvim"
 
 [dependencies]
 iced = { version = "0.14.0", features = ["canvas", "image"] }
 mupdf = { version = "0.8.0", default-features = false, features = ["base14-fonts", "system-fonts"] }
-rusqlite = "0.42"
+rusqlite = { version = "0.42", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2"
 toml = { version = "1.2.1", default-features = false, features = ["parse", "serde", "preserve_order"] }
+
+# For `cargo deb`, which the release workflow runs to make the .deb.
+[package.metadata.deb]
+maintainer = "David Britt"
+section = "graphics"
+extended-description = "A minimal, keyboard-driven PDF reader with vi keybindings, tabs, search, visual mode and highlights."
+depends = "$auto"
+assets = [
+    ["target/release/pdvim", "usr/bin/", "755"],
+    ["packaging/pdvim.desktop", "usr/share/applications/", "644"],
+    ["packaging/pdvim.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+    ["README.md", "usr/share/doc/pdvim/", "644"],
+    ["defaults.toml", "usr/share/doc/pdvim/", "644"],
+]
 
 [lints.clippy]
 pedantic = { level = "deny", priority = -1 }   # UM, ACTUALLY

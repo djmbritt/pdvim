@@ -22,6 +22,33 @@ pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.r
 - `Tab` completion of commands, settings, and file paths in the command prompt
 - Tabs, with vim's `gt` / `gT`, `Ctrl-Tab` / `Ctrl-Shift-Tab`, and `:tabedit`
 
+## Installing
+
+Each [release](https://github.com/djmbritt/pdvim/releases) has packages for:
+
+| Platform             | Download                                                                        |
+| -------------------- | ------------------------------------------------------------------------------- |
+| Linux, x86-64        | `pdvim_VERSION-1_amd64.deb`, or `pdvim-VERSION-x86_64-unknown-linux-gnu.tar.gz` |
+| macOS, Apple silicon | `pdvim-VERSION-aarch64-apple-darwin.dmg`, or the `.tar.gz` for the terminal     |
+| macOS, Intel         | `pdvim-VERSION-x86_64-apple-darwin.dmg`, or the `.tar.gz`                       |
+| Windows, x86-64      | `pdvim-VERSION-x86_64-pc-windows-msvc.zip`                                      |
+| Arch Linux           | build the package in [`packaging/`](packaging/) with `makepkg -si`              |
+
+`SHA256SUMS` lists the checksum of each. The macOS app is not signed by a registered developer, so macOS refuses to open it at first: right-click it and choose Open, or run `xattr -dr com.apple.quarantine /Applications/pdvim.app`.
+
+On macOS and Windows pdvim keeps its configuration in `~/.config/pdvim` and `%APPDATA%\pdvim`, and its reading history in `~/.local/share/pdvim` and `%LOCALAPPDATA%\pdvim`.
+
+### Making a release
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) builds, tests and packages pdvim on each platform. Push a tag that matches the version in `Cargo.toml` to draft a release with every package attached:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Check the draft on GitHub and publish it. Running the workflow by hand from the Actions tab builds the packages without releasing them, and keeps them as the run's artifacts. [`packaging/dist.sh`](packaging/dist.sh) does the packaging, and runs locally too, after `cargo build --release --target TARGET`.
+
 ## Building
 
 pdvim needs Rust 2024 edition (Rust 1.85 or newer). The `mupdf` crate builds MuPDF from source, so you also need a C toolchain and `libclang`.

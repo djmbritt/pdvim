@@ -21,7 +21,6 @@ depends=(
   'hicolor-icon-theme'
   'libpng'
   'libxkbcommon'
-  'sqlite'
   'vulkan-icd-loader'
   'wayland'
   'zlib'

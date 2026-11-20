@@ -12,7 +12,7 @@ use iced::{
 
 use crate::backend::{self, Annotation, Backend, Highlight, Hit, Link, Opened, RenderJob, Target};
 use crate::bindings::{self, Keymaps};
-use crate::command::{self, Command, Setting};
+use crate::command::{self, Command, Recolor, Setting};
 use crate::complete::{self, Candidate};
 use crate::config;
 use crate::help::{Help, Line};
@@ -111,6 +111,9 @@ pub enum Message {
     Wheel(mouse::ScrollDelta),
     /// The window was asked to close.
     CloseRequested,
+    /// The system's preference for a light or dark theme became known, or
+    /// changed.
+    SystemTheme(iced::theme::Mode),
     /// A document finished opening, or failed to, for the request with
     /// this number.
     Opened(u64, PathBuf, Result<Opened, backend::Error>),
@@ -364,6 +367,11 @@ pub struct App {
     confirm_quit: bool,
     /// Whether to ask before closing a tab, when others are left.
     confirm_tab_close: bool,
+    /// Whether documents are recoloured to match the system's theme.
+    recolor_auto: bool,
+    /// Whether the system prefers a dark theme, once known, if it has a
+    /// preference.
+    system_dark: Option<bool>,
     /// What the bottom line is asking, waiting for `y` or anything else.
     asking: Option<Question>,
 }
@@ -425,6 +433,8 @@ impl App {
             fresh: Fresh::default(),
             confirm_quit: false,
             confirm_tab_close: false,
+            recolor_auto: false,
+            system_dark: None,
             asking: None,
         };
         // Started without a document, it offers the ones read lately.
@@ -439,7 +449,20 @@ impl App {
         // The documents are still opening, so the defaults set here apply
         // to them, and a problem here is shown over the opening notice.
         app.configure();
-        (app, Task::batch(tasks))
+        // The theme is also told on every change, but not always at start.
+        let theme = iced::system::theme().map(Message::SystemTheme);
+        (app, Task::batch(tasks.into_iter().chain([theme])))
+    }
+
+    /// Recolours every open document, or stops, to match the system's
+    /// theme, when following it and the theme is known.
+    fn follow_system(&mut self) {
+        let Some(dark) = self.system_dark.filter(|_| self.recolor_auto) else {
+            return;
+        };
+        for document in self.tabs.iter_mut().filter_map(|tab| tab.document.as_mut()) {
+            document.recolor = dark;
+        }
     }
 
     /// Carries out the built-in configuration, then the configuration file
@@ -488,6 +511,7 @@ impl App {
         Subscription::batch([
             keyboard::listen().map(Message::Keyboard),
             window::close_requests().map(|_| Message::CloseRequested),
+            iced::system::theme_changes().map(Message::SystemTheme),
         ])
     }
 
@@ -524,6 +548,15 @@ impl App {
             // window closes without asking again.
             Message::CloseRequested if self.asking == Some(Question::Quit) => self.exit(),
             Message::CloseRequested => self.quit(),
+            Message::SystemTheme(mode) => {
+                self.system_dark = match mode {
+                    iced::theme::Mode::Dark => Some(true),
+                    iced::theme::Mode::Light => Some(false),
+                    iced::theme::Mode::None => None,
+                };
+                self.follow_system();
+                Task::none()
+            }
             Message::Opened(request, path, result) => self.on_opened(request, path, result),
             Message::Rendered(id, page, key, result) => {
                 self.on_rendered(id, page, key, result);
@@ -1283,10 +1316,18 @@ impl App {
             // With no document in view, these set what documents not seen
             // before start with.
             Command::Set(setting) => match setting {
-                Setting::Recolor(recolor) => match self.document_mut() {
-                    Some(document) => document.recolor = recolor,
-                    None => self.fresh.recolor = recolor,
-                },
+                Setting::Recolor(Recolor::Auto) => {
+                    self.recolor_auto = true;
+                    self.follow_system();
+                }
+                Setting::Recolor(recolor) => {
+                    self.recolor_auto = false;
+                    let recolor = recolor == Recolor::On;
+                    match self.document_mut() {
+                        Some(document) => document.recolor = recolor,
+                        None => self.fresh.recolor = recolor,
+                    }
+                }
                 Setting::Trim(trim) => {
                     if self.document().is_some() {
                         return self.set_trim(self.current, trim);
@@ -1486,6 +1527,13 @@ impl App {
             }
             Some(Err(error)) => notice = Notice::Error(error.to_string()),
             Some(Ok(None)) | None => {}
+        }
+        // Following the system, its theme wins over how the document was
+        // left.
+        if self.recolor_auto
+            && let Some(dark) = self.system_dark
+        {
+            recolor = dark;
         }
         let Some(tab) = self.tabs.get_mut(index) else {
             return Task::none();

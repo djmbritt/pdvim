@@ -49,7 +49,7 @@ pub enum Command {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Setting {
     /// Whether pages are recoloured.
-    Recolor(bool),
+    Recolor(Recolor),
     /// Whether the blank margins of pages are hidden.
     Trim(bool),
     /// What light colours such as white paper become when recoloured. Named
@@ -68,6 +68,16 @@ pub enum Setting {
     HighlightColour(Rgb),
 }
 
+/// Whether pages are recoloured for a dark background.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Recolor {
+    On,
+    Off,
+    /// Recoloured while the system prefers a dark theme, and not while it
+    /// prefers a light one.
+    Auto,
+}
+
 /// Why a command could not be understood.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum Error {
@@ -79,6 +89,8 @@ pub enum Error {
     UnknownSetting(String),
     #[error("`{0}` is not true or false")]
     NotBoolean(String),
+    #[error("`{0}` is not true, false or auto")]
+    NotRecolor(String),
     #[error("`{0}` is not a positive number")]
     NotPositive(String),
     #[error(transparent)]
@@ -237,7 +249,14 @@ fn parse_setting(argument: &str) -> Result<Setting, Error> {
 pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
     match name {
         "" => Err(Error::MissingArgument("set")),
-        "recolor" => parse_switch(value).map(Setting::Recolor),
+        "recolor" => match value {
+            "auto" => Ok(Setting::Recolor(Recolor::Auto)),
+            value => match parse_switch(value) {
+                Ok(true) => Ok(Setting::Recolor(Recolor::On)),
+                Ok(false) => Ok(Setting::Recolor(Recolor::Off)),
+                Err(_) => Err(Error::NotRecolor(value.to_owned())),
+            },
+        },
         "trim" => parse_switch(value).map(Setting::Trim),
         "recolor-darkcolor" => Ok(Setting::RecolorInk(value.parse()?)),
         "recolor-lightcolor" => Ok(Setting::RecolorPaper(value.parse()?)),
@@ -300,11 +319,15 @@ mod tests {
     fn settings_parse() {
         assert_eq!(
             parse("set recolor"),
-            Ok(Some(Command::Set(Setting::Recolor(true))))
+            Ok(Some(Command::Set(Setting::Recolor(Recolor::On))))
         );
         assert_eq!(
             parse("set recolor false"),
-            Ok(Some(Command::Set(Setting::Recolor(false))))
+            Ok(Some(Command::Set(Setting::Recolor(Recolor::Off))))
+        );
+        assert_eq!(
+            parse("set recolor auto"),
+            Ok(Some(Command::Set(Setting::Recolor(Recolor::Auto))))
         );
         assert_eq!(
             parse("set recolor-darkcolor #102030"),
@@ -347,7 +370,7 @@ mod tests {
         );
         assert_eq!(
             parse("set recolor maybe"),
-            Err(Error::NotBoolean("maybe".into()))
+            Err(Error::NotRecolor("maybe".into()))
         );
         assert_eq!(
             parse("set scroll-step -3"),

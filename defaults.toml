@@ -8,10 +8,15 @@
 
 [settings]
 
-# Recolor pages for a dark background. This and `trim` apply to documents
-# opened for the first time; after that, each document is restored the way
-# you left it.
-recolor = false
+# Recolor pages for a dark background: true, false, or "auto" to follow
+# the system's light or dark theme, as the desktop's color-scheme setting
+# says. With "auto", every document is recolored while the system is dark
+# and shown as printed while it is light, changing as the system does;
+# R still turns recoloring on or off for the document in view until the
+# system changes again. With true or false, recolor and trim apply to
+# documents opened for the first time; after that, each document is
+# restored the way you left it.
+recolor = "auto"
 
 # Hide the blank margins of pages.
 trim = false

@@ -155,7 +155,7 @@ pub fn path() -> Option<PathBuf> {
 mod tests {
     use super::*;
     use crate::bindings::{Bound, DEFAULTS};
-    use crate::command::Setting;
+    use crate::command::{Recolor, Setting};
     use crate::input::{Binding, Key};
     use crate::recolor::Rgb;
     use crate::visual;
@@ -182,7 +182,7 @@ mod tests {
             commands,
             [
                 Command::Set(Setting::ScrollStep(60.0)),
-                Command::Set(Setting::Recolor(true)),
+                Command::Set(Setting::Recolor(Recolor::On)),
                 Command::Set(Setting::RecolorInk(Rgb(0x10, 0x20, 0x30))),
                 Command::Map(vec![Key::Ctrl('n')], Bound::Normal(Binding::NextTab)),
                 Command::Unmap(Mode::Normal, vec![Key::Char('g'), Key::Char('g')]),

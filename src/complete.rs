@@ -73,9 +73,10 @@ pub fn complete(line: &str) -> Completion {
         }
         Some("set") if words_before == 0 => words(last_word, command::SETTINGS),
         Some("set") if words_before == 1 => match rest.split_whitespace().next() {
-            Some("confirm-quit" | "confirm-tab-close" | "recolor" | "trim") => {
+            Some("confirm-quit" | "confirm-tab-close" | "trim") => {
                 words(last_word, ["true", "false"])
             }
+            Some("recolor") => words(last_word, ["true", "false", "auto"]),
             _ => Vec::new(),
         },
         // A mode may come first.

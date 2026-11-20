@@ -11,14 +11,15 @@ use iced::{
 };
 
 use crate::backend::{self, Annotation, Backend, Highlight, Hit, Link, Opened, RenderJob, Target};
+use crate::bindings::Keymaps;
 use crate::command::{self, Command, Setting};
 use crate::complete::{self, Candidate};
 use crate::config;
 use crate::help::{Help, Line};
 use crate::hints::{Hints, Outcome};
 use crate::history::{Fit, History, View};
-use crate::input::{Action, Key, Pending, Prompt};
-use crate::keymap::Keymap;
+use crate::input::{self, Action, ConfirmBinding, Key, Prompt, PromptBinding};
+use crate::keymap::{self, Counts, Fed, Match, Pending};
 use crate::layout::Rect;
 use crate::num;
 use crate::outline::{self, Outline};
@@ -330,8 +331,11 @@ pub struct App {
     /// Physical pixels per logical pixel.
     scale_factor: f32,
     modifiers: keyboard::Modifiers,
-    keymap: Keymap,
-    pending: Pending,
+    keymaps: Keymaps,
+    /// What has been typed of a command in normal mode.
+    pending: Pending<input::Binding>,
+    /// What has been typed of a sequence bound in the prompt.
+    prompt_pending: Pending<PromptBinding>,
     /// The prompt being typed into, and the text so far.
     prompt: Option<(Prompt, String)>,
     /// The completions shown above the prompt, while there are any.
@@ -406,8 +410,9 @@ impl App {
             area: Size::ZERO,
             scale_factor: 1.0,
             modifiers: keyboard::Modifiers::default(),
-            keymap: Keymap::default(),
-            pending: Pending::default(),
+            keymaps: Keymaps::default(),
+            pending: Pending::new(),
+            prompt_pending: Pending::new(),
             prompt: None,
             completing: None,
             picker: None,
@@ -572,20 +577,22 @@ impl App {
                 };
                 self.notice = Notice::None;
                 if let Some(question) = self.asking.take() {
-                    // `y` goes ahead; any other key thinks better of it.
-                    match (question, key) {
-                        (Question::Quit, Key::Char('y' | 'Y')) => self.exit(),
-                        (Question::CloseTab, Key::Char('y' | 'Y')) => self.close_tab_now(),
-                        _ => Task::none(),
+                    // A yes goes ahead; any other key thinks better of it.
+                    let yes =
+                        self.keymaps.confirm.lookup(&[key]) == Match::Bound(ConfirmBinding::Yes);
+                    match question {
+                        Question::Quit if yes => self.exit(),
+                        Question::CloseTab if yes => self.close_tab_now(),
+                        Question::Quit | Question::CloseTab => Task::none(),
                     }
                 } else if self.visual.is_some() {
                     self.on_visual_key(key)
                 } else if let Some((kind, hints)) = &mut self.line_hints {
                     let kind = *kind;
-                    let outcome = hints.feed(key);
+                    let outcome = hints.feed(key, &self.keymaps.hints);
                     self.on_line_hint(kind, outcome)
                 } else if let Some(hints) = &mut self.hints {
-                    let outcome = hints.feed(key);
+                    let outcome = hints.feed(key, &self.keymaps.hints);
                     self.on_hint(outcome);
                     Task::none()
                 } else if self.sidebar.is_some() {
@@ -594,7 +601,7 @@ impl App {
                 } else if self.help.is_some() {
                     let rows = self.help_rows();
                     if let Some(help) = &mut self.help
-                        && !help.feed(key, rows)
+                        && !help.feed(key, &self.keymaps.help, rows)
                     {
                         self.help = None;
                     }
@@ -604,9 +611,10 @@ impl App {
                 } else if self.prompt.is_some() {
                     self.on_prompt_key(key)
                 } else {
-                    self.pending
-                        .feed(key, &self.keymap)
-                        .map_or_else(Task::none, |action| self.act(action))
+                    match self.pending.feed(key, &self.keymaps.normal, Counts::Taken) {
+                        Fed::Bound(binding, count) => self.act(binding.action(count)),
+                        Fed::Waiting | Fed::Unbound(_) => Task::none(),
+                    }
                 }
             }
         }
@@ -617,7 +625,7 @@ impl App {
         let Some(picker) = &mut self.picker else {
             return Task::none();
         };
-        match picker.feed(key) {
+        match picker.feed(key, &self.keymaps.recent) {
             Some(Choice::Open(path)) => {
                 self.picker = None;
                 self.open_in_tab(path)
@@ -633,7 +641,7 @@ impl App {
     /// Labels the links in view. The links on pages not seen before are
     /// found first, which takes a moment.
     fn label_links(&mut self) -> Task<Message> {
-        self.pending = Pending::default();
+        self.pending = Pending::new();
         let Some(document) = self.document() else {
             return Task::none();
         };
@@ -736,7 +744,7 @@ impl App {
     /// Labels the lines in view, to start selecting text at one. The text
     /// of pages not read before is read first.
     fn label_lines(&mut self, kind: Kind) -> Task<Message> {
-        self.pending = Pending::default();
+        self.pending = Pending::new();
         let Some(document) = self.document() else {
             return Task::none();
         };
@@ -879,7 +887,7 @@ impl App {
             self.visual = None;
             return Task::none();
         };
-        match visual.feed(key, &document.text) {
+        match visual.feed(key, &self.keymaps.visual, &document.text) {
             visual::Outcome::Stay => self.follow_cursor(),
             visual::Outcome::Leave => {
                 self.visual = None;
@@ -1053,7 +1061,7 @@ impl App {
     /// Shows the table of contents in the sidebar, reading it first the
     /// first time.
     fn show_outline(&mut self) -> Task<Message> {
-        self.pending = Pending::default();
+        self.pending = Pending::new();
         let Some(document) = self.document() else {
             return Task::none();
         };
@@ -1093,7 +1101,7 @@ impl App {
         let Some(sidebar) = &mut self.sidebar else {
             return;
         };
-        match sidebar.feed(key, rows) {
+        match sidebar.feed(key, &self.keymaps.outline, rows) {
             outline::Outcome::Stay => {}
             outline::Outcome::Close => self.sidebar = None,
             outline::Outcome::Go(page, top) => {
@@ -1114,9 +1122,9 @@ impl App {
 
     /// Shows the cheat sheet for the bindings in force.
     fn show_help(&mut self) {
-        self.pending = Pending::default();
+        self.pending = Pending::new();
         self.picker = None;
-        self.help = Some(Help::new(&self.keymap));
+        self.help = Some(Help::new(&self.keymaps));
     }
 
     /// How many lines of the cheat sheet fit in the window.
@@ -1127,7 +1135,7 @@ impl App {
 
     /// Shows the list of recent documents, or says there are none.
     fn show_recent(&mut self) {
-        self.pending = Pending::default();
+        self.pending = Pending::new();
         self.picker = Picker::new(self.recent_documents());
         if self.picker.is_none() && matches!(self.notice, Notice::None) {
             self.notice = Notice::Info("no recent documents".to_owned());
@@ -1162,28 +1170,44 @@ impl App {
         };
         let completing = self.completing.take();
         let before = line.clone();
-        match key {
-            Key::Tab | Key::ShiftTab if prompt == Prompt::Command => {
-                self.completing = complete_line(&mut line, completing, key == Key::Tab);
+        match self
+            .prompt_pending
+            .feed(key, &self.keymaps.prompt, Counts::NotTaken)
+        {
+            Fed::Bound(
+                binding @ (PromptBinding::Complete | PromptBinding::CompletePrevious),
+                _,
+            ) if prompt == Prompt::Command => {
+                let forward = binding == PromptBinding::Complete;
+                self.completing = complete_line(&mut line, completing, forward);
                 self.prompt = Some((prompt, line));
                 return Task::none();
             }
-            Key::Enter => return self.submit(prompt, &line),
-            Key::Escape | Key::Ctrl('c' | '[') => return Task::none(),
-            Key::Backspace | Key::Ctrl('h') => {
+            Fed::Bound(PromptBinding::Submit, _) => return self.submit(prompt, &line),
+            Fed::Bound(PromptBinding::Cancel, _) => return Task::none(),
+            Fed::Bound(PromptBinding::RubOut, _) => {
                 // Rubbing out the sigil itself leaves the prompt, as in vi.
                 if line.pop().is_none() {
                     return Task::none();
                 }
             }
-            Key::Ctrl('u') => line.clear(),
-            Key::Ctrl('w') => {
+            Fed::Bound(PromptBinding::ClearLine, _) => line.clear(),
+            Fed::Bound(PromptBinding::RubOutWord, _) => {
                 let kept = line.trim_end().rfind(char::is_whitespace);
                 line.truncate(kept.map_or(0, |index| index.saturating_add(1)));
             }
-            Key::Char(character) => line.push(character),
-            Key::ShiftSpace => line.push(' '),
-            _ => {}
+            // Keys bound to nothing type themselves.
+            Fed::Unbound(keys) => {
+                for key in keys {
+                    match key {
+                        Key::Char(character) => line.push(character),
+                        Key::ShiftSpace => line.push(' '),
+                        _ => {}
+                    }
+                }
+            }
+            Fed::Bound(PromptBinding::Complete | PromptBinding::CompletePrevious, _)
+            | Fed::Waiting => {}
         }
         // A list once shown follows what is typed, until nothing fits.
         self.completing = if line == before {
@@ -1242,14 +1266,17 @@ impl App {
                     document.results.shown = false;
                 }
             }
-            Command::Map(keys, binding) => self.keymap.bind(keys, binding),
-            Command::Unmap(keys) => {
-                if !self.keymap.unbind(&keys) {
-                    let written: Vec<String> = keys.iter().map(ToString::to_string).collect();
-                    self.notice = Notice::Error(format!("no such mapping: {}", written.join(" ")));
+            Command::Map(keys, bound) => self.keymaps.bind(keys, bound),
+            Command::Unmap(mode, keys) => {
+                if !self.keymaps.unbind(mode, &keys) {
+                    self.notice = Notice::Error(format!(
+                        "no such mapping in {} mode: {}",
+                        mode.name(),
+                        keymap::written(&keys)
+                    ));
                 }
             }
-            Command::MapClear => self.keymap.clear(),
+            Command::MapClear(mode) => self.keymaps.clear(mode),
             Command::Run(binding, count) => return self.act(binding.action(count)),
             // With no document in view, these set what documents not seen
             // before start with.
@@ -1294,6 +1321,7 @@ impl App {
             }
             Action::OpenPrompt(prompt) => {
                 self.prompt = Some((prompt, String::new()));
+                self.prompt_pending = Pending::new();
                 return Task::none();
             }
             Action::ShowRecent => {
@@ -1777,7 +1805,7 @@ impl App {
         }
         if self.confirm_tab_close {
             self.asking = Some(Question::CloseTab);
-            self.pending = Pending::default();
+            self.pending = Pending::new();
             return Task::none();
         }
         self.close_tab_now()
@@ -1831,7 +1859,7 @@ impl App {
     fn quit(&mut self) -> Task<Message> {
         if self.confirm_quit {
             self.asking = Some(Question::Quit);
-            self.pending = Pending::default();
+            self.pending = Pending::new();
             return Task::none();
         }
         self.exit()
@@ -1861,10 +1889,10 @@ impl App {
             layers = layers.push(completions(completing));
         }
         if let Some(sidebar) = &self.sidebar {
-            layers = layers.push(contents(sidebar, self.sidebar_rows()));
+            layers = layers.push(contents(sidebar, &self.keymaps, self.sidebar_rows()));
         }
         if let Some(help) = &self.help {
-            layers = layers.push(cheat_sheet(help, self.help_rows()));
+            layers = layers.push(cheat_sheet(help, &self.keymaps, self.help_rows()));
         }
         match self.tab_bar() {
             Some(tabs) => column![tabs, layers, self.bar()].into(),
@@ -1912,7 +1940,8 @@ impl App {
         };
         let left = match (&self.prompt, &self.notice) {
             _ if self.asking == Some(Question::Quit) => {
-                label("quit pdvim? (y/n)".to_owned(), BAR_ERROR)
+                let yes = self.keymaps.confirm.first(ConfirmBinding::Yes);
+                label(format!("quit pdvim? ({yes}/n)"), BAR_ERROR)
             }
             _ if self.asking == Some(Question::CloseTab) => {
                 let name = self
@@ -1920,7 +1949,8 @@ impl App {
                     .get(self.current)
                     .map(Tab::name)
                     .unwrap_or_default();
-                label(format!("close tab {name}? (y/n)"), BAR_ERROR)
+                let yes = self.keymaps.confirm.first(ConfirmBinding::Yes);
+                label(format!("close tab {name}? ({yes}/n)"), BAR_ERROR)
             }
             _ if self.visual.is_some() => {
                 let visual = self.visual.as_ref();
@@ -1928,12 +1958,17 @@ impl App {
                     Some(Kind::Lines) => "-- VISUAL LINE --",
                     _ => "-- VISUAL --",
                 };
-                let count = visual
-                    .and_then(Visual::count)
-                    .map(|count| format!("  {count}"))
-                    .unwrap_or_default();
+                let typed = visual.map(Visual::typed).unwrap_or_default();
+                let typed = if typed.is_empty() {
+                    typed
+                } else {
+                    format!("  {typed}")
+                };
+                let keymap = &self.keymaps.visual;
+                let yank = keymap.first(visual::Binding::Yank);
+                let leave = keymap.first(visual::Binding::Leave);
                 label(
-                    format!("{kind}{count}    y copies, escape leaves"),
+                    format!("{kind}{typed}    {yank} copies, {leave} leaves"),
                     BAR_TEXT,
                 )
             }
@@ -2111,7 +2146,7 @@ fn completions(completing: &Completing) -> Element<'_, Message> {
 
 /// The cheat sheet, drawn over the pages: as many lines as fit, and a
 /// line at the foot saying where they are and how to move.
-fn cheat_sheet(help: &Help, rows: usize) -> Element<'_, Message> {
+fn cheat_sheet<'a>(help: &'a Help, keymaps: &Keymaps, rows: usize) -> Element<'a, Message> {
     let label = |content: &str, colour: Color| {
         text(content.to_owned())
             .size(LIST_TEXT_SIZE)
@@ -2131,6 +2166,7 @@ fn cheat_sheet(help: &Help, rows: usize) -> Element<'_, Message> {
                 keys,
                 action,
                 description,
+                ..
             } => {
                 let keys = if keys.is_empty() { "-" } else { keys };
                 row![
@@ -2157,13 +2193,22 @@ fn cheat_sheet(help: &Help, rows: usize) -> Element<'_, Message> {
     });
     let (top, count) = help.position();
     let last = top.saturating_add(rows).min(count);
+    let hint = {
+        use crate::help::Binding as B;
+        let key = |binding| keymaps.help.first(binding);
+        format!(
+            "{}/{}, {}/{}, {}/{} to scroll; {} to close",
+            key(B::Down),
+            key(B::Up),
+            key(B::HalfDown),
+            key(B::HalfUp),
+            key(B::Top),
+            key(B::Bottom),
+            key(B::Close),
+        )
+    };
     let foot = row![
-        container(label(
-            "j/k, ctrl+d/ctrl+u, g/G to scroll; q or escape to close",
-            LIST_NUMBER,
-        ))
-        .width(Fill)
-        .clip(true),
+        container(label(&hint, LIST_NUMBER)).width(Fill).clip(true),
         label(
             &format!("{}-{last} of {count}", top.saturating_add(1)),
             LIST_NUMBER
@@ -2193,7 +2238,7 @@ fn cheat_sheet(help: &Help, rows: usize) -> Element<'_, Message> {
 
 /// The table of contents, in a sidebar over the left of the pages: as many
 /// entries as fit, each set in by its depth, the selected one marked.
-fn contents(sidebar: &Outline, rows: usize) -> Element<'_, Message> {
+fn contents<'a>(sidebar: &'a Outline, keymaps: &Keymaps, rows: usize) -> Element<'a, Message> {
     let label = |content: String, colour: Color| {
         text(content)
             .size(LIST_TEXT_SIZE)
@@ -2250,8 +2295,11 @@ fn contents(sidebar: &Outline, rows: usize) -> Element<'_, Message> {
     .padding([0, 6]);
     let foot = container(label(
         format!(
-            "{}-{last} of {count}   enter: go   l/h: open/close",
-            top.saturating_add(1)
+            "{}-{last} of {count}   {}: go   {}/{}: open/close",
+            top.saturating_add(1),
+            keymaps.outline.first(outline::Binding::Go),
+            keymaps.outline.first(outline::Binding::Open),
+            keymaps.outline.first(outline::Binding::Fold),
         ),
         LIST_NUMBER,
     ))

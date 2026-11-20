@@ -1,10 +1,11 @@
-//! Turning key presses into actions, the way vi does.
+//! Key presses, and what they can be bound to in normal mode, at the
+//! prompt and when asked a question.
 //!
-//! A command is an optional count, then a sequence of keys bound in the
-//! [`Keymap`]: `j`, `12G`, `gg`, `zi`. [`Pending`] holds what has been typed
-//! so far and yields an [`Action`] once a bound sequence is complete.
+//! A command in normal mode is an optional count, then a sequence of keys
+//! bound to a [`Binding`]: `j`, `12G`, `gg`, `zi`. With the count, the
+//! binding becomes an [`Action`].
 
-use crate::keymap::{Keymap, Match};
+use crate::keymap::bindable;
 
 /// A key press, reduced to what the reader distinguishes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,53 +120,146 @@ pub enum Action {
     Quit,
 }
 
-/// The part of a command typed so far.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Pending {
-    count: Option<u32>,
-    /// The keys typed after the count, the start of a bound sequence.
-    keys: Vec<Key>,
+bindable! {
+    /// What keys can be bound to in normal mode, reading.
+    pub enum Binding {
+        ScrollDown = "scroll-down", "Scroll down";
+        ScrollUp = "scroll-up", "Scroll up";
+        ScrollLeft = "scroll-left", "Scroll left";
+        ScrollRight = "scroll-right", "Scroll right";
+        ScrollHalfDown = "scroll-half-down", "Scroll half a screen down";
+        ScrollHalfUp = "scroll-half-up", "Scroll half a screen up";
+        ScrollFullDown = "scroll-full-down", "Scroll a screen down";
+        ScrollFullUp = "scroll-full-up", "Scroll a screen up";
+        NextPage = "next-page", "Go to the next page";
+        PreviousPage = "previous-page", "Go to the previous page";
+        /// The first page, or the page given by a count.
+        FirstPage = "first-page", "Go to the first page, or page n";
+        /// The last page, or the page given by a count.
+        LastPage = "last-page", "Go to the last page, or page n";
+        PageTop = "page-top", "Go to the top of the page";
+        PageBottom = "page-bottom", "Go to the bottom of the page";
+        /// Show the table of contents in a sidebar.
+        Outline = "outline", "Show the table of contents, to go to a chapter";
+        ZoomIn = "zoom-in", "Zoom in";
+        ZoomOut = "zoom-out", "Zoom out";
+        /// Zoom to the percentage given by a count, or to 100%.
+        ZoomTo = "zoom-to", "Zoom to 100%, or to n%";
+        /// Zoom to 100%, whatever the count.
+        ZoomReset = "zoom-reset", "Zoom to 100%";
+        FitWidth = "fit-width", "Fit the page width to the window";
+        FitPage = "fit-page", "Fit the whole page in the window";
+        Rotate = "rotate", "Rotate";
+        ToggleRecolor = "toggle-recolor", "Turn recoloring on or off";
+        ToggleTrim = "toggle-trim", "Turn margin trimming on or off";
+        SearchForward = "search-forward", "Search forwards";
+        SearchBackward = "search-backward", "Search backwards";
+        SearchNext = "search-next", "Go to the next match";
+        SearchPrevious = "search-previous", "Go to the previous match";
+        CommandPrompt = "command-prompt", "Open the command prompt";
+        Recent = "recent", "Show recent documents";
+        /// Show the key bindings.
+        Help = "help", "Show this list";
+        /// Label the links in view, to follow one by typing its label.
+        FollowLink = "follow-link", "Label the links in view; type a label to follow it";
+        /// Label the lines in view, to start selecting characters at one.
+        Visual = "visual", "Select text from a line picked by label";
+        /// Label the lines in view, to start selecting whole lines at one.
+        VisualLine = "visual-line", "Select whole lines from a line picked by label";
+        /// Take back the last highlight.
+        Undo = "undo", "Take back the last highlight";
+        /// Put back the last highlight taken back.
+        Redo = "redo", "Put back the last highlight taken back";
+        /// The next tab, or the tab given by a count.
+        NextTab = "next-tab", "Go to the next tab, or tab n";
+        PreviousTab = "previous-tab", "Go to the previous tab";
+        Abort = "abort", "Cancel a half-typed command, hide highlights";
+        Quit = "quit", "Close the tab, and quit after the last one";
+    }
 }
 
-impl Pending {
-    /// What has been typed so far, for the status bar.
-    pub fn display(&self) -> String {
-        let mut shown = self
-            .count
-            .map(|count| count.to_string())
-            .unwrap_or_default();
-        let keys: Vec<String> = self.keys.iter().map(ToString::to_string).collect();
-        shown.push_str(&keys.join(" "));
-        shown
+impl Binding {
+    /// What the binding does, given the count typed before its keys.
+    pub fn action(self, count: Option<u32>) -> Action {
+        let times = i32::try_from(count.unwrap_or(1)).unwrap_or(i32::MAX);
+        let back = times.saturating_neg();
+        match self {
+            Self::ScrollDown => Action::Scroll {
+                right: 0,
+                down: times,
+            },
+            Self::ScrollUp => Action::Scroll {
+                right: 0,
+                down: back,
+            },
+            Self::ScrollRight => Action::Scroll {
+                right: times,
+                down: 0,
+            },
+            Self::ScrollLeft => Action::Scroll {
+                right: back,
+                down: 0,
+            },
+            Self::ScrollHalfDown => Action::HalfScreen(times),
+            Self::ScrollHalfUp => Action::HalfScreen(back),
+            Self::ScrollFullDown => Action::FullScreen(times),
+            Self::ScrollFullUp => Action::FullScreen(back),
+            Self::NextPage => Action::Page(times),
+            Self::PreviousPage => Action::Page(back),
+            Self::FirstPage => count.map_or(Action::GotoFirst, Action::GotoPage),
+            Self::LastPage => count.map_or(Action::GotoLast, Action::GotoPage),
+            Self::PageTop => Action::PageTop,
+            Self::PageBottom => Action::PageBottom,
+            Self::ZoomIn => Action::ZoomIn,
+            Self::ZoomOut => Action::ZoomOut,
+            Self::ZoomTo => Action::ZoomTo(count.unwrap_or(100)),
+            Self::ZoomReset => Action::ZoomTo(100),
+            Self::FitWidth => Action::FitWidth,
+            Self::FitPage => Action::FitPage,
+            Self::Rotate => Action::Rotate,
+            Self::ToggleRecolor => Action::ToggleRecolor,
+            Self::ToggleTrim => Action::ToggleTrim,
+            Self::SearchNext => Action::SearchNext,
+            Self::SearchPrevious => Action::SearchPrevious,
+            Self::SearchForward => Action::OpenPrompt(Prompt::SearchForward),
+            Self::SearchBackward => Action::OpenPrompt(Prompt::SearchBackward),
+            Self::CommandPrompt => Action::OpenPrompt(Prompt::Command),
+            Self::Recent => Action::ShowRecent,
+            Self::NextTab => count.map_or(Action::NextTab, Action::GotoTab),
+            Self::PreviousTab => Action::PreviousTab(count.unwrap_or(1)),
+            Self::Abort => Action::Abort,
+            Self::Quit => Action::Quit,
+            Self::Help => Action::ShowHelp,
+            Self::FollowLink => Action::FollowLink,
+            Self::Visual => Action::Visual { lines: false },
+            Self::VisualLine => Action::Visual { lines: true },
+            Self::Undo => Action::Undo,
+            Self::Redo => Action::Redo,
+            Self::Outline => Action::ShowOutline,
+        }
     }
+}
 
-    /// Takes the next key. Returns an action once a bound sequence is
-    /// complete; keys that are bound to nothing clear what was typed.
-    pub fn feed(&mut self, key: Key, keymap: &Keymap) -> Option<Action> {
-        // A digit is part of a count, unless it comes in the middle of a
-        // sequence, as in `z0`. A count cannot start with 0.
-        if self.keys.is_empty()
-            && let Key::Char(digit @ '0'..='9') = key
-            && let Some(value) = digit.to_digit(10)
-            && (self.count.is_some() || value != 0)
-        {
-            let count = self.count.unwrap_or(0);
-            self.count = Some(count.saturating_mul(10).saturating_add(value));
-            return None;
-        }
-        self.keys.push(key);
-        match keymap.lookup(&self.keys) {
-            Match::Prefix => None,
-            Match::Bound(binding) => {
-                let count = self.count.take();
-                self.keys.clear();
-                Some(binding.action(count))
-            }
-            Match::None => {
-                *self = Self::default();
-                None
-            }
-        }
+bindable! {
+    /// What keys can be bound to while typing into the prompt, after `:`,
+    /// `/` or `?`. Keys bound to nothing type themselves.
+    pub enum PromptBinding {
+        Submit = "submit", "Run the command, or search";
+        Cancel = "cancel", "Leave the prompt";
+        /// Rubbing out the sigil itself leaves the prompt, as in vi.
+        RubOut = "rub-out", "Rub out a character; on an empty line, leave";
+        RubOutWord = "rub-out-word", "Rub out the word before the cursor";
+        ClearLine = "clear-line", "Rub out the whole line";
+        Complete = "complete", "Complete a command, or go to the next candidate";
+        CompletePrevious = "complete-previous", "Go to the previous candidate";
+    }
+}
+
+bindable! {
+    /// What keys can be bound to when asked a question, such as whether to
+    /// quit. Any key bound to nothing is no.
+    pub enum ConfirmBinding {
+        Yes = "yes", "Go ahead; any other key thinks better of it";
     }
 }
 
@@ -199,14 +293,24 @@ impl std::fmt::Display for Key {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bindings::Keymaps;
+    use crate::keymap::{Counts, Fed, Pending};
 
-    /// Feeds each character as a key and returns the actions that result.
-    fn typed(keys: &str) -> Vec<Action> {
-        let keymap = Keymap::default();
+    /// Feeds each key in turn and returns the actions that result.
+    fn pressed(keys: &[Key]) -> Vec<Action> {
+        let keymap = Keymaps::default().normal;
         let mut pending = Pending::default();
-        keys.chars()
-            .filter_map(|key| pending.feed(Key::Char(key), &keymap))
+        keys.iter()
+            .filter_map(|&key| match pending.feed(key, &keymap, Counts::Taken) {
+                Fed::Bound(binding, count) => Some(binding.action(count)),
+                _ => None,
+            })
             .collect()
+    }
+
+    /// Feeds each character as a key.
+    fn typed(keys: &str) -> Vec<Action> {
+        pressed(&keys.chars().map(Key::Char).collect::<Vec<_>>())
     }
 
     #[test]
@@ -229,21 +333,8 @@ mod tests {
         assert_eq!(typed("3gg"), [Action::GotoPage(3)]);
         assert_eq!(typed("150="), [Action::ZoomTo(150)]);
         assert_eq!(typed("10J"), [Action::Page(10)]);
-    }
-
-    #[test]
-    fn two_key_commands_wait_for_the_second_key() {
-        let keymap = Keymap::default();
-        let mut pending = Pending::default();
-        assert_eq!(pending.feed(Key::Char('g'), &keymap), None);
-        assert_eq!(pending.display(), "g");
-        assert_eq!(
-            pending.feed(Key::Char('g'), &keymap),
-            Some(Action::GotoFirst)
-        );
-        assert_eq!(pending.display(), "");
+        assert_eq!(typed("gg"), [Action::GotoFirst]);
         assert_eq!(typed("zi"), [Action::ZoomIn]);
-        assert_eq!(typed("zo"), [Action::ZoomOut]);
         assert_eq!(typed("z0"), [Action::ZoomTo(100)]);
     }
 
@@ -253,45 +344,14 @@ mod tests {
         assert_eq!(typed("3gt"), [Action::GotoTab(3)]);
         assert_eq!(typed("gT"), [Action::PreviousTab(1)]);
         assert_eq!(typed("2gT"), [Action::PreviousTab(2)]);
-
-        let keymap = Keymap::default();
-        let mut pending = Pending::default();
-        assert_eq!(pending.feed(Key::CtrlTab, &keymap), Some(Action::NextTab));
         assert_eq!(
-            pending.feed(Key::CtrlShiftTab, &keymap),
-            Some(Action::PreviousTab(1))
-        );
-        assert_eq!(pending.feed(Key::Char('2'), &keymap), None);
-        assert_eq!(
-            pending.feed(Key::CtrlTab, &keymap),
-            Some(Action::GotoTab(2))
-        );
-    }
-
-    #[test]
-    fn a_leading_zero_is_not_a_count() {
-        let keymap = Keymap::default();
-        let mut pending = Pending::default();
-        assert_eq!(pending.feed(Key::Char('0'), &keymap), None);
-        assert_eq!(pending.display(), "");
-        assert_eq!(typed("10j"), [Action::Scroll { right: 0, down: 10 }]);
-    }
-
-    #[test]
-    fn unknown_keys_and_escape_clear_what_was_typed() {
-        let keymap = Keymap::default();
-        let mut pending = Pending::default();
-        assert_eq!(pending.feed(Key::Char('4'), &keymap), None);
-        assert_eq!(pending.feed(Key::Char('g'), &keymap), None);
-        assert_eq!(pending.display(), "4g");
-        assert_eq!(pending.feed(Key::Char('x'), &keymap), None);
-        assert_eq!(pending.display(), "");
-
-        assert_eq!(pending.feed(Key::Char('7'), &keymap), None);
-        assert_eq!(pending.feed(Key::Escape, &keymap), Some(Action::Abort));
-        assert_eq!(
-            pending.feed(Key::Char('j'), &keymap),
-            Some(Action::Scroll { right: 0, down: 1 })
+            pressed(&[
+                Key::CtrlTab,
+                Key::CtrlShiftTab,
+                Key::Char('2'),
+                Key::CtrlTab
+            ]),
+            [Action::NextTab, Action::PreviousTab(1), Action::GotoTab(2)]
         );
     }
 
@@ -309,21 +369,23 @@ mod tests {
 
     #[test]
     fn control_and_named_keys_scroll() {
-        let keymap = Keymap::default();
-        let mut pending = Pending::default();
         assert_eq!(
-            pending.feed(Key::Ctrl('d'), &keymap),
-            Some(Action::HalfScreen(1))
+            pressed(&[
+                Key::Ctrl('d'),
+                Key::Char('2'),
+                Key::Ctrl('u'),
+                Key::ShiftSpace,
+                Key::Ctrl('r'),
+                Key::Char('7'),
+                Key::Escape,
+            ]),
+            [
+                Action::HalfScreen(1),
+                Action::HalfScreen(-2),
+                Action::FullScreen(-1),
+                Action::Redo,
+                Action::Abort,
+            ]
         );
-        assert_eq!(pending.feed(Key::Char('2'), &keymap), None);
-        assert_eq!(
-            pending.feed(Key::Ctrl('u'), &keymap),
-            Some(Action::HalfScreen(-2))
-        );
-        assert_eq!(
-            pending.feed(Key::ShiftSpace, &keymap),
-            Some(Action::FullScreen(-1))
-        );
-        assert_eq!(pending.feed(Key::Ctrl('r'), &keymap), Some(Action::Redo));
     }
 }

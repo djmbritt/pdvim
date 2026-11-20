@@ -8,20 +8,27 @@
 //! recolor = true
 //! scroll-step = 60
 //!
-//! [keys]
+//! [keys.normal]
 //! "ctrl+n" = "next-tab"
 //! "q" = "none"
+//!
+//! [keys.visual]
+//! "Y" = "yank"
 //! ```
 //!
-//! Settings take the names and values of `:set`. Keys are written as for
-//! `:map`, and bound to an action by name, or to `none` to unbind them.
+//! Settings take the names and values of `:set`. Keys are bound in a mode,
+//! one table to a mode, as with `:map`: to an action by name, or to `none`
+//! to unbind them. Keys put straight in `[keys]` are bound in normal mode.
+//!
+//! The built-in configuration, `defaults.toml`, is read the same way.
 
 use std::path::PathBuf;
 
 use toml::{Table, Value};
 
+use crate::bindings::Mode;
 use crate::command::{self, Command};
-use crate::keymap::{self, Binding};
+use crate::keymap;
 
 /// A part of the file that could not be used.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -74,13 +81,27 @@ pub fn parse(text: &str) -> (Vec<Command>, Vec<Problem>) {
                 continue;
             }
         };
-        let read = if section == "settings" {
-            settings
-        } else {
-            keys
-        };
         for (name, value) in entries {
-            match read(name, value) {
+            let read = match (section.as_str(), value) {
+                ("settings", _) => settings(name, value),
+                (_, Value::Table(bindings)) => {
+                    let Some(mode) = Mode::named(name) else {
+                        problems.push(Problem(format!("keys.{name}: unknown mode")));
+                        continue;
+                    };
+                    for (written, action) in bindings {
+                        match keys(mode, written, action) {
+                            Ok(command) => commands.push(command),
+                            Err(message) => {
+                                problems.push(Problem(format!("keys.{name}.{written}: {message}")));
+                            }
+                        }
+                    }
+                    continue;
+                }
+                _ => keys(Mode::Normal, name, value),
+            };
+            match read {
                 Ok(command) => commands.push(command),
                 Err(message) => problems.push(Problem(format!("{section}.{name}: {message}"))),
             }
@@ -106,18 +127,19 @@ fn settings(name: &str, value: &Value) -> Result<Command, String> {
         .map_err(|error| error.to_string())
 }
 
-/// The command for one entry of `[keys]`.
-fn keys(written: &str, value: &Value) -> Result<Command, String> {
+/// The command for one key binding, in a mode.
+fn keys(mode: Mode, written: &str, value: &Value) -> Result<Command, String> {
     let keys = keymap::parse_keys(written).map_err(|error| error.to_string())?;
     let Value::String(action) = value else {
         return Err("not the name of an action".to_owned());
     };
     if action == "none" {
-        return Ok(Command::Unmap(keys));
+        return Ok(Command::Unmap(mode, keys));
     }
-    let binding = Binding::named(action)
+    let bound = mode
+        .bound(action)
         .ok_or_else(|| keymap::Error::UnknownAction(action.clone()).to_string())?;
-    Ok(Command::Map(keys, binding))
+    Ok(Command::Map(keys, bound))
 }
 
 /// Where the configuration file is looked for.
@@ -133,18 +155,22 @@ pub fn path() -> Option<PathBuf> {
 mod tests {
     use super::*;
     use crate::app::{DEFAULT_HIGHLIGHT, DEFAULT_SCROLL_STEP};
+    use crate::bindings::{Bound, DEFAULTS};
     use crate::command::Setting;
-    use crate::input::Key;
-    use crate::keymap::Keymap;
+    use crate::input::{Binding, Key};
     use crate::recolor::{Palette, Rgb};
+    use crate::visual;
 
     #[test]
     fn settings_and_keys_are_read() {
         let text = r##"
             # A comment.
-            [keys]
+            [keys.normal]
             "ctrl+n" = "next-tab"
             "g g" = "none"
+
+            [keys.visual]
+            "Y" = "yank"
 
             [settings]
             scroll-step = 60
@@ -156,11 +182,27 @@ mod tests {
         assert_eq!(
             commands,
             [
+                Command::Set(Setting::ScrollStep(60.0)),
                 Command::Set(Setting::Recolor(true)),
                 Command::Set(Setting::RecolorInk(Rgb(0x10, 0x20, 0x30))),
-                Command::Set(Setting::ScrollStep(60.0)),
-                Command::Map(vec![Key::Ctrl('n')], Binding::NextTab),
-                Command::Unmap(vec![Key::Char('g'), Key::Char('g')]),
+                Command::Map(vec![Key::Ctrl('n')], Bound::Normal(Binding::NextTab)),
+                Command::Unmap(Mode::Normal, vec![Key::Char('g'), Key::Char('g')]),
+                Command::Map(vec![Key::Char('Y')], Bound::Visual(visual::Binding::Yank)),
+            ]
+        );
+    }
+
+    /// Before modes, keys were bound straight in `[keys]`, which still
+    /// binds them in normal mode.
+    #[test]
+    fn keys_outside_a_mode_are_bound_in_normal_mode() {
+        let (commands, problems) = parse("[keys]\n\"Q\" = \"quit\"\n\"q\" = \"none\"\n");
+        assert_eq!(problems, []);
+        assert_eq!(
+            commands,
+            [
+                Command::Map(vec![Key::Char('Q')], Bound::Normal(Binding::Quit)),
+                Command::Unmap(Mode::Normal, vec![Key::Char('q')]),
             ]
         );
     }
@@ -173,18 +215,22 @@ mod tests {
             colour = "red"
             trim = "maybe"
             scroll-step = 0.5
-            [keys]
+            [keys.normal]
             "j" = "fly"
             "nope" = "quit"
             "k" = 3
             "q" = "quit"
+            [keys.visual]
+            "j" = "scroll-down"
+            [keys.insert]
+            "x" = "quit"
         "#;
         let (commands, problems) = parse(text);
         assert_eq!(
             commands,
             [
                 Command::Set(Setting::ScrollStep(0.5)),
-                Command::Map(vec![Key::Char('q')], Binding::Quit),
+                Command::Map(vec![Key::Char('q')], Bound::Normal(Binding::Quit)),
             ]
         );
         let messages: Vec<_> = problems.iter().map(ToString::to_string).collect();
@@ -192,47 +238,43 @@ mod tests {
             messages,
             [
                 "unknown section: colours",
-                "keys.j: unknown action: fly",
-                "keys.k: not the name of an action",
-                "keys.nope: unknown key: nope",
                 "settings.colour: unknown setting: colour",
                 "settings.trim: `maybe` is not true or false",
+                "keys.normal.j: unknown action: fly",
+                "keys.normal.nope: unknown key: nope",
+                "keys.normal.k: not the name of an action",
+                "keys.visual.j: unknown action: scroll-down",
+                "keys.insert: unknown mode",
             ]
         );
     }
 
-    /// The example shipped with pdvim must say exactly what the defaults
-    /// are, so that it is never out of date.
+    /// The built-in configuration must give the settings the values the
+    /// program starts with, so that it never says something untrue.
     #[test]
-    fn the_example_is_the_defaults() {
-        let (commands, problems) = parse(include_str!("../config.example.toml"));
+    fn the_built_in_settings_are_the_defaults() {
+        let (commands, problems) = parse(DEFAULTS);
         assert_eq!(problems, []);
-
-        let mut keymap = Keymap::default();
-        keymap.clear();
-        let mut settings = Vec::new();
-        for command in commands {
-            match command {
-                Command::Map(keys, binding) => keymap.bind(keys, binding),
-                Command::Set(setting) => settings.push(setting),
-                other => panic!("unexpected in the example: {other:?}"),
-            }
-        }
-        assert_eq!(keymap.sorted(), Keymap::default().sorted());
-
-        // The entries of a table come in order of name.
+        let settings: Vec<_> = commands
+            .into_iter()
+            .filter_map(|command| match command {
+                Command::Set(setting) => Some(setting),
+                Command::Map(..) => None,
+                other => panic!("unexpected in the defaults: {other:?}"),
+            })
+            .collect();
         let palette = Palette::default();
         assert_eq!(
             settings,
             [
+                Setting::Recolor(false),
+                Setting::Trim(false),
+                Setting::RecolorPaper(palette.paper),
+                Setting::RecolorInk(palette.ink),
+                Setting::ScrollStep(DEFAULT_SCROLL_STEP),
                 Setting::ConfirmQuit(false),
                 Setting::ConfirmTabClose(false),
                 Setting::HighlightColour(DEFAULT_HIGHLIGHT),
-                Setting::Recolor(false),
-                Setting::RecolorInk(palette.ink),
-                Setting::RecolorPaper(palette.paper),
-                Setting::ScrollStep(DEFAULT_SCROLL_STEP),
-                Setting::Trim(false),
             ]
         );
     }

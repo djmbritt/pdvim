@@ -1,112 +1,100 @@
-//! The cheat sheet: every action, the keys bound to it now, and what it
-//! does, shown over the pages by `:help`.
+//! The cheat sheet: everything keys can be bound to in every mode, the
+//! keys bound to it now, and what it does, shown over the pages by `:help`.
 
-use crate::input::Key;
-use crate::keymap::{Binding, Keymap};
+use crate::bindings::{Keymaps, Mode};
+use crate::input::{self, Key};
+use crate::keymap::{Bindable, Counts, Fed, Keymap, Pending, bindable};
 
-/// The actions, in groups, in the order the sheet shows them.
-const GROUPS: [(&str, &[Binding]); 9] = [
-    (
-        "Scrolling",
-        &[
-            Binding::ScrollDown,
-            Binding::ScrollUp,
-            Binding::ScrollLeft,
-            Binding::ScrollRight,
-            Binding::ScrollHalfDown,
-            Binding::ScrollHalfUp,
-            Binding::ScrollFullDown,
-            Binding::ScrollFullUp,
-        ],
-    ),
-    (
-        "Pages",
-        &[
-            Binding::NextPage,
-            Binding::PreviousPage,
-            Binding::FirstPage,
-            Binding::LastPage,
-            Binding::PageTop,
-            Binding::PageBottom,
-            Binding::Outline,
-        ],
-    ),
-    (
-        "Zoom and view",
-        &[
-            Binding::ZoomIn,
-            Binding::ZoomOut,
-            Binding::ZoomTo,
-            Binding::ZoomReset,
-            Binding::FitWidth,
-            Binding::FitPage,
-            Binding::Rotate,
-            Binding::ToggleRecolor,
-            Binding::ToggleTrim,
-        ],
-    ),
-    (
-        "Search and prompts",
-        &[
-            Binding::SearchForward,
-            Binding::SearchBackward,
-            Binding::SearchNext,
-            Binding::SearchPrevious,
-            Binding::CommandPrompt,
-            Binding::Recent,
-            Binding::Help,
-        ],
-    ),
-    ("Links", &[Binding::FollowLink]),
-    ("Selecting text", &[Binding::Visual, Binding::VisualLine]),
-    ("Highlights", &[Binding::Undo, Binding::Redo]),
-    ("Tabs", &[Binding::NextTab, Binding::PreviousTab]),
-    ("Other", &[Binding::Abort, Binding::Quit]),
-];
+bindable! {
+    /// What keys can be bound to while the sheet is shown.
+    pub enum Binding {
+        Down = "down", "Scroll down a line";
+        Up = "up", "Scroll up a line";
+        HalfDown = "half-down", "Scroll half a screen down";
+        HalfUp = "half-up", "Scroll half a screen up";
+        PageDown = "page-down", "Scroll a screen down";
+        PageUp = "page-up", "Scroll a screen up";
+        Top = "top", "Go to the top";
+        Bottom = "bottom", "Go to the bottom";
+        Close = "close", "Close the list";
+    }
+}
 
-/// What an action does, in a few words.
-const fn describe(binding: Binding) -> &'static str {
-    match binding {
-        Binding::ScrollDown => "Scroll down",
-        Binding::ScrollUp => "Scroll up",
-        Binding::ScrollLeft => "Scroll left",
-        Binding::ScrollRight => "Scroll right",
-        Binding::ScrollHalfDown => "Scroll half a screen down",
-        Binding::ScrollHalfUp => "Scroll half a screen up",
-        Binding::ScrollFullDown => "Scroll a screen down",
-        Binding::ScrollFullUp => "Scroll a screen up",
-        Binding::NextPage => "Go to the next page",
-        Binding::PreviousPage => "Go to the previous page",
-        Binding::FirstPage => "Go to the first page, or page n",
-        Binding::LastPage => "Go to the last page, or page n",
-        Binding::PageTop => "Go to the top of the page",
-        Binding::PageBottom => "Go to the bottom of the page",
-        Binding::ZoomIn => "Zoom in",
-        Binding::ZoomOut => "Zoom out",
-        Binding::ZoomTo => "Zoom to 100%, or to n%",
-        Binding::ZoomReset => "Zoom to 100%",
-        Binding::FitWidth => "Fit the page width to the window",
-        Binding::FitPage => "Fit the whole page in the window",
-        Binding::Rotate => "Rotate",
-        Binding::ToggleRecolor => "Turn recoloring on or off",
-        Binding::ToggleTrim => "Turn margin trimming on or off",
-        Binding::SearchForward => "Search forwards",
-        Binding::SearchBackward => "Search backwards",
-        Binding::SearchNext => "Go to the next match",
-        Binding::SearchPrevious => "Go to the previous match",
-        Binding::CommandPrompt => "Open the command prompt",
-        Binding::Recent => "Show recent documents",
-        Binding::Help => "Show this list",
-        Binding::FollowLink => "Label the links in view; type a label to follow it",
-        Binding::Visual => "Select text from a line picked by label; y copies",
-        Binding::VisualLine => "Select whole lines from a line picked by label",
-        Binding::Undo => "Take back the last highlight",
-        Binding::Redo => "Put back the last highlight taken back",
-        Binding::Outline => "Show the table of contents, to go to a chapter",
-        Binding::NextTab => "Go to the next tab, or tab n",
-        Binding::PreviousTab => "Go to the previous tab",
-        Binding::Abort => "Cancel a half-typed command, hide highlights",
-        Binding::Quit => "Close the tab, and quit after the last one",
+/// Normal mode, in groups, in the order the sheet shows them.
+const NORMAL: [(&str, &[input::Binding]); 9] = {
+    use input::Binding as B;
+    [
+        (
+            "Scrolling",
+            &[
+                B::ScrollDown,
+                B::ScrollUp,
+                B::ScrollLeft,
+                B::ScrollRight,
+                B::ScrollHalfDown,
+                B::ScrollHalfUp,
+                B::ScrollFullDown,
+                B::ScrollFullUp,
+            ],
+        ),
+        (
+            "Pages",
+            &[
+                B::NextPage,
+                B::PreviousPage,
+                B::FirstPage,
+                B::LastPage,
+                B::PageTop,
+                B::PageBottom,
+                B::Outline,
+            ],
+        ),
+        (
+            "Zoom and view",
+            &[
+                B::ZoomIn,
+                B::ZoomOut,
+                B::ZoomTo,
+                B::ZoomReset,
+                B::FitWidth,
+                B::FitPage,
+                B::Rotate,
+                B::ToggleRecolor,
+                B::ToggleTrim,
+            ],
+        ),
+        (
+            "Search and prompts",
+            &[
+                B::SearchForward,
+                B::SearchBackward,
+                B::SearchNext,
+                B::SearchPrevious,
+                B::CommandPrompt,
+                B::Recent,
+                B::Help,
+            ],
+        ),
+        ("Links", &[B::FollowLink]),
+        ("Selecting text", &[B::Visual, B::VisualLine]),
+        ("Highlights", &[B::Undo, B::Redo]),
+        ("Tabs", &[B::NextTab, B::PreviousTab]),
+        ("Other", &[B::Abort, B::Quit]),
+    ]
+};
+
+/// The heading of the part of the sheet for a mode other than normal,
+/// which comes in groups.
+const fn heading(mode: Mode) -> &'static str {
+    match mode {
+        Mode::Normal => "Reading",
+        Mode::Visual => "Visual mode: selecting text",
+        Mode::Hints => "Labels on links and lines",
+        Mode::Outline => "Table of contents",
+        Mode::Recent => "Recent documents; a digit opens that one",
+        Mode::Help => "This list",
+        Mode::Prompt => "Typing a command or search",
+        Mode::Confirm => "Questions such as quit? (y/n)",
     }
 }
 
@@ -115,6 +103,8 @@ const fn describe(binding: Binding) -> &'static str {
 pub enum Line {
     Heading(&'static str),
     Entry {
+        /// The mode the keys are bound in.
+        mode: Mode,
         /// The keys bound to the action, or nothing.
         keys: String,
         action: &'static str,
@@ -129,27 +119,39 @@ pub struct Help {
     lines: Vec<Line>,
     /// The first line shown.
     top: usize,
+    pending: Pending<Binding>,
 }
 
 impl Help {
     /// The sheet for the bindings in force.
-    pub fn new(keymap: &Keymap) -> Self {
+    pub fn new(keymaps: &Keymaps) -> Self {
         let mut lines = Vec::new();
-        for (heading, bindings) in GROUPS {
-            if !lines.is_empty() {
-                lines.push(Line::Blank);
-            }
-            lines.push(Line::Heading(heading));
-            for &binding in bindings {
-                let keys: Vec<String> = keymap.keys_for(binding).map(written).collect();
-                lines.push(Line::Entry {
-                    keys: keys.join(", "),
-                    action: binding.name(),
-                    description: describe(binding),
-                });
+        for (heading, bindings) in NORMAL {
+            let bindings = bindings.iter().copied();
+            section(
+                &mut lines,
+                (Mode::Normal, heading),
+                &keymaps.normal,
+                bindings,
+            );
+        }
+        for &mode in Mode::ALL {
+            match mode {
+                Mode::Normal => {}
+                Mode::Visual => all(&mut lines, mode, &keymaps.visual),
+                Mode::Hints => all(&mut lines, mode, &keymaps.hints),
+                Mode::Outline => all(&mut lines, mode, &keymaps.outline),
+                Mode::Recent => all(&mut lines, mode, &keymaps.recent),
+                Mode::Help => all(&mut lines, mode, &keymaps.help),
+                Mode::Prompt => all(&mut lines, mode, &keymaps.prompt),
+                Mode::Confirm => all(&mut lines, mode, &keymaps.confirm),
             }
         }
-        Self { lines, top: 0 }
+        Self {
+            lines,
+            top: 0,
+            pending: Pending::new(),
+        }
     }
 
     /// The lines that fit in this many rows, from the top shown.
@@ -163,103 +165,162 @@ impl Help {
         (self.top, self.lines.len())
     }
 
-    /// Takes a key, given how many rows are shown. Returns whether the
-    /// sheet stays open.
-    pub fn feed(&mut self, key: Key, rows: usize) -> bool {
+    /// Takes a key, bound as in the keymap, given how many rows are shown.
+    /// Returns whether the sheet stays open.
+    pub fn feed(&mut self, key: Key, keymap: &Keymap<Binding>, rows: usize) -> bool {
+        let Fed::Bound(binding, count) = self.pending.feed(key, keymap, Counts::Taken) else {
+            return true;
+        };
+        let times = count
+            .and_then(|count| usize::try_from(count).ok())
+            .unwrap_or(1);
         let half = rows.div_ceil(2).max(1);
         let bottom = self.lines.len().saturating_sub(rows);
-        self.top = match key {
-            Key::Char('j') | Key::Down | Key::Ctrl('n' | 'e') => self.top.saturating_add(1),
-            Key::Char('k') | Key::Up | Key::Ctrl('p' | 'y') => self.top.saturating_sub(1),
-            Key::Ctrl('d') => self.top.saturating_add(half),
-            Key::Ctrl('u') => self.top.saturating_sub(half),
-            Key::Char(' ') | Key::Ctrl('f') | Key::PageDown => self.top.saturating_add(rows),
-            Key::ShiftSpace | Key::Ctrl('b') | Key::PageUp => self.top.saturating_sub(rows),
-            Key::Char('g') | Key::Home => 0,
-            Key::Char('G') | Key::End => bottom,
-            Key::Char('q') | Key::Escape | Key::Enter | Key::Ctrl('c' | '[') => return false,
-            _ => self.top,
+        self.top = match binding {
+            Binding::Down => self.top.saturating_add(times),
+            Binding::Up => self.top.saturating_sub(times),
+            Binding::HalfDown => self.top.saturating_add(half),
+            Binding::HalfUp => self.top.saturating_sub(half),
+            Binding::PageDown => self.top.saturating_add(rows),
+            Binding::PageUp => self.top.saturating_sub(rows),
+            Binding::Top => 0,
+            Binding::Bottom => bottom,
+            Binding::Close => return false,
         }
         .min(bottom);
         true
     }
 }
 
+/// Adds a part of the sheet: a heading, then a line for each of these,
+/// with the keys bound to it.
+fn section<A: Bindable>(
+    lines: &mut Vec<Line>,
+    (mode, heading): (Mode, &'static str),
+    keymap: &Keymap<A>,
+    bindings: impl Iterator<Item = A>,
+) {
+    if !lines.is_empty() {
+        lines.push(Line::Blank);
+    }
+    lines.push(Line::Heading(heading));
+    for binding in bindings {
+        let keys: Vec<String> = keymap.keys_for(binding).map(written).collect();
+        lines.push(Line::Entry {
+            mode,
+            keys: keys.join(", "),
+            action: binding.name(),
+            description: binding.description(),
+        });
+    }
+}
+
+/// Adds a part of the sheet for everything in a mode.
+fn all<A: Bindable>(lines: &mut Vec<Line>, mode: Mode, keymap: &Keymap<A>) {
+    let bindings = A::ALL.iter().map(|&(binding, ..)| binding);
+    section(lines, (mode, heading(mode)), keymap, bindings);
+}
+
 /// A key sequence as written in the configuration.
 fn written(keys: &[Key]) -> String {
-    let keys: Vec<String> = keys.iter().map(ToString::to_string).collect();
-    keys.join(" ")
+    crate::keymap::written(keys)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bindings::Bound;
     use crate::keymap::parse_keys;
 
-    fn entry<'a>(help: &'a Help, action: &str) -> Option<&'a str> {
+    fn entry<'a>(help: &'a Help, in_mode: Mode, name: &str) -> Option<&'a str> {
         help.lines.iter().find_map(|line| match line {
             Line::Entry {
-                keys, action: name, ..
-            } if *name == action => Some(keys.as_str()),
+                mode, keys, action, ..
+            } if *mode == in_mode && *action == name => Some(keys.as_str()),
             _ => None,
         })
     }
 
+    fn feed(help: &mut Help, key: Key, rows: usize) -> bool {
+        help.feed(key, &Keymaps::default().help, rows)
+    }
+
     #[test]
-    fn every_action_is_on_the_sheet_once() {
-        let help = Help::new(&Keymap::default());
-        for name in Binding::names() {
-            let count = help
-                .lines
-                .iter()
-                .filter(|line| matches!(line, Line::Entry { action, .. } if *action == name))
-                .count();
-            assert_eq!(count, 1, "{name}");
+    fn everything_bindable_is_on_the_sheet_once() {
+        let help = Help::new(&Keymaps::default());
+        for &mode in Mode::ALL {
+            for name in mode.names() {
+                let count = help
+                    .lines
+                    .iter()
+                    .filter(|line| {
+                        matches!(line, Line::Entry { mode: in_mode, action, .. }
+                            if *in_mode == mode && *action == name)
+                    })
+                    .count();
+                assert_eq!(count, 1, "{} {name}", mode.name());
+            }
         }
     }
 
     #[test]
     fn the_sheet_shows_the_keys_in_force() {
-        let mut keymap = Keymap::default();
-        let help = Help::new(&keymap);
-        assert_eq!(entry(&help, "scroll-down"), Some("j, down"));
-        assert_eq!(entry(&help, "first-page"), Some("g g, home"));
-        assert_eq!(entry(&help, "help"), Some(""));
+        let mut keymaps = Keymaps::default();
+        let help = Help::new(&keymaps);
+        assert_eq!(entry(&help, Mode::Normal, "scroll-down"), Some("j, down"));
+        assert_eq!(entry(&help, Mode::Normal, "first-page"), Some("g g, home"));
+        assert_eq!(entry(&help, Mode::Normal, "help"), Some(""));
+        assert_eq!(entry(&help, Mode::Visual, "yank"), Some("y"));
+        assert_eq!(entry(&help, Mode::Confirm, "yes"), Some("y, Y"));
 
-        keymap.unbind(&parse_keys("q").unwrap());
-        keymap.bind(parse_keys("shift+q").unwrap(), Binding::Quit);
-        keymap.bind(parse_keys("ctrl+h").unwrap(), Binding::Help);
-        let help = Help::new(&keymap);
-        assert_eq!(entry(&help, "quit"), Some("Q"));
-        assert_eq!(entry(&help, "help"), Some("ctrl+h"));
+        keymaps.unbind(Mode::Normal, &parse_keys("q").unwrap());
+        keymaps.bind(
+            parse_keys("shift+q").unwrap(),
+            Bound::Normal(input::Binding::Quit),
+        );
+        keymaps.bind(
+            parse_keys("ctrl+h").unwrap(),
+            Bound::Normal(input::Binding::Help),
+        );
+        keymaps.bind(
+            parse_keys("Y").unwrap(),
+            Bound::Visual(crate::visual::Binding::Yank),
+        );
+        let help = Help::new(&keymaps);
+        assert_eq!(entry(&help, Mode::Normal, "quit"), Some("Q"));
+        assert_eq!(entry(&help, Mode::Normal, "help"), Some("ctrl+h"));
+        assert_eq!(entry(&help, Mode::Visual, "yank"), Some("y, Y"));
     }
 
     #[test]
     fn scrolling_stops_at_both_ends() {
-        let mut help = Help::new(&Keymap::default());
+        let mut help = Help::new(&Keymaps::default());
         let (_, count) = help.position();
         let rows = 10;
-        assert!(help.feed(Key::Char('k'), rows));
+        assert!(feed(&mut help, Key::Char('k'), rows));
         assert_eq!(help.position().0, 0);
-        help.feed(Key::Char('j'), rows);
-        help.feed(Key::Ctrl('d'), rows);
+        feed(&mut help, Key::Char('j'), rows);
+        feed(&mut help, Key::Ctrl('d'), rows);
         assert_eq!(help.position().0, 6);
-        help.feed(Key::Char('G'), rows);
+        feed(&mut help, Key::Char('3'), rows);
+        feed(&mut help, Key::Char('j'), rows);
+        assert_eq!(help.position().0, 9);
+        feed(&mut help, Key::Char('G'), rows);
         assert_eq!(help.position().0, count - rows);
         assert_eq!(help.shown(rows).len(), rows);
-        help.feed(Key::Char(' '), rows);
+        feed(&mut help, Key::Char(' '), rows);
         assert_eq!(help.position().0, count - rows);
-        help.feed(Key::Char('g'), rows);
+        feed(&mut help, Key::Char('g'), rows);
         assert_eq!(help.position().0, 0);
-        assert!(!help.feed(Key::Char('q'), rows));
-        assert!(!help.feed(Key::Escape, rows));
+        assert!(!feed(&mut help, Key::Char('q'), rows));
+        assert!(!feed(&mut help, Key::Escape, rows));
     }
 
     #[test]
     fn a_tall_window_shows_everything() {
-        let mut help = Help::new(&Keymap::default());
+        let mut help = Help::new(&Keymaps::default());
         let (_, count) = help.position();
-        help.feed(Key::Char('G'), count + 50);
+        feed(&mut help, Key::Char('G'), count + 50);
         assert_eq!(help.position().0, 0);
         assert_eq!(help.shown(count + 50).len(), count);
     }

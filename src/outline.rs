@@ -3,6 +3,27 @@
 
 use crate::backend::Chapter;
 use crate::input::Key;
+use crate::keymap::{Counts, Fed, Keymap, Pending, bindable};
+
+bindable! {
+    /// What keys can be bound to in the table of contents.
+    pub enum Binding {
+        Down = "down", "Select the next entry";
+        Up = "up", "Select the previous entry";
+        HalfDown = "half-down", "Select the entry half a screen down";
+        HalfUp = "half-up", "Select the entry half a screen up";
+        Top = "top", "Select the first entry";
+        Bottom = "bottom", "Select the last entry";
+        /// An entry that leads nowhere opens or closes instead.
+        Go = "go", "Go to the entry selected";
+        /// Already open: step into the first section.
+        Open = "open", "Show the sections under the entry, or go into them";
+        Toggle = "toggle", "Show or hide the sections under the entry";
+        /// Already closed: go out to the entry above, and close that.
+        Fold = "fold", "Hide the sections under the entry, or go out of them";
+        Close = "close", "Close the table of contents";
+    }
+}
 
 /// An entry of the table of contents, laid out flat in reading order.
 #[derive(Debug, Clone, PartialEq)]
@@ -46,8 +67,7 @@ pub struct Outline {
     selected: usize,
     /// The first of the visible entries shown.
     top: usize,
-    /// Whether `g` was just typed, waiting for a second.
-    g: bool,
+    pending: Pending<Binding>,
 }
 
 impl Outline {
@@ -70,7 +90,7 @@ impl Outline {
             entries,
             selected,
             top: 0,
-            g: false,
+            pending: Pending::new(),
         };
         let mut above = outline.parent(selected);
         while let Some(index) = above {
@@ -129,10 +149,18 @@ impl Outline {
             .collect()
     }
 
-    /// Takes a key, given how many rows are shown.
-    pub fn feed(&mut self, key: Key, rows: usize) -> Outcome {
+    /// Takes a key, bound as in the keymap, given how many rows are shown.
+    pub fn feed(&mut self, key: Key, keymap: &Keymap<Binding>, rows: usize) -> Outcome {
+        match self.pending.feed(key, keymap, Counts::Taken) {
+            Fed::Bound(binding, count) => self.act(binding, count.unwrap_or(1), rows),
+            Fed::Waiting | Fed::Unbound(_) => Outcome::Stay,
+        }
+    }
+
+    /// Does what a binding says, moving a number of times.
+    fn act(&mut self, binding: Binding, times: u32, rows: usize) -> Outcome {
         let rows = rows.max(1);
-        let g = std::mem::take(&mut self.g);
+        let times = usize::try_from(times).unwrap_or(usize::MAX);
         let visible = self.visible();
         let here = visible
             .iter()
@@ -140,11 +168,9 @@ impl Outline {
             .unwrap_or(0);
         let last = visible.len().saturating_sub(1);
         let half = rows.div_ceil(2);
-        let to = match key {
-            Key::Escape | Key::Ctrl('c' | '[') | Key::Char('q') | Key::Tab => {
-                return Outcome::Close;
-            }
-            Key::Enter => {
+        let to = match binding {
+            Binding::Close => return Outcome::Close,
+            Binding::Go => {
                 let Some(entry) = self.entries.get(self.selected) else {
                     return Outcome::Close;
                 };
@@ -156,18 +182,13 @@ impl Outline {
                 self.set_unfolded(self.selected, !unfolded);
                 here
             }
-            Key::Char('j') | Key::Down | Key::Ctrl('n') => here.saturating_add(1),
-            Key::Char('k') | Key::Up | Key::Ctrl('p') => here.saturating_sub(1),
-            Key::Ctrl('d') | Key::PageDown => here.saturating_add(half),
-            Key::Ctrl('u') | Key::PageUp => here.saturating_sub(half),
-            Key::Char('g') if g => 0,
-            Key::Char('g') => {
-                self.g = true;
-                here
-            }
-            Key::Home => 0,
-            Key::Char('G') | Key::End => last,
-            Key::Char('l' | ' ') | Key::Right => {
+            Binding::Down => here.saturating_add(times),
+            Binding::Up => here.saturating_sub(times),
+            Binding::HalfDown => here.saturating_add(half),
+            Binding::HalfUp => here.saturating_sub(half),
+            Binding::Top => 0,
+            Binding::Bottom => last,
+            Binding::Open | Binding::Toggle => {
                 let has_sections = self
                     .entries
                     .get(self.selected)
@@ -175,7 +196,7 @@ impl Outline {
                 if has_sections && !self.is_unfolded(self.selected) {
                     self.set_unfolded(self.selected, true);
                     here
-                } else if has_sections && key != Key::Char(' ') {
+                } else if has_sections && binding == Binding::Open {
                     // Already open: step into the first section.
                     here.saturating_add(1)
                 } else {
@@ -183,7 +204,7 @@ impl Outline {
                     here
                 }
             }
-            Key::Char('h') | Key::Left => {
+            Binding::Fold => {
                 if self.is_unfolded(self.selected) {
                     self.set_unfolded(self.selected, false);
                 } else if let Some(parent) = self.parent(self.selected) {
@@ -192,7 +213,6 @@ impl Outline {
                 }
                 return self.scrolled(rows);
             }
-            _ => here,
         };
         // Folding may have changed what shows.
         let visible = self.visible();
@@ -260,6 +280,10 @@ fn flatten(chapters: &[Chapter], depth: usize, parent: Option<usize>, entries: &
 mod tests {
     use super::*;
 
+    fn keymap() -> Keymap<Binding> {
+        crate::bindings::Keymaps::default().outline
+    }
+
     fn chapter(title: &str, page: u32, sections: Vec<Chapter>) -> Chapter {
         Chapter {
             title: title.to_owned(),
@@ -304,7 +328,7 @@ mod tests {
     fn keys(outline: &mut Outline, keys: &str) -> Outcome {
         let mut outcome = Outcome::Stay;
         for key in keys.chars() {
-            outcome = outline.feed(Key::Char(key), 100);
+            outcome = outline.feed(Key::Char(key), &keymap(), 100);
         }
         outcome
     }
@@ -357,9 +381,12 @@ mod tests {
         keys(&mut outline, "gg");
         assert_eq!(selected(&outline), "One");
         keys(&mut outline, "j");
-        assert_eq!(outline.feed(Key::Enter, 100), Outcome::Go(10, None));
-        assert_eq!(outline.feed(Key::Escape, 100), Outcome::Close);
-        assert_eq!(outline.feed(Key::Tab, 100), Outcome::Close);
+        assert_eq!(
+            outline.feed(Key::Enter, &keymap(), 100),
+            Outcome::Go(10, None)
+        );
+        assert_eq!(outline.feed(Key::Escape, &keymap(), 100), Outcome::Close);
+        assert_eq!(outline.feed(Key::Tab, &keymap(), 100), Outcome::Close);
     }
 
     /// Found by fuzzing: the entry for the page in view was selected but
@@ -380,8 +407,8 @@ mod tests {
     fn the_list_scrolls_to_keep_the_selection_in_view() {
         let mut outline = Outline::new(&book(), 5).unwrap();
         // Six showing, two rows: 1.2.1 is fourth, so the list starts at 1.2.
-        outline.feed(Key::Char('k'), 2);
-        outline.feed(Key::Char('j'), 2);
+        outline.feed(Key::Char('k'), &keymap(), 2);
+        outline.feed(Key::Char('j'), &keymap(), 2);
         assert_eq!(outline.position(2), (2, 6));
         let shown: Vec<_> = outline
             .shown(2)
@@ -389,8 +416,8 @@ mod tests {
             .map(|shown| shown.entry.title.as_str())
             .collect();
         assert_eq!(shown, ["1.2", "1.2.1"]);
-        outline.feed(Key::Char('g'), 2);
-        outline.feed(Key::Char('g'), 2);
+        outline.feed(Key::Char('g'), &keymap(), 2);
+        outline.feed(Key::Char('g'), &keymap(), 2);
         assert_eq!(outline.position(2), (0, 6));
     }
 }

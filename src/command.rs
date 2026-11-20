@@ -2,8 +2,9 @@
 
 use std::path::PathBuf;
 
-use crate::input::Key;
-use crate::keymap::{self, Binding};
+use crate::bindings::{Bound, Mode};
+use crate::input::{Binding, Key};
+use crate::keymap::{self, Bindable};
 use crate::recolor::{InvalidColour, Rgb};
 
 /// A command, parsed.
@@ -29,12 +30,12 @@ pub enum Command {
     Set(Setting),
     /// Hide the search highlights.
     NoHighlight,
-    /// Bind a key sequence.
-    Map(Vec<Key>, Binding),
-    /// Unbind a key sequence.
-    Unmap(Vec<Key>),
-    /// Unbind every key sequence.
-    MapClear,
+    /// Bind a key sequence, in the mode of what it is bound to.
+    Map(Vec<Key>, Bound),
+    /// Unbind a key sequence in a mode.
+    Unmap(Mode, Vec<Key>),
+    /// Unbind every key sequence in a mode.
+    MapClear(Mode),
     /// Do what a key binding does, as if its keys were pressed after a
     /// count.
     Run(Binding, Option<u32>),
@@ -84,8 +85,6 @@ pub enum Error {
     Colour(#[from] InvalidColour),
     #[error(transparent)]
     Keys(#[from] keymap::Error),
-    #[error("{0} takes no argument")]
-    UnexpectedArgument(&'static str),
 }
 
 /// Every command by its full name, and the shorter names it also goes by.
@@ -188,28 +187,41 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
         // The keys may have spaces between them, so the action is the
         // last word.
         "map" => {
+            let (mode, argument) = mode(argument);
             let (keys, action) = argument
                 .rsplit_once(char::is_whitespace)
                 .ok_or(Error::MissingArgument("map"))?;
-            let binding = Binding::named(action)
+            let bound = mode
+                .bound(action)
                 .ok_or_else(|| keymap::Error::UnknownAction(action.to_owned()))?;
-            Command::Map(keymap::parse_keys(keys)?, binding)
+            Command::Map(keymap::parse_keys(keys)?, bound)
         }
         "unmap" => {
+            let (mode, argument) = mode(argument);
             if argument.is_empty() {
                 return Err(Error::MissingArgument("unmap"));
             }
-            Command::Unmap(keymap::parse_keys(argument)?)
+            Command::Unmap(mode, keymap::parse_keys(argument)?)
         }
-        "mapclear" => {
-            if !argument.is_empty() {
-                return Err(Error::UnexpectedArgument("mapclear"));
-            }
-            Command::MapClear
-        }
+        "mapclear" => match argument {
+            "" => Command::MapClear(Mode::Normal),
+            name => Command::MapClear(
+                Mode::named(name).ok_or_else(|| keymap::Error::UnknownMode(name.to_owned()))?,
+            ),
+        },
         _ => return Err(Error::Unknown(name.to_owned())),
     };
     Ok(Some(command))
+}
+
+/// The mode named at the start of the arguments to `:map` and `:unmap`,
+/// or normal mode if none is, and the arguments after it. No mode's name
+/// is also a key's.
+fn mode(argument: &str) -> (Mode, &str) {
+    argument
+        .split_once(char::is_whitespace)
+        .and_then(|(first, rest)| Some((Mode::named(first)?, rest.trim_start())))
+        .unwrap_or((Mode::Normal, argument))
 }
 
 /// Parses the `name value` that follows `:set`. A boolean setting named
@@ -394,20 +406,26 @@ mod tests {
     fn map_commands_parse() {
         assert_eq!(
             parse("map ctrl+n next-tab"),
-            Ok(Some(Command::Map(vec![Key::Ctrl('n')], Binding::NextTab)))
+            Ok(Some(Command::Map(
+                vec![Key::Ctrl('n')],
+                Bound::Normal(Binding::NextTab)
+            )))
         );
         assert_eq!(
             parse("map  g x   quit "),
             Ok(Some(Command::Map(
                 vec![Key::Char('g'), Key::Char('x')],
-                Binding::Quit
+                Bound::Normal(Binding::Quit)
             )))
         );
         assert_eq!(
             parse("unmap g g"),
-            Ok(Some(Command::Unmap(vec![Key::Char('g'), Key::Char('g')])))
+            Ok(Some(Command::Unmap(
+                Mode::Normal,
+                vec![Key::Char('g'), Key::Char('g')]
+            )))
         );
-        assert_eq!(parse("mapclear"), Ok(Some(Command::MapClear)));
+        assert_eq!(parse("mapclear"), Ok(Some(Command::MapClear(Mode::Normal))));
         assert_eq!(parse("map j"), Err(Error::MissingArgument("map")));
         assert_eq!(parse("unmap"), Err(Error::MissingArgument("unmap")));
         assert_eq!(
@@ -420,7 +438,42 @@ mod tests {
         );
         assert_eq!(
             parse("mapclear now"),
-            Err(Error::UnexpectedArgument("mapclear"))
+            Err(Error::Keys(keymap::Error::UnknownMode("now".into())))
+        );
+    }
+
+    #[test]
+    fn map_commands_take_a_mode_first() {
+        assert_eq!(
+            parse("map visual Y yank"),
+            Ok(Some(Command::Map(
+                vec![Key::Char('Y')],
+                Bound::Visual(crate::visual::Binding::Yank)
+            )))
+        );
+        assert_eq!(
+            parse("unmap outline q"),
+            Ok(Some(Command::Unmap(Mode::Outline, vec![Key::Char('q')])))
+        );
+        assert_eq!(
+            parse("mapclear prompt"),
+            Ok(Some(Command::MapClear(Mode::Prompt)))
+        );
+        // Each mode has its own actions.
+        assert_eq!(
+            parse("map visual j scroll-down"),
+            Err(Error::Keys(keymap::Error::UnknownAction(
+                "scroll-down".into()
+            )))
+        );
+        // `visual` is also an action in normal mode: a mode is only taken
+        // when something follows it.
+        assert_eq!(
+            parse("map v visual"),
+            Ok(Some(Command::Map(
+                vec![Key::Char('v')],
+                Bound::Normal(Binding::Visual)
+            )))
         );
     }
 

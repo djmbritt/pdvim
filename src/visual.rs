@@ -9,7 +9,38 @@ use std::collections::HashMap;
 
 use crate::backend::TextLine;
 use crate::input::Key;
+use crate::keymap::{Counts, Fed, Keymap, Pending, bindable};
 use crate::layout::Rect;
+
+bindable! {
+    /// What keys can be bound to in visual mode.
+    pub enum Binding {
+        Yank = "yank", "Copy the selection, and leave";
+        Highlight = "highlight", "Highlight the selection in the PDF, and leave";
+        Leave = "leave", "Leave without copying";
+        OtherEnd = "other-end", "Go to the other end of the selection";
+        /// The kind in force leaves; the other kind switches to it.
+        Characters = "characters", "Select characters; leave if already";
+        Lines = "lines", "Select whole lines; leave if already";
+        Down = "down", "Go down a line";
+        Up = "up", "Go up a line";
+        Left = "left", "Go left a character";
+        Right = "right", "Go right a character";
+        LineStart = "line-start", "Go to the start of the line";
+        LineText = "line-text", "Go to the first character that is not a space";
+        LineEnd = "line-end", "Go to the end of the line";
+        NextWord = "next-word", "Go to the start of the next word";
+        PreviousWord = "previous-word", "Go to the start of the word, or the one before";
+        WordEnd = "word-end", "Go to the end of the word, or the next one";
+        /// The character searched for is the next key typed.
+        FindForward = "find-forward", "Go to the next x on the line, typed next";
+        FindBackward = "find-backward", "Go to the previous x on the line";
+        TillForward = "till-forward", "Go to just before the next x on the line";
+        TillBackward = "till-backward", "Go to just after the previous x on the line";
+        RepeatFind = "repeat-find", "Repeat the last find";
+        RepeatFindReversed = "repeat-find-reversed", "Repeat the last find the other way";
+    }
+}
 
 /// The lines of text of each page read so far.
 pub type Text = HashMap<u32, Vec<TextLine>>;
@@ -74,8 +105,8 @@ pub struct Visual {
     /// How far across the page `j` and `k` aim for, kept from one to the
     /// next so that short lines do not pull the cursor left for good.
     goal: Option<f32>,
-    /// The count typed before a motion.
-    count: Option<u32>,
+    /// The count and keys typed so far.
+    pending: Pending<Binding>,
     /// A search whose character is still to be typed, and its count.
     finding: Option<(bool, bool, u32)>,
     /// The last search for a character, for `;` and `,` to repeat.
@@ -90,7 +121,7 @@ impl Visual {
             anchor: at,
             cursor: at,
             goal: None,
-            count: None,
+            pending: Pending::new(),
             finding: None,
             last_find: None,
         }
@@ -100,9 +131,9 @@ impl Visual {
         self.cursor
     }
 
-    /// The count typed so far, for the status bar.
-    pub const fn count(&self) -> Option<u32> {
-        self.count
+    /// What has been typed so far, for the status bar.
+    pub fn typed(&self) -> String {
+        self.pending.display()
     }
 
     /// The first and last characters selected, in reading order.
@@ -125,8 +156,8 @@ impl Visual {
         }
     }
 
-    /// Takes a key.
-    pub fn feed(&mut self, key: Key, text: &Text) -> Outcome {
+    /// Takes a key, bound as in the keymap.
+    pub fn feed(&mut self, key: Key, keymap: &Keymap<Binding>, text: &Text) -> Outcome {
         // The character after `f`, `F`, `t` or `T`; anything else, such as
         // escape, gives up the search.
         if let Some((forward, till, times)) = self.finding.take() {
@@ -141,23 +172,22 @@ impl Visual {
             }
             return Outcome::Stay;
         }
-        if let Key::Char(digit @ '0'..='9') = key
-            && let Some(value) = digit.to_digit(10)
-            && (self.count.is_some() || value != 0)
-        {
-            let count = self.count.unwrap_or(0);
-            self.count = Some(count.saturating_mul(10).saturating_add(value));
-            return Outcome::Stay;
+        match self.pending.feed(key, keymap, Counts::Taken) {
+            Fed::Bound(binding, count) => self.act(binding, count.unwrap_or(1), text),
+            Fed::Waiting | Fed::Unbound(_) => Outcome::Stay,
         }
-        let times = self.count.take().unwrap_or(1);
-        match key {
-            Key::Escape | Key::Ctrl('c' | '[') => return Outcome::Leave,
-            Key::Char('y') => return Outcome::Copy(self.text(text)),
-            Key::Char('H') => return Outcome::Highlight(self.areas(text)),
-            Key::Char('o') => std::mem::swap(&mut self.anchor, &mut self.cursor),
-            // The kind in force leaves; the other kind switches to it.
-            Key::Char('v' | 'V') => {
-                let kind = if key == Key::Char('v') {
+    }
+
+    /// Does what a binding says, a number of times where that means
+    /// anything.
+    fn act(&mut self, binding: Binding, times: u32, text: &Text) -> Outcome {
+        match binding {
+            Binding::Leave => return Outcome::Leave,
+            Binding::Yank => return Outcome::Copy(self.text(text)),
+            Binding::Highlight => return Outcome::Highlight(self.areas(text)),
+            Binding::OtherEnd => std::mem::swap(&mut self.anchor, &mut self.cursor),
+            Binding::Characters | Binding::Lines => {
+                let kind = if binding == Binding::Characters {
                     Kind::Characters
                 } else {
                     Kind::Lines
@@ -167,16 +197,16 @@ impl Visual {
                 }
                 self.kind = kind;
             }
-            Key::Char('f') => self.finding = Some((true, false, times)),
-            Key::Char('F') => self.finding = Some((false, false, times)),
-            Key::Char('t') => self.finding = Some((true, true, times)),
-            Key::Char('T') => self.finding = Some((false, true, times)),
-            Key::Char(';') => {
+            Binding::FindForward => self.finding = Some((true, false, times)),
+            Binding::FindBackward => self.finding = Some((false, false, times)),
+            Binding::TillForward => self.finding = Some((true, true, times)),
+            Binding::TillBackward => self.finding = Some((false, true, times)),
+            Binding::RepeatFind => {
                 if let Some(find) = self.last_find {
                     self.find(text, find, times, true);
                 }
             }
-            Key::Char(',') => {
+            Binding::RepeatFindReversed => {
                 if let Some(find) = self.last_find {
                     let reversed = Find {
                         forward: !find.forward,
@@ -185,13 +215,20 @@ impl Visual {
                     self.find(text, reversed, times, true);
                 }
             }
-            Key::Char('j') | Key::Down => self.vertical(text, times, true),
-            Key::Char('k') | Key::Up => self.vertical(text, times, false),
-            _ => {
+            Binding::Down => self.vertical(text, times, true),
+            Binding::Up => self.vertical(text, times, false),
+            Binding::Left
+            | Binding::Right
+            | Binding::LineStart
+            | Binding::LineText
+            | Binding::LineEnd
+            | Binding::NextWord
+            | Binding::PreviousWord
+            | Binding::WordEnd => {
                 // A motion that goes nowhere more, such as `$` once at the
                 // end, stops the count, however large.
                 for _ in 0..times {
-                    let Some(moved) = self.horizontal(key, text) else {
+                    let Some(moved) = self.horizontal(binding, text) else {
                         break;
                     };
                     if moved == self.cursor {
@@ -205,34 +242,32 @@ impl Visual {
         Outcome::Stay
     }
 
-    /// Where a key that moves along the text takes the cursor, if anywhere.
-    fn horizontal(&self, key: Key, text: &Text) -> Option<Spot> {
+    /// Where a motion along the text takes the cursor, if anywhere.
+    fn horizontal(&self, motion: Binding, text: &Text) -> Option<Spot> {
         let cursor = self.cursor;
         let length = line(text, cursor.page, cursor.line)?.chars.len();
-        match key {
-            Key::Char('l') | Key::Right => {
-                (cursor.index.saturating_add(1) < length).then_some(Spot {
-                    index: cursor.index.saturating_add(1),
-                    ..cursor
-                })
-            }
-            Key::Char('h') | Key::Left => cursor
+        match motion {
+            Binding::Right => (cursor.index.saturating_add(1) < length).then_some(Spot {
+                index: cursor.index.saturating_add(1),
+                ..cursor
+            }),
+            Binding::Left => cursor
                 .index
                 .checked_sub(1)
                 .map(|index| Spot { index, ..cursor }),
-            Key::Char('0') | Key::Home => Some(Spot { index: 0, ..cursor }),
-            Key::Char('^') => line(text, cursor.page, cursor.line)?
+            Binding::LineStart => Some(Spot { index: 0, ..cursor }),
+            Binding::LineText => line(text, cursor.page, cursor.line)?
                 .chars
                 .iter()
                 .position(|character| !character.character.is_whitespace())
                 .map(|index| Spot { index, ..cursor }),
-            Key::Char('$') | Key::End => Some(Spot {
+            Binding::LineEnd => Some(Spot {
                 index: length.saturating_sub(1),
                 ..cursor
             }),
-            Key::Char('w') => find(text, cursor, next, |spot| starts_word(text, spot)),
-            Key::Char('b') => find(text, cursor, previous, |spot| starts_word(text, spot)),
-            Key::Char('e') => find(text, cursor, next, |spot| ends_word(text, spot)),
+            Binding::NextWord => find(text, cursor, next, |spot| starts_word(text, spot)),
+            Binding::PreviousWord => find(text, cursor, previous, |spot| starts_word(text, spot)),
+            Binding::WordEnd => find(text, cursor, next, |spot| ends_word(text, spot)),
             _ => None,
         }
     }
@@ -555,10 +590,15 @@ mod tests {
         Spot { page, line, index }
     }
 
+    fn keymap() -> Keymap<Binding> {
+        crate::bindings::Keymaps::default().visual
+    }
+
     fn keys(visual: &mut Visual, text: &Text, keys: &str) -> Outcome {
+        let keymap = keymap();
         let mut outcome = Outcome::Stay;
         for key in keys.chars() {
-            outcome = visual.feed(Key::Char(key), text);
+            outcome = visual.feed(Key::Char(key), &keymap, text);
         }
         outcome
     }
@@ -666,9 +706,9 @@ mod tests {
         keys(&mut visual, &text, "9fe");
         assert_eq!(visual.cursor(), spot(2, 1, 0));
         // Escape gives up the search but stays in visual mode.
-        assert_eq!(visual.feed(Key::Char('f'), &text), Outcome::Stay);
-        assert_eq!(visual.feed(Key::Escape, &text), Outcome::Stay);
-        assert_eq!(visual.feed(Key::Escape, &text), Outcome::Leave);
+        assert_eq!(visual.feed(Key::Char('f'), &keymap(), &text), Outcome::Stay);
+        assert_eq!(visual.feed(Key::Escape, &keymap(), &text), Outcome::Stay);
+        assert_eq!(visual.feed(Key::Escape, &keymap(), &text), Outcome::Leave);
     }
 
     #[test]
@@ -725,7 +765,7 @@ mod tests {
         assert_eq!(keys(&mut visual, &text, "v"), Outcome::Stay);
         assert_eq!(visual.kind, Kind::Characters);
         assert_eq!(keys(&mut visual, &text, "v"), Outcome::Leave);
-        assert_eq!(visual.feed(Key::Escape, &text), Outcome::Leave);
+        assert_eq!(visual.feed(Key::Escape, &keymap(), &text), Outcome::Leave);
     }
 
     #[test]

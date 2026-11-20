@@ -5,8 +5,10 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::bindings::Mode;
 use crate::command;
-use crate::keymap::Binding;
+use crate::input::Binding;
+use crate::keymap::Bindable;
 
 /// The kinds of file offered after `open`: the documents pdvim reads. MuPDF
 /// is built with PDF only, so other kinds would not open.
@@ -76,8 +78,21 @@ pub fn complete(line: &str) -> Completion {
             }
             _ => Vec::new(),
         },
-        // The action comes after at least one key.
-        Some("map") if words_before >= 1 => words(last_word, Binding::names()),
+        // A mode may come first.
+        Some("map" | "unmap" | "mapclear") if words_before == 0 => {
+            words(last_word, Mode::ALL.iter().map(|mode| mode.name()))
+        }
+        // The action comes after at least one key, in the mode named first
+        // or in normal mode.
+        Some("map") => {
+            let named = rest.split_whitespace().next().and_then(Mode::named);
+            let keys = words_before.saturating_sub(usize::from(named.is_some()));
+            if keys >= 1 {
+                words(last_word, named.unwrap_or(Mode::Normal).names())
+            } else {
+                Vec::new()
+            }
+        }
         _ => Vec::new(),
     };
     Completion {
@@ -244,7 +259,7 @@ mod tests {
 
     #[test]
     fn actions_complete_after_the_keys() {
-        assert_eq!(texts(&complete("map ")), Vec::<&str>::new());
+        assert_eq!(texts(&complete("map j")), Vec::<&str>::new());
         let completion = complete("map g x next-");
         assert_eq!(completion.start, 8);
         assert_eq!(texts(&completion), ["next-page", "next-tab"]);
@@ -252,6 +267,15 @@ mod tests {
             texts(&complete("map ctrl+n ")).len(),
             Binding::names().count()
         );
+    }
+
+    #[test]
+    fn a_mode_completes_first_then_its_actions() {
+        assert_eq!(texts(&complete("map vi")), ["visual"]);
+        assert_eq!(texts(&complete("unmap o")), ["outline"]);
+        assert_eq!(texts(&complete("map visual ")), Vec::<&str>::new());
+        assert_eq!(texts(&complete("map visual Y ya")), ["yank"]);
+        assert_eq!(texts(&complete("map v vis")), ["visual", "visual-line"]);
     }
 
     #[test]

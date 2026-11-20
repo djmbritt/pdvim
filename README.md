@@ -111,7 +111,7 @@ After `v` or `V`, each line of text in view gets a label of two letters. Type a 
 
 Press `u` to take back the last highlight, and `Ctrl-r` to put back the last one taken back. Each saves the file the same way, incrementally. pdvim remembers what to undo for each open document until you close it.
 
-A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t`, and `T` look along the cursor's line only, and the cursor stays put if the character isn't there. The keys in visual mode can't be changed.
+A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t`, and `T` look along the cursor's line only, and the cursor stays put if the character isn't there. These are the default keys; the `[keys.visual]` table of the [configuration](#configuration) changes them.
 
 ### Tabs
 
@@ -148,9 +148,9 @@ A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t
 | `:set confirm-quit [true\|false]`      | Ask before quitting                                                  |
 | `:set confirm-tab-close [true\|false]` | Ask before closing a tab while others are open                       |
 | `:set highlight-color #rrggbb`         | Set the color `H` in visual mode highlights in (default `#ffff00`)   |
-| `:map {keys} {action}`                 | Bind keys to an action (see [Keys](#keys-1))                         |
-| `:unmap {keys}`                        | Remove a key binding                                                 |
-| `:mapclear`                            | Remove every key binding                                             |
+| `:map [mode] {keys} {action}`          | Bind keys to an action (see [Keys](#keys-1))                         |
+| `:unmap [mode] {keys}`                 | Remove a key binding                                                 |
+| `:mapclear [mode]`                     | Remove every key binding of a mode                                   |
 | `:tabe[dit] {file}`, `:tabnew [file]`  | Open a document in a new tab, or open an empty tab                   |
 | `:tabn[ext] [n]`                       | Go to the next tab, or to tab _n_                                    |
 | `:tabp[revious]`                       | Go to the previous tab                                               |
@@ -160,11 +160,11 @@ A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t
 
 If you name a boolean setting without a value, it is turned on.
 
-`:help` shows a cheat sheet of every action, the keys bound to it, and what it does. It shows your own bindings, including changes from the configuration file and `:map`. Scroll it with `j` / `k`, `Ctrl-d` / `Ctrl-u`, and `g` / `G`, and close it with `q` or `Esc`. To open it with a key, bind the `help` action, as in `"ctrl+h" = "help"`.
+`:help` shows a cheat sheet of every action in every mode, the keys bound to it, and what it does. It shows your own bindings, including changes from the configuration file and `:map`. Scroll it with `j` / `k`, `Ctrl-d` / `Ctrl-u`, and `g` / `G`, and close it with `q` or `Esc`. To open it with a key, bind the `help` action, as in `"ctrl+h" = "help"`.
 
 You can also run any [action](#actions) by name, as in `:scroll-down` or `:next-tab`. A number after it works like a count typed before a key: `:zoom-to 150` zooms to 150%, and `:first-page 12` goes to page 12.
 
-Press `Tab` in the command prompt to complete what you're typing: command and action names, setting names and their values, action names after `:map`, and file paths after `:open`, `:tabedit`, and `:tabnew`. Paths offer folders and PDF files. If more than one completion fits, `Tab` fills in as much as they share and lists them above the prompt. Press `Tab` again to go through the list, and `Shift-Tab` to go back. While the list is open, it narrows as you type, and it closes when nothing fits.
+Press `Tab` in the command prompt to complete what you're typing: command and action names, setting names and their values, mode and action names after `:map`, and file paths after `:open`, `:tabedit`, and `:tabnew`. Paths offer folders and PDF files. If more than one completion fits, `Tab` fills in as much as they share and lists them above the prompt. Press `Tab` again to go through the list, and `Shift-Tab` to go back. While the list is open, it narrows as you type, and it closes when nothing fits.
 
 ## Recent documents
 
@@ -182,11 +182,11 @@ Press `Tab` in the command prompt to complete what you're typing: command and ac
 
 pdvim reads `$XDG_CONFIG_HOME/pdvim/config.toml` when it starts. If `XDG_CONFIG_HOME` is not set, it reads `~/.config/pdvim/config.toml`. You don't need the file.
 
-[`config.example.toml`](config.example.toml) lists every setting and key binding at its default. To start from it, copy it into place and change what you like:
+pdvim's own defaults are a configuration file too: [`defaults.toml`](defaults.toml), built into pdvim and read before yours. It lists every setting and every key binding of every mode. To start from it, copy it into place and change what you like:
 
 ```sh
 mkdir -p ~/.config/pdvim
-cp config.example.toml ~/.config/pdvim/config.toml
+cp defaults.toml ~/.config/pdvim/config.toml
 ```
 
 A shorter file works too, since anything you leave out keeps its default:
@@ -201,18 +201,35 @@ confirm-quit = true
 recolor-lightcolor = "#1a1a1a"
 recolor-darkcolor = "#dddddd"
 
-[keys]
+[keys.normal]
 # Move between tabs with Ctrl-n and Ctrl-p.
 "ctrl+n" = "next-tab"
 "ctrl+p" = "previous-tab"
 # Quit with Q instead of q.
 "q" = "none"
 "shift+q" = "quit"
+
+[keys.visual]
+# Copy with Y as well as y.
+"Y" = "yank"
 ```
 
 `[settings]` takes the same names and values as `:set`. With `confirm-quit` on, pdvim asks `quit pdvim? (y/n)` before quitting: when you close the last tab, use `:qa`, or close the window. Press `y` to quit, or any other key to stay. If the window is closed again while pdvim is asking, for example by a window manager that insists, it quits without asking. With `confirm-tab-close` on, pdvim asks `close tab {name}? (y/n)` before closing a tab with `q`, `:q`, or `:tabclose` while other tabs are open. Closing the last tab quits pdvim, so `confirm-quit` decides whether that asks. `recolor` and `trim` decide how a document starts the first time you open it. After that, the document is restored the way you left it.
 
-`[keys]` binds keys to the [actions](#actions) below, on top of the default keys. Bind keys to `"none"` to remove a default.
+`[keys.<mode>]` binds keys to that mode's actions, on top of the default keys. Bind keys to `"none"` to remove a default. Keys put straight in `[keys]` are bound in normal mode, as before modes could be configured. The modes are:
+
+| Mode      | When                                                          |
+| --------- | ------------------------------------------------------------- |
+| `normal`  | Reading: the [actions](#actions) below                        |
+| `visual`  | Selecting text after `v` or `V`                               |
+| `hints`   | Labels on links or lines; letters not bound type a label      |
+| `outline` | The table of contents                                         |
+| `recent`  | The recent-documents list; digits not bound open that entry   |
+| `help`    | The cheat sheet                                               |
+| `prompt`  | Typing after `:`, `/` or `?`; keys not bound type themselves  |
+| `confirm` | Questions such as `quit pdvim? (y/n)`; keys not bound mean no |
+
+`defaults.toml` and `:help` list every mode's actions.
 
 If an entry has a mistake, pdvim skips it, shows the first mistake in the status bar, and prints every mistake to standard error. If the file is not valid TOML, pdvim ignores all of it.
 
@@ -222,11 +239,13 @@ Write a key as a single character, such as `j`, `G`, or `?`, or by name: `space`
 
 Separate the keys of a sequence with spaces, as in `"g g"` or `"z i"`. A count typed before the keys is passed to the action, as with the built-in keys. If one binding is the start of a longer one, the shorter one wins: binding `g` hides `g g`.
 
-The `:map {keys} {action}`, `:unmap {keys}`, and `:mapclear` commands change the bindings while pdvim runs. They write keys the same way, as in `:map ctrl+n next-tab`.
+The `:map`, `:unmap`, and `:mapclear` commands change the bindings while pdvim runs. They write keys the same way, with the mode first for any mode but normal: `:map ctrl+n next-tab`, `:map visual Y yank`, `:unmap outline q`, `:mapclear prompt`.
 
-The keys used in the command prompt, the recent-documents list, the cheat sheet, the table of contents, and visual mode can't be changed.
+Two things are typed rather than bound: the character after `f`, `F`, `t` or `T` in visual mode, and the letters of a label.
 
 ### Actions
+
+The actions of normal mode, and their default keys:
 
 | Action                                | Default keys                                |
 | ------------------------------------- | ------------------------------------------- |

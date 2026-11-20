@@ -3,6 +3,16 @@
 //! a label picks it.
 
 use crate::input::Key;
+use crate::keymap::{Counts, Fed, Keymap, Pending, bindable};
+
+bindable! {
+    /// What keys can be bound to while labels are shown. Letters bound to
+    /// nothing type a label.
+    pub enum Binding {
+        Cancel = "cancel", "Put the labels away";
+        Back = "back", "Take back the first letter typed; with none, cancel";
+    }
+}
 
 /// The letters labels are made of when few are needed: the home row.
 const HOME_ROW: [char; 9] = ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'];
@@ -37,8 +47,9 @@ pub enum Outcome<T> {
 /// The labels shown, and the first letter of one if it has been typed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hints<T> {
-    hints: Vec<Hint<T>>,
+    labelled: Vec<Hint<T>>,
     typed: Option<char>,
+    pending: Pending<Binding>,
 }
 
 impl<T: Clone> Hints<T> {
@@ -67,13 +78,17 @@ impl<T: Clone> Hints<T> {
                 })
             })
             .collect();
-        (!hints.is_empty()).then_some(Self { hints, typed: None })
+        (!hints.is_empty()).then_some(Self {
+            labelled: hints,
+            typed: None,
+            pending: Pending::new(),
+        })
     }
 
     /// The labels still in play: all of them, or those that start with the
     /// letter typed.
     pub fn shown(&self) -> impl Iterator<Item = &Hint<T>> {
-        self.hints
+        self.labelled
             .iter()
             .filter(|hint| self.typed.is_none_or(|typed| hint.label[0] == typed))
     }
@@ -83,27 +98,32 @@ impl<T: Clone> Hints<T> {
         self.typed
     }
 
-    /// Takes a key.
-    pub fn feed(&mut self, key: Key) -> Outcome<T> {
-        let letter = match key {
-            Key::Escape | Key::Ctrl('c' | '[') => return Outcome::Cancel,
-            Key::Backspace | Key::Ctrl('h') => {
+    /// Takes a key, bound as in the keymap.
+    pub fn feed(&mut self, key: Key, keymap: &Keymap<Binding>) -> Outcome<T> {
+        let letter = match self.pending.feed(key, keymap, Counts::NotTaken) {
+            Fed::Bound(Binding::Cancel, _) => return Outcome::Cancel,
+            Fed::Bound(Binding::Back, _) => {
                 if self.typed.take().is_none() {
                     return Outcome::Cancel;
                 }
                 return Outcome::Wait;
             }
-            Key::Char(character) => character.to_ascii_lowercase(),
-            _ => return Outcome::Wait,
+            // The last key of a sequence bound to nothing is a letter of a
+            // label, if it is a letter at all.
+            Fed::Unbound(keys) => match keys.last() {
+                Some(Key::Char(character)) => character.to_ascii_lowercase(),
+                _ => return Outcome::Wait,
+            },
+            Fed::Waiting => return Outcome::Wait,
         };
         let Some(first) = self.typed else {
-            if self.hints.iter().any(|hint| hint.label[0] == letter) {
+            if self.labelled.iter().any(|hint| hint.label[0] == letter) {
                 self.typed = Some(letter);
                 return Outcome::Wait;
             }
             return Outcome::NoMatch;
         };
-        self.hints
+        self.labelled
             .iter()
             .find(|hint| hint.label == [first, letter])
             .map_or(Outcome::NoMatch, |hint| Outcome::Picked(hint.clone()))
@@ -115,6 +135,10 @@ mod tests {
     use super::*;
     use crate::backend::{Link, Target};
     use crate::layout::Rect;
+
+    fn keymap() -> Keymap<Binding> {
+        crate::bindings::Keymaps::default().hints
+    }
 
     fn links(count: u32) -> Vec<(u32, Link)> {
         (0..count)
@@ -177,10 +201,10 @@ mod tests {
     #[test]
     fn two_letters_follow_a_link() {
         let mut hints = Hints::new(links(11)).unwrap();
-        assert_eq!(hints.feed(Key::Char('s')), Outcome::Wait);
+        assert_eq!(hints.feed(Key::Char('s'), &keymap()), Outcome::Wait);
         assert_eq!(hints.typed(), Some('s'));
         assert_eq!(labels(&hints), ["sa", "ss"]);
-        let Outcome::Picked(hint) = hints.feed(Key::Char('S')) else {
+        let Outcome::Picked(hint) = hints.feed(Key::Char('S'), &keymap()) else {
             panic!("expected to follow a link");
         };
         assert_eq!(hint.label, ['s', 's']);
@@ -190,13 +214,13 @@ mod tests {
     #[test]
     fn backspace_escape_and_strangers() {
         let mut hints = Hints::new(links(3)).unwrap();
-        assert_eq!(hints.feed(Key::Char('a')), Outcome::Wait);
-        assert_eq!(hints.feed(Key::Backspace), Outcome::Wait);
+        assert_eq!(hints.feed(Key::Char('a'), &keymap()), Outcome::Wait);
+        assert_eq!(hints.feed(Key::Backspace, &keymap()), Outcome::Wait);
         assert_eq!(hints.typed(), None);
-        assert_eq!(hints.feed(Key::Backspace), Outcome::Cancel);
-        assert_eq!(hints.feed(Key::Char('z')), Outcome::NoMatch);
-        hints.feed(Key::Char('a'));
-        assert_eq!(hints.feed(Key::Char('z')), Outcome::NoMatch);
-        assert_eq!(hints.feed(Key::Escape), Outcome::Cancel);
+        assert_eq!(hints.feed(Key::Backspace, &keymap()), Outcome::Cancel);
+        assert_eq!(hints.feed(Key::Char('z'), &keymap()), Outcome::NoMatch);
+        hints.feed(Key::Char('a'), &keymap());
+        assert_eq!(hints.feed(Key::Char('z'), &keymap()), Outcome::NoMatch);
+        assert_eq!(hints.feed(Key::Escape, &keymap()), Outcome::Cancel);
     }
 }

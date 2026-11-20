@@ -11,14 +11,15 @@ use std::path::PathBuf;
 
 use crate::backend::Chapter;
 use crate::backend::{self, TextChar, TextLine};
+use crate::bindings::{Bound, Keymaps};
 use crate::command::{self, Command};
 use crate::complete;
 use crate::config;
 use crate::help::Help;
 use crate::hints::{self, Hints};
 use crate::history::{Fit, View};
-use crate::input::{Key, Pending};
-use crate::keymap::{self, Keymap, Match};
+use crate::input::Key;
+use crate::keymap::{self, Counts, Pending};
 use crate::layout::{PageSize, Rect, Rotation};
 use crate::num;
 use crate::outline::{self, Outline};
@@ -121,23 +122,41 @@ pub fn config(data: &[u8]) {
     }
     // The commands are applied to the bindings the way the app applies
     // them, and the cheat sheet lists the result.
-    let mut keymap = Keymap::default();
+    let mut keymaps = Keymaps::default();
     for command in commands {
         match command {
-            Command::Map(keys, binding) => {
+            Command::Map(keys, bound) => {
                 assert!(!keys.is_empty(), "a binding of no keys");
-                keymap.bind(keys.clone(), binding);
-                assert_eq!(keymap.lookup(&keys), Match::Bound(binding));
+                keymaps.bind(keys.clone(), bound);
+                assert!(
+                    bound_to(&keymaps, &keys, bound),
+                    "{keys:?} is not bound to {bound:?}"
+                );
             }
-            Command::Unmap(keys) => {
-                keymap.unbind(&keys);
+            Command::Unmap(mode, keys) => {
+                keymaps.unbind(mode, &keys);
             }
-            Command::MapClear => keymap.clear(),
+            Command::MapClear(mode) => keymaps.clear(mode),
             _ => {}
         }
     }
-    let help = Help::new(&keymap);
+    let help = Help::new(&keymaps);
     let _ = help.shown(usize::MAX);
+}
+
+/// Whether keys are bound to something, in its mode.
+fn bound_to(keymaps: &Keymaps, keys: &[Key], bound: Bound) -> bool {
+    use keymap::Match;
+    match bound {
+        Bound::Normal(to) => keymaps.normal.lookup(keys) == Match::Bound(to),
+        Bound::Visual(to) => keymaps.visual.lookup(keys) == Match::Bound(to),
+        Bound::Hints(to) => keymaps.hints.lookup(keys) == Match::Bound(to),
+        Bound::Outline(to) => keymaps.outline.lookup(keys) == Match::Bound(to),
+        Bound::Recent(to) => keymaps.recent.lookup(keys) == Match::Bound(to),
+        Bound::Help(to) => keymaps.help.lookup(keys) == Match::Bound(to),
+        Bound::Prompt(to) => keymaps.prompt.lookup(keys) == Match::Bound(to),
+        Bound::Confirm(to) => keymaps.confirm.lookup(keys) == Match::Bound(to),
+    }
 }
 
 /// Parses a line typed after `:`, and completes it.
@@ -193,9 +212,10 @@ pub fn keys(data: &[u8]) {
 
 /// Types keys at each of the modes that take them.
 ///
-/// The modes are the bindings, the cheat sheet, the link labels, the
-/// recent documents, the table of contents and visual mode. The first bytes shape the lists and text the
-/// modes work over; the rest are keys.
+/// The modes are normal mode, the cheat sheet, the link labels, the
+/// recent documents, the table of contents and visual mode, each with the
+/// built-in bindings. The first bytes shape the lists and text the modes
+/// work over; the rest are keys.
 pub fn modes(data: &[u8]) {
     let mut bytes = Bytes(data);
     let rows = bytes.below(12);
@@ -215,9 +235,9 @@ pub fn modes(data: &[u8]) {
         Kind::Lines
     };
 
-    let keymap = Keymap::default();
-    let mut pending = Pending::default();
-    let mut help = Help::new(&keymap);
+    let keymaps = Keymaps::default();
+    let mut pending = Pending::new();
+    let mut help = Help::new(&keymaps);
     let mut hints = Hints::new((0..num::len(labels)).map(|item| (item, item)).collect());
     let mut picker = Picker::new(
         (0..recent)
@@ -230,35 +250,35 @@ pub fn modes(data: &[u8]) {
         .map(|&(page, line)| Visual::new(kind, Spot::line_start(page, line)));
 
     for key in bytes.keys() {
-        let _ = pending.feed(key, &keymap);
+        let _ = pending.feed(key, &keymaps.normal, Counts::Taken);
         let _ = pending.display();
-        help_key(&mut help, key, rows);
+        help_key(&mut help, &keymaps, key, rows);
         if let Some(labelled) = &mut hints
-            && !hints_key(labelled, key)
+            && !hints_key(labelled, &keymaps, key)
         {
             hints = None;
         }
         if let Some(list) = &mut picker
-            && !picker_key(list, key)
+            && !picker_key(list, &keymaps, key)
         {
             picker = None;
         }
         if let Some(contents) = &mut sidebar
-            && !outline_key(contents, key, rows)
+            && !outline_key(contents, &keymaps, key, rows)
         {
             sidebar = None;
         }
         if let Some(selection) = &mut selecting
-            && !visual_key(selection, key, &text)
+            && !visual_key(selection, &keymaps, key, &text)
         {
             selecting = None;
         }
     }
 }
 
-fn help_key(help: &mut Help, key: Key, rows: usize) {
-    if !help.feed(key, rows) {
-        *help = Help::new(&Keymap::default());
+fn help_key(help: &mut Help, keymaps: &Keymaps, key: Key, rows: usize) {
+    if !help.feed(key, &keymaps.help, rows) {
+        *help = Help::new(keymaps);
     }
     let (top, count) = help.position();
     let shown = help.shown(rows).len();
@@ -270,8 +290,8 @@ fn help_key(help: &mut Help, key: Key, rows: usize) {
 }
 
 /// Returns whether the labels stay up.
-fn hints_key(hints: &mut Hints<u32>, key: Key) -> bool {
-    match hints.feed(key) {
+fn hints_key(hints: &mut Hints<u32>, keymaps: &Keymaps, key: Key) -> bool {
+    match hints.feed(key, &keymaps.hints) {
         hints::Outcome::Wait => {
             let typed = hints.typed();
             assert!(
@@ -293,8 +313,8 @@ fn hints_key(hints: &mut Hints<u32>, key: Key) -> bool {
 }
 
 /// Returns whether the list stays up.
-fn picker_key(picker: &mut Picker, key: Key) -> bool {
-    let outcome = picker.feed(key);
+fn picker_key(picker: &mut Picker, keymaps: &Keymaps, key: Key) -> bool {
+    let outcome = picker.feed(key, &keymaps.recent);
     assert!(picker.selected() < picker.entries().len());
     match outcome {
         Some(Choice::Open(path)) => {
@@ -307,8 +327,8 @@ fn picker_key(picker: &mut Picker, key: Key) -> bool {
 }
 
 /// Returns whether the sidebar stays up.
-fn outline_key(sidebar: &mut Outline, key: Key, rows: usize) -> bool {
-    let outcome = sidebar.feed(key, rows);
+fn outline_key(sidebar: &mut Outline, keymaps: &Keymaps, key: Key, rows: usize) -> bool {
+    let outcome = sidebar.feed(key, &keymaps.outline, rows);
     let shown = sidebar.shown(rows.max(1));
     assert_eq!(
         shown.iter().filter(|line| line.selected).count(),
@@ -321,8 +341,8 @@ fn outline_key(sidebar: &mut Outline, key: Key, rows: usize) -> bool {
 }
 
 /// Returns whether visual mode goes on.
-fn visual_key(selection: &mut Visual, key: Key, text: &Text) -> bool {
-    let outcome = selection.feed(key, text);
+fn visual_key(selection: &mut Visual, keymaps: &Keymaps, key: Key, text: &Text) -> bool {
+    let outcome = selection.feed(key, &keymaps.visual, text);
     let cursor = selection.cursor();
     assert!(
         visual::character(text, cursor).is_some(),
@@ -546,7 +566,7 @@ mod tests {
 
     #[test]
     fn the_example_configuration_reads() {
-        config(include_bytes!("../config.example.toml"));
+        config(include_bytes!("../defaults.toml"));
     }
 
     #[test]

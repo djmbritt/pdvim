@@ -17,6 +17,7 @@
 
 mod app;
 mod backend;
+mod bindings;
 mod command;
 mod complete;
 mod config;

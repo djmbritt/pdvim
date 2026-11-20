@@ -1,193 +1,85 @@
-//! Which keys do what: the bindings of named actions to key sequences, the
-//! built-in ones and those changed in the configuration file or with `map`
-//! and `unmap`.
+//! Which keys do what, the same way in every mode.
+//!
+//! Each mode names the things it can be told to do in an enum declared with
+//! [`bindable!`]. A [`Keymap`] binds key sequences to them, and [`Pending`]
+//! holds what has been typed so far, with a count in front, until it makes
+//! up a bound sequence. Which keys are bound comes from the configuration:
+//! see [`crate::bindings`].
 
-use crate::input::{Action, Key, Prompt};
+use crate::input::Key;
 
-/// Something a key sequence can be bound to. Each has a name, used in the
-/// configuration file and with `:map`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Binding {
-    ScrollDown,
-    ScrollUp,
-    ScrollLeft,
-    ScrollRight,
-    ScrollHalfDown,
-    ScrollHalfUp,
-    ScrollFullDown,
-    ScrollFullUp,
-    NextPage,
-    PreviousPage,
-    /// The first page, or the page given by a count.
-    FirstPage,
-    /// The last page, or the page given by a count.
-    LastPage,
-    PageTop,
-    PageBottom,
-    ZoomIn,
-    ZoomOut,
-    /// Zoom to the percentage given by a count, or to 100%.
-    ZoomTo,
-    /// Zoom to 100%, whatever the count.
-    ZoomReset,
-    FitWidth,
-    FitPage,
-    Rotate,
-    ToggleRecolor,
-    ToggleTrim,
-    SearchNext,
-    SearchPrevious,
-    SearchForward,
-    SearchBackward,
-    CommandPrompt,
-    Recent,
-    /// The next tab, or the tab given by a count.
-    NextTab,
-    PreviousTab,
-    Abort,
-    Quit,
-    /// Show the key bindings.
-    Help,
-    /// Label the links in view, to follow one by typing its label.
-    FollowLink,
-    /// Label the lines in view, to start selecting characters at one.
-    Visual,
-    /// Label the lines in view, to start selecting whole lines at one.
-    VisualLine,
-    /// Take back the last highlight.
-    Undo,
-    /// Put back the last highlight taken back.
-    Redo,
-    /// Show the table of contents in a sidebar.
-    Outline,
+/// Something keys can be bound to: one of the things a mode can be told to
+/// do, with a name for the configuration and a few words for the help
+/// sheet.
+pub trait Bindable: Copy + Eq + std::fmt::Debug + 'static {
+    /// Every one, in the order the help sheet shows them, with its name and
+    /// what it does.
+    const ALL: &'static [(Self, &'static str, &'static str)];
+
+    /// The name used in the configuration and with `:map`.
+    fn name(self) -> &'static str {
+        Self::ALL
+            .iter()
+            .find(|(bound, ..)| *bound == self)
+            .map_or("", |(_, name, _)| name)
+    }
+
+    /// What it does, in a few words.
+    fn description(self) -> &'static str {
+        Self::ALL
+            .iter()
+            .find(|(bound, ..)| *bound == self)
+            .map_or("", |(.., description)| description)
+    }
+
+    /// The one with this name.
+    fn named(name: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .find(|(_, known, _)| *known == name)
+            .map(|(bound, ..)| *bound)
+    }
+
+    /// The names of every one.
+    fn names() -> impl Iterator<Item = &'static str> {
+        Self::ALL.iter().map(|(_, name, _)| *name)
+    }
 }
 
-impl Binding {
-    /// Every binding with its name.
-    const NAMES: [(Self, &'static str); 40] = [
-        (Self::ScrollDown, "scroll-down"),
-        (Self::ScrollUp, "scroll-up"),
-        (Self::ScrollLeft, "scroll-left"),
-        (Self::ScrollRight, "scroll-right"),
-        (Self::ScrollHalfDown, "scroll-half-down"),
-        (Self::ScrollHalfUp, "scroll-half-up"),
-        (Self::ScrollFullDown, "scroll-full-down"),
-        (Self::ScrollFullUp, "scroll-full-up"),
-        (Self::NextPage, "next-page"),
-        (Self::PreviousPage, "previous-page"),
-        (Self::FirstPage, "first-page"),
-        (Self::LastPage, "last-page"),
-        (Self::PageTop, "page-top"),
-        (Self::PageBottom, "page-bottom"),
-        (Self::ZoomIn, "zoom-in"),
-        (Self::ZoomOut, "zoom-out"),
-        (Self::ZoomTo, "zoom-to"),
-        (Self::ZoomReset, "zoom-reset"),
-        (Self::FitWidth, "fit-width"),
-        (Self::FitPage, "fit-page"),
-        (Self::Rotate, "rotate"),
-        (Self::ToggleRecolor, "toggle-recolor"),
-        (Self::ToggleTrim, "toggle-trim"),
-        (Self::SearchNext, "search-next"),
-        (Self::SearchPrevious, "search-previous"),
-        (Self::SearchForward, "search-forward"),
-        (Self::SearchBackward, "search-backward"),
-        (Self::CommandPrompt, "command-prompt"),
-        (Self::Recent, "recent"),
-        (Self::NextTab, "next-tab"),
-        (Self::PreviousTab, "previous-tab"),
-        (Self::Abort, "abort"),
-        (Self::Quit, "quit"),
-        (Self::Help, "help"),
-        (Self::FollowLink, "follow-link"),
-        (Self::Visual, "visual"),
-        (Self::VisualLine, "visual-line"),
-        (Self::Undo, "undo"),
-        (Self::Redo, "redo"),
-        (Self::Outline, "outline"),
-    ];
-
-    /// The names of every binding.
-    pub fn names() -> impl Iterator<Item = &'static str> {
-        Self::NAMES.iter().map(|(_, name)| *name)
-    }
-
-    /// The name of the binding.
-    pub fn name(self) -> &'static str {
-        Self::NAMES
-            .iter()
-            .find(|(binding, _)| *binding == self)
-            .map_or("", |(_, name)| name)
-    }
-
-    /// The binding with this name.
-    pub fn named(name: &str) -> Option<Self> {
-        Self::NAMES
-            .iter()
-            .find(|(_, known)| *known == name)
-            .map(|(binding, _)| *binding)
-    }
-
-    /// What the binding does, given the count typed before its keys.
-    pub fn action(self, count: Option<u32>) -> Action {
-        let times = i32::try_from(count.unwrap_or(1)).unwrap_or(i32::MAX);
-        let back = times.saturating_neg();
-        match self {
-            Self::ScrollDown => Action::Scroll {
-                right: 0,
-                down: times,
-            },
-            Self::ScrollUp => Action::Scroll {
-                right: 0,
-                down: back,
-            },
-            Self::ScrollRight => Action::Scroll {
-                right: times,
-                down: 0,
-            },
-            Self::ScrollLeft => Action::Scroll {
-                right: back,
-                down: 0,
-            },
-            Self::ScrollHalfDown => Action::HalfScreen(times),
-            Self::ScrollHalfUp => Action::HalfScreen(back),
-            Self::ScrollFullDown => Action::FullScreen(times),
-            Self::ScrollFullUp => Action::FullScreen(back),
-            Self::NextPage => Action::Page(times),
-            Self::PreviousPage => Action::Page(back),
-            Self::FirstPage => count.map_or(Action::GotoFirst, Action::GotoPage),
-            Self::LastPage => count.map_or(Action::GotoLast, Action::GotoPage),
-            Self::PageTop => Action::PageTop,
-            Self::PageBottom => Action::PageBottom,
-            Self::ZoomIn => Action::ZoomIn,
-            Self::ZoomOut => Action::ZoomOut,
-            Self::ZoomTo => Action::ZoomTo(count.unwrap_or(100)),
-            Self::ZoomReset => Action::ZoomTo(100),
-            Self::FitWidth => Action::FitWidth,
-            Self::FitPage => Action::FitPage,
-            Self::Rotate => Action::Rotate,
-            Self::ToggleRecolor => Action::ToggleRecolor,
-            Self::ToggleTrim => Action::ToggleTrim,
-            Self::SearchNext => Action::SearchNext,
-            Self::SearchPrevious => Action::SearchPrevious,
-            Self::SearchForward => Action::OpenPrompt(Prompt::SearchForward),
-            Self::SearchBackward => Action::OpenPrompt(Prompt::SearchBackward),
-            Self::CommandPrompt => Action::OpenPrompt(Prompt::Command),
-            Self::Recent => Action::ShowRecent,
-            Self::NextTab => count.map_or(Action::NextTab, Action::GotoTab),
-            Self::PreviousTab => Action::PreviousTab(count.unwrap_or(1)),
-            Self::Abort => Action::Abort,
-            Self::Quit => Action::Quit,
-            Self::Help => Action::ShowHelp,
-            Self::FollowLink => Action::FollowLink,
-            Self::Visual => Action::Visual { lines: false },
-            Self::VisualLine => Action::Visual { lines: true },
-            Self::Undo => Action::Undo,
-            Self::Redo => Action::Redo,
-            Self::Outline => Action::ShowOutline,
+/// Declares an enum of things keys can be bound to, each with its name and
+/// what it does:
+///
+/// ```ignore
+/// bindable! {
+///     /// What the list can be told to do.
+///     pub enum Binding {
+///         Down = "down", "Select the next entry";
+///     }
+/// }
+/// ```
+macro_rules! bindable {
+    (
+        $(#[$meta:meta])*
+        $vis:vis enum $name:ident {
+            $(
+                $(#[$variant_meta:meta])*
+                $variant:ident = $text:literal, $description:literal;
+            )*
         }
-    }
+    ) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        $vis enum $name {
+            $($(#[$variant_meta])* $variant,)*
+        }
+
+        impl $crate::keymap::Bindable for $name {
+            const ALL: &'static [(Self, &'static str, &'static str)] =
+                &[$((Self::$variant, $text, $description),)*];
+        }
+    };
 }
+pub(crate) use bindable;
 
 /// Why a key sequence or binding could not be understood.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -198,6 +90,8 @@ pub enum Error {
     UnknownKey(String),
     #[error("unknown action: {0}")]
     UnknownAction(String),
+    #[error("unknown mode: {0}")]
+    UnknownMode(String),
 }
 
 /// Parses a sequence of keys separated by spaces, as in `g g` or
@@ -268,105 +162,43 @@ fn parse_key(written: &str) -> Result<Key, Error> {
     Ok(key)
 }
 
+/// A key sequence as written in the configuration.
+pub fn written(keys: &[Key]) -> String {
+    let keys: Vec<String> = keys.iter().map(ToString::to_string).collect();
+    keys.join(" ")
+}
+
 /// What the keys typed so far amount to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Match {
+pub enum Match<A> {
     /// A whole sequence, bound to this.
-    Bound(Binding),
+    Bound(A),
     /// The start of one or more sequences.
     Prefix,
     /// Nothing.
     None,
 }
 
-/// The key bindings in force.
+/// The key bindings of one mode.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Keymap {
-    bindings: Vec<(Vec<Key>, Binding)>,
+pub struct Keymap<A> {
+    bindings: Vec<(Vec<Key>, A)>,
 }
 
-impl Default for Keymap {
-    /// The bindings pdvim starts with.
+impl<A> Default for Keymap<A> {
+    /// No bindings at all.
     fn default() -> Self {
-        use Binding as B;
-        const DEFAULTS: [(&str, Binding); 59] = [
-            ("j", B::ScrollDown),
-            ("down", B::ScrollDown),
-            ("k", B::ScrollUp),
-            ("up", B::ScrollUp),
-            ("h", B::ScrollLeft),
-            ("left", B::ScrollLeft),
-            ("l", B::ScrollRight),
-            ("right", B::ScrollRight),
-            ("ctrl+d", B::ScrollHalfDown),
-            ("ctrl+u", B::ScrollHalfUp),
-            ("ctrl+f", B::ScrollFullDown),
-            ("space", B::ScrollFullDown),
-            ("ctrl+b", B::ScrollFullUp),
-            ("shift+space", B::ScrollFullUp),
-            ("J", B::NextPage),
-            ("pagedown", B::NextPage),
-            ("K", B::PreviousPage),
-            ("pageup", B::PreviousPage),
-            ("g g", B::FirstPage),
-            ("home", B::FirstPage),
-            ("G", B::LastPage),
-            ("end", B::LastPage),
-            ("H", B::PageTop),
-            ("L", B::PageBottom),
-            ("tab", B::Outline),
-            ("+", B::ZoomIn),
-            ("z i", B::ZoomIn),
-            ("z I", B::ZoomIn),
-            ("-", B::ZoomOut),
-            ("z o", B::ZoomOut),
-            ("z O", B::ZoomOut),
-            ("=", B::ZoomTo),
-            ("z z", B::ZoomTo),
-            ("z Z", B::ZoomTo),
-            ("z 0", B::ZoomReset),
-            ("s", B::FitWidth),
-            ("a", B::FitPage),
-            ("r", B::Rotate),
-            ("R", B::ToggleRecolor),
-            ("t", B::ToggleTrim),
-            ("n", B::SearchNext),
-            ("N", B::SearchPrevious),
-            ("/", B::SearchForward),
-            ("?", B::SearchBackward),
-            (":", B::CommandPrompt),
-            ("o", B::Recent),
-            ("f", B::FollowLink),
-            ("v", B::Visual),
-            ("V", B::VisualLine),
-            ("u", B::Undo),
-            ("ctrl+r", B::Redo),
-            ("g t", B::NextTab),
-            ("ctrl+tab", B::NextTab),
-            ("g T", B::PreviousTab),
-            ("ctrl+shift+tab", B::PreviousTab),
-            ("escape", B::Abort),
-            ("ctrl+c", B::Abort),
-            ("ctrl+[", B::Abort),
-            ("q", B::Quit),
-        ];
-        let mut keymap = Self {
+        Self {
             bindings: Vec::new(),
-        };
-        for (keys, binding) in DEFAULTS {
-            if let Ok(keys) = parse_keys(keys) {
-                keymap.bind(keys, binding);
-            }
         }
-        keymap
     }
 }
 
-impl Keymap {
+impl<A: Bindable> Keymap<A> {
     /// Binds a key sequence, replacing what it was bound to.
-    pub fn bind(&mut self, keys: Vec<Key>, binding: Binding) {
+    pub fn bind(&mut self, keys: Vec<Key>, bound: A) {
         self.unbind(&keys);
-        self.bindings.push((keys, binding));
+        self.bindings.push((keys, bound));
     }
 
     /// Unbinds a key sequence. Returns whether it was bound.
@@ -384,31 +216,39 @@ impl Keymap {
     /// Every binding, sorted, so that two keymaps can be compared whatever
     /// order their bindings were made in.
     #[cfg(test)]
-    pub fn sorted(&self) -> Vec<(String, Binding)> {
+    pub fn sorted(&self) -> Vec<(String, &'static str)> {
         let mut bindings: Vec<_> = self
             .bindings
             .iter()
-            .map(|(keys, binding)| (format!("{keys:?}"), *binding))
+            .map(|(keys, bound)| (written(keys), bound.name()))
             .collect();
-        bindings.sort_by(|left, right| left.0.cmp(&right.0));
+        bindings.sort_unstable();
         bindings
     }
 
-    /// The key sequences bound to an action, in the order they were bound.
-    pub fn keys_for(&self, binding: Binding) -> impl Iterator<Item = &[Key]> {
+    /// The key sequences bound to something, in the order they were bound.
+    pub fn keys_for(&self, bound: A) -> impl Iterator<Item = &[Key]> {
         self.bindings
             .iter()
-            .filter(move |(_, bound)| *bound == binding)
+            .filter(move |(_, to)| *to == bound)
             .map(|(keys, _)| keys.as_slice())
+    }
+
+    /// The first key sequence bound to something, as written, for a hint
+    /// on screen; or a dash when nothing is bound to it.
+    pub fn first(&self, bound: A) -> String {
+        self.keys_for(bound)
+            .next()
+            .map_or_else(|| "-".to_owned(), written)
     }
 
     /// What a sequence of keys amounts to. A whole sequence wins over a
     /// longer one it starts, so binding `g` hides `gg`.
-    pub fn lookup(&self, keys: &[Key]) -> Match {
+    pub fn lookup(&self, keys: &[Key]) -> Match<A> {
         let mut prefix = false;
-        for (bound, binding) in &self.bindings {
+        for (bound, to) in &self.bindings {
             if bound == keys {
-                return Match::Bound(*binding);
+                return Match::Bound(*to);
             }
             prefix |= bound.starts_with(keys);
         }
@@ -416,9 +256,122 @@ impl Keymap {
     }
 }
 
+/// Whether digits typed before a sequence make a count, as in `5j`, or are
+/// keys like any other, as in a list where `3` picks the third entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Counts {
+    Taken,
+    NotTaken,
+}
+
+/// What a key typed comes to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Fed<A> {
+    /// A bound sequence is complete, after this count if one was typed.
+    Bound(A, Option<u32>),
+    /// The keys typed so far could still become a bound sequence.
+    Waiting,
+    /// The keys typed, those of a sequence that is bound to nothing. A mode
+    /// that takes text, such as the prompt, takes them as text.
+    Unbound(Vec<Key>),
+}
+
+/// The part of a command typed so far: a count, then the start of a bound
+/// sequence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pending<A> {
+    count: Option<u32>,
+    keys: Vec<Key>,
+    bound: std::marker::PhantomData<A>,
+}
+
+impl<A> Default for Pending<A> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<A> Pending<A> {
+    /// Nothing typed.
+    pub const fn new() -> Self {
+        Self {
+            count: None,
+            keys: Vec::new(),
+            bound: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<A: Bindable> Pending<A> {
+    /// What has been typed so far, for the status bar.
+    pub fn display(&self) -> String {
+        let mut shown = self
+            .count
+            .map(|count| count.to_string())
+            .unwrap_or_default();
+        shown.push_str(&written(&self.keys));
+        shown
+    }
+
+    /// Whether anything has been typed.
+    #[cfg(test)]
+    pub const fn is_empty(&self) -> bool {
+        self.count.is_none() && self.keys.is_empty()
+    }
+
+    /// Takes the next key. Keys that make up a sequence bound to nothing
+    /// clear what was typed.
+    pub fn feed(&mut self, key: Key, keymap: &Keymap<A>, counts: Counts) -> Fed<A> {
+        // A digit is part of a count, unless it comes in the middle of a
+        // sequence, as in `z0`. A count cannot start with 0, so 0 can be
+        // bound on its own.
+        if counts == Counts::Taken
+            && self.keys.is_empty()
+            && let Key::Char(digit @ '0'..='9') = key
+            && let Some(value) = digit.to_digit(10)
+            && (self.count.is_some() || value != 0)
+        {
+            let count = self.count.unwrap_or(0);
+            self.count = Some(count.saturating_mul(10).saturating_add(value));
+            return Fed::Waiting;
+        }
+        self.keys.push(key);
+        match keymap.lookup(&self.keys) {
+            Match::Prefix => Fed::Waiting,
+            Match::Bound(bound) => {
+                let count = self.count.take();
+                self.keys.clear();
+                Fed::Bound(bound, count)
+            }
+            Match::None => {
+                let keys = std::mem::take(&mut self.keys);
+                self.count = None;
+                Fed::Unbound(keys)
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    bindable! {
+        enum Test {
+            Down = "down", "Go down";
+            Top = "top", "Go to the top";
+            Zero = "zero", "Go to the start";
+        }
+    }
+
+    fn keymap() -> Keymap<Test> {
+        let mut keymap = Keymap::default();
+        keymap.bind(parse_keys("j").unwrap(), Test::Down);
+        keymap.bind(parse_keys("down").unwrap(), Test::Down);
+        keymap.bind(parse_keys("g g").unwrap(), Test::Top);
+        keymap.bind(parse_keys("0").unwrap(), Test::Zero);
+        keymap
+    }
 
     #[test]
     fn keys_parse() {
@@ -461,40 +414,94 @@ mod tests {
     }
 
     #[test]
-    fn every_default_binding_parses() {
-        let keymap = Keymap::default();
-        assert_eq!(keymap.bindings.len(), 59);
-    }
-
-    #[test]
-    fn every_binding_has_a_name_and_back() {
-        for (binding, name) in Binding::NAMES {
-            assert_eq!(Binding::named(name), Some(binding));
-            assert_eq!(binding.name(), name);
+    fn every_bindable_has_a_name_and_back() {
+        for &(bound, name, description) in Test::ALL {
+            assert_eq!(Test::named(name), Some(bound));
+            assert_eq!(bound.name(), name);
+            assert_eq!(bound.description(), description);
         }
-        assert_eq!(Binding::named("fly"), None);
+        assert_eq!(Test::named("fly"), None);
     }
 
     #[test]
     fn lookup_finds_whole_sequences_and_prefixes() {
-        let mut keymap = Keymap::default();
+        let mut keymap = keymap();
         let g = [Key::Char('g')];
         assert_eq!(keymap.lookup(&g), Match::Prefix);
         assert_eq!(
             keymap.lookup(&[Key::Char('g'), Key::Char('g')]),
-            Match::Bound(Binding::FirstPage)
+            Match::Bound(Test::Top)
         );
         assert_eq!(keymap.lookup(&[Key::Char('x')]), Match::None);
+        let keys: Vec<_> = keymap.keys_for(Test::Down).map(written).collect();
+        assert_eq!(keys, ["j", "down"]);
 
-        keymap.bind(vec![Key::Char('x')], Binding::Quit);
-        assert_eq!(
-            keymap.lookup(&[Key::Char('x')]),
-            Match::Bound(Binding::Quit)
-        );
+        keymap.bind(vec![Key::Char('x')], Test::Top);
+        assert_eq!(keymap.lookup(&[Key::Char('x')]), Match::Bound(Test::Top));
         assert!(keymap.unbind(&[Key::Char('x')]));
         assert!(!keymap.unbind(&[Key::Char('x')]));
 
         keymap.clear();
         assert_eq!(keymap.lookup(&[Key::Char('j')]), Match::None);
+    }
+
+    #[test]
+    fn counts_come_before_sequences_when_taken() {
+        let keymap = keymap();
+        let mut pending = Pending::default();
+        assert_eq!(
+            pending.feed(Key::Char('1'), &keymap, Counts::Taken),
+            Fed::Waiting
+        );
+        assert_eq!(
+            pending.feed(Key::Char('0'), &keymap, Counts::Taken),
+            Fed::Waiting
+        );
+        assert_eq!(
+            pending.feed(Key::Char('g'), &keymap, Counts::Taken),
+            Fed::Waiting
+        );
+        assert_eq!(pending.display(), "10g");
+        assert_eq!(
+            pending.feed(Key::Char('g'), &keymap, Counts::Taken),
+            Fed::Bound(Test::Top, Some(10))
+        );
+        assert!(pending.is_empty());
+        // A 0 on its own is a key.
+        assert_eq!(
+            pending.feed(Key::Char('0'), &keymap, Counts::Taken),
+            Fed::Bound(Test::Zero, None)
+        );
+        // Not taken, a digit is a key like any other.
+        assert_eq!(
+            pending.feed(Key::Char('3'), &keymap, Counts::NotTaken),
+            Fed::Unbound(vec![Key::Char('3')])
+        );
+    }
+
+    #[test]
+    fn a_sequence_bound_to_nothing_is_handed_back_and_forgotten() {
+        let keymap = keymap();
+        let mut pending = Pending::default();
+        pending.feed(Key::Char('4'), &keymap, Counts::Taken);
+        pending.feed(Key::Char('g'), &keymap, Counts::Taken);
+        assert_eq!(
+            pending.feed(Key::Char('x'), &keymap, Counts::Taken),
+            Fed::Unbound(vec![Key::Char('g'), Key::Char('x')])
+        );
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn huge_counts_saturate() {
+        let keymap = keymap();
+        let mut pending = Pending::default();
+        for _ in 0..20 {
+            pending.feed(Key::Char('9'), &keymap, Counts::Taken);
+        }
+        assert_eq!(
+            pending.feed(Key::Char('j'), &keymap, Counts::Taken),
+            Fed::Bound(Test::Down, Some(u32::MAX))
+        );
     }
 }

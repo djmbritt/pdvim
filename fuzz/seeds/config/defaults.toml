@@ -1,0 +1,296 @@
+# pdvim's built-in configuration: every setting and key binding at its
+# default. pdvim is built with this file inside it and reads it first.
+#
+# To change something, copy this file to ~/.config/pdvim/config.toml (or
+# $XDG_CONFIG_HOME/pdvim/) and edit it. You only need the entries you
+# change: anything left out keeps its default here. pdvim reads your file
+# when it starts.
+
+[settings]
+
+# Recolor pages for a dark background. This and `trim` apply to documents
+# opened for the first time; after that, each document is restored the way
+# you left it.
+recolor = false
+
+# Hide the blank margins of pages.
+trim = false
+
+# The color white paper becomes when recolored.
+recolor-lightcolor = "#1a1a1a"
+
+# The color black ink becomes when recolored.
+recolor-darkcolor = "#dddddd"
+
+# How far one press of `j` or `k` scrolls, in pixels.
+scroll-step = 40
+
+# Ask "quit pdvim? (y/n)" before quitting: when the last tab is closed,
+# with :qa, or when the window is closed. Press y to quit, any other key to
+# stay. Closing the window again while asked quits without asking.
+confirm-quit = false
+
+# Ask "close tab ...? (y/n)" before closing a tab with q, :q or :tabclose
+# while other tabs are open. Closing the last tab quits, so confirm-quit
+# decides about that.
+confirm-tab-close = false
+
+# The color H in visual mode highlights text in. Highlights are saved into
+# the PDF file, so other readers show them too.
+highlight-color = "#ffff00"
+
+# Key bindings come one table to a mode. Each binds keys to an action by
+# name, or to "none" to remove a default. The same can be done while
+# running with :map, :unmap and :mapclear, naming the mode first for any
+# but normal: ":map visual Y yank".
+#
+# A key is a single character ("j", "G", "?") or a name: space, tab, escape,
+# enter, backspace, up, down, left, right, pageup, pagedown, home, end.
+# Put ctrl+ or shift+ in front for modifiers: "ctrl+d", "shift+space",
+# "shift+tab", "ctrl+shift+tab". "shift+q" is the same as "Q".
+#
+# Separate the keys of a sequence with spaces: "g g". If one binding is the
+# start of a longer one, the shorter one wins.
+#
+# :help lists every action of every mode, with the keys bound to it now.
+
+[keys.normal]
+
+# Reading. A count typed before the keys is passed on: 5j scrolls five
+# times, and with one, first-page and last-page go to that page, zoom-to
+# zooms to that percentage, and next-tab goes to that tab.
+
+# Scrolling
+"j" = "scroll-down"
+"down" = "scroll-down"
+"k" = "scroll-up"
+"up" = "scroll-up"
+"h" = "scroll-left"
+"left" = "scroll-left"
+"l" = "scroll-right"
+"right" = "scroll-right"
+"ctrl+d" = "scroll-half-down"
+"ctrl+u" = "scroll-half-up"
+"ctrl+f" = "scroll-full-down"
+"space" = "scroll-full-down"
+"ctrl+b" = "scroll-full-up"
+"shift+space" = "scroll-full-up"
+
+# Pages
+"J" = "next-page"
+"pagedown" = "next-page"
+"K" = "previous-page"
+"pageup" = "previous-page"
+"g g" = "first-page"
+"home" = "first-page"
+"G" = "last-page"
+"end" = "last-page"
+"H" = "page-top"
+"L" = "page-bottom"
+# The table of contents, in a sidebar: j/k to move, l/h to open and close
+# a chapter's sections, enter to go there
+"tab" = "outline"
+
+# Zoom and view
+"+" = "zoom-in"
+"z i" = "zoom-in"
+"z I" = "zoom-in"
+"-" = "zoom-out"
+"z o" = "zoom-out"
+"z O" = "zoom-out"
+"=" = "zoom-to"
+"z z" = "zoom-to"
+"z Z" = "zoom-to"
+"z 0" = "zoom-reset"
+"s" = "fit-width"
+"a" = "fit-page"
+"r" = "rotate"
+"R" = "toggle-recolor"
+"t" = "toggle-trim"
+
+# Search and prompts
+"/" = "search-forward"
+"?" = "search-backward"
+"n" = "search-next"
+"N" = "search-previous"
+":" = "command-prompt"
+"o" = "recent"
+# "help" lists every action and the keys bound to it, like :help. It has no
+# key by default; give it one with, for example:
+# "ctrl+h" = "help"
+
+# Links: label every link in view, then type a label's two letters to
+# follow it
+"f" = "follow-link"
+
+# Selecting text: label every line in view, type a label to start there,
+# move with h j k l, w b e, 0 $, and press y to copy
+"v" = "visual"
+"V" = "visual-line"
+
+# Highlights: take back the last one, or put back the last one taken back
+"u" = "undo"
+"ctrl+r" = "redo"
+
+# Tabs
+"g t" = "next-tab"
+"ctrl+tab" = "next-tab"
+"g T" = "previous-tab"
+"ctrl+shift+tab" = "previous-tab"
+
+# Cancel a half-typed command and hide search highlights
+"escape" = "abort"
+"ctrl+c" = "abort"
+"ctrl+[" = "abort"
+
+# Close the tab, and quit after the last one
+"q" = "quit"
+
+[keys.visual]
+
+# Selecting text, after v or V and a line's label. A count moves that many
+# times: 3w, 2fe.
+"y" = "yank"
+"H" = "highlight"
+"escape" = "leave"
+"ctrl+c" = "leave"
+"ctrl+[" = "leave"
+"o" = "other-end"
+"v" = "characters"
+"V" = "lines"
+"j" = "down"
+"down" = "down"
+"k" = "up"
+"up" = "up"
+"h" = "left"
+"left" = "left"
+"l" = "right"
+"right" = "right"
+"0" = "line-start"
+"home" = "line-start"
+"^" = "line-text"
+"$" = "line-end"
+"end" = "line-end"
+"w" = "next-word"
+"b" = "previous-word"
+"e" = "word-end"
+# These take the character to look for as the next key typed.
+"f" = "find-forward"
+"F" = "find-backward"
+"t" = "till-forward"
+"T" = "till-backward"
+";" = "repeat-find"
+"," = "repeat-find-reversed"
+
+[keys.hints]
+
+# The labels shown on links (f) and lines (v, V). Letters not bound here
+# type a label.
+"escape" = "cancel"
+"ctrl+c" = "cancel"
+"ctrl+[" = "cancel"
+"backspace" = "back"
+"ctrl+h" = "back"
+
+[keys.outline]
+
+# The table of contents (tab).
+"j" = "down"
+"down" = "down"
+"ctrl+n" = "down"
+"k" = "up"
+"up" = "up"
+"ctrl+p" = "up"
+"ctrl+d" = "half-down"
+"pagedown" = "half-down"
+"ctrl+u" = "half-up"
+"pageup" = "half-up"
+"g g" = "top"
+"home" = "top"
+"G" = "bottom"
+"end" = "bottom"
+"enter" = "go"
+"l" = "open"
+"right" = "open"
+"space" = "toggle"
+"h" = "fold"
+"left" = "fold"
+"q" = "close"
+"tab" = "close"
+"escape" = "close"
+"ctrl+c" = "close"
+"ctrl+[" = "close"
+
+[keys.recent]
+
+# The list of recent documents (o). A digit not bound here opens that
+# entry, counted from 1.
+"j" = "down"
+"down" = "down"
+"ctrl+n" = "down"
+"ctrl+j" = "down"
+"k" = "up"
+"up" = "up"
+"ctrl+p" = "up"
+"ctrl+k" = "up"
+"g g" = "top"
+"home" = "top"
+"G" = "bottom"
+"end" = "bottom"
+"enter" = "open"
+"l" = "open"
+"o" = "open"
+"right" = "open"
+"q" = "close"
+"escape" = "close"
+"ctrl+c" = "close"
+"ctrl+[" = "close"
+
+[keys.help]
+
+# The list of key bindings (:help).
+"j" = "down"
+"down" = "down"
+"ctrl+n" = "down"
+"ctrl+e" = "down"
+"k" = "up"
+"up" = "up"
+"ctrl+p" = "up"
+"ctrl+y" = "up"
+"ctrl+d" = "half-down"
+"ctrl+u" = "half-up"
+"space" = "page-down"
+"ctrl+f" = "page-down"
+"pagedown" = "page-down"
+"shift+space" = "page-up"
+"ctrl+b" = "page-up"
+"pageup" = "page-up"
+"g" = "top"
+"home" = "top"
+"G" = "bottom"
+"end" = "bottom"
+"q" = "close"
+"escape" = "close"
+"enter" = "close"
+"ctrl+c" = "close"
+"ctrl+[" = "close"
+
+[keys.prompt]
+
+# Typing after :, / or ?. Keys not bound here type themselves.
+"enter" = "submit"
+"escape" = "cancel"
+"ctrl+c" = "cancel"
+"ctrl+[" = "cancel"
+"backspace" = "rub-out"
+"ctrl+h" = "rub-out"
+"ctrl+w" = "rub-out-word"
+"ctrl+u" = "clear-line"
+"tab" = "complete"
+"shift+tab" = "complete-previous"
+
+[keys.confirm]
+
+# Questions, such as "quit pdvim? (y/n)". Any key not bound here is no.
+"y" = "yes"
+"Y" = "yes"

@@ -40,7 +40,7 @@ On macOS and Windows pdvim keeps its configuration in `~/.config/pdvim` and `%AP
 
 ### Versions
 
-Every push to main raises the version: [`.github/workflows/bump-version.yml`](.github/workflows/bump-version.yml) runs [`packaging/bump-version.sh`](packaging/bump-version.sh) and pushes the change as a commit of its own, so pull before pushing again. The patch number goes up, `0.1.0` to `0.1.1`, unless a commit in the push says `#minor` (`0.2.0`) or `#major` (`1.0.0`) in its message. A push that changes the version in `Cargo.toml` itself keeps that version.
+Every push to main raises the version: [`.github/workflows/bump-version.yml`](.github/workflows/bump-version.yml) runs [`packaging/bump-version.sh`](packaging/bump-version.sh) and pushes the change as a commit of its own, so pull before pushing again. The patch number goes up, `0.1.0` to `0.1.1`, unless a commit in the push has `#minor` (`0.2.0`) or `#major` (`1.0.0`) on a line of its own in its message. A push that changes the version in `Cargo.toml` itself keeps that version.
 
 ### Making a release
 

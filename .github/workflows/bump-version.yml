@@ -1,8 +1,9 @@
 # Raises the version after every push to main, and pushes that as a commit
 # of its own.
 #
-# The patch number goes up, 0.1.0 to 0.1.1, unless a commit pushed says
-# `#minor` or `#major` in its message. A push that changes the version
+# The patch number goes up, 0.1.0 to 0.1.1, unless a commit pushed has
+# `#minor` or `#major` on a line of its own in its message; mentioned
+# within a sentence, they do not count. A push that changes the version
 # itself is left alone, so a version can still be set by hand.
 #
 # The commit is pushed with the workflow's own token, and GitHub starts no
@@ -50,9 +51,9 @@ jobs:
             messages=$(git log -1 --format=%B)
           fi
           part=patch
-          if grep -q '#major' <<<"$messages"; then
+          if grep -qE '^[[:space:]]*#major[[:space:]]*$' <<<"$messages"; then
             part=major
-          elif grep -q '#minor' <<<"$messages"; then
+          elif grep -qE '^[[:space:]]*#minor[[:space:]]*$' <<<"$messages"; then
             part=minor
           fi
           echo "part=$part" >> "$GITHUB_OUTPUT"

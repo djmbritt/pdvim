@@ -28,14 +28,59 @@ use crate::recent::{self, Choice, Picker};
 use crate::recolor::{Palette, Rgb};
 use crate::visual::{self, Kind, Spot, Visual};
 
-/// The colour behind the pages.
-const BACKDROP: Color = Color::from_rgb8(0x10, 0x10, 0x10);
-/// The colour of the status bar.
-const BAR: Color = Color::from_rgb8(0x20, 0x20, 0x20);
-/// The colour of text in the status bar.
-const BAR_TEXT: Color = Color::from_rgb8(0xd0, 0xd0, 0xd0);
-/// The colour of an error in the status bar.
-const BAR_ERROR: Color = Color::from_rgb8(0xff, 0x6b, 0x6b);
+/// The colours of everything around the pages: the bars, the lists and
+/// the backdrop. They follow the system's light or dark theme.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Chrome {
+    /// The colour behind the pages.
+    backdrop: Color,
+    /// The status bar, its text, and an error in it.
+    bar: Color,
+    bar_text: Color,
+    bar_error: Color,
+    /// The lists over the pages: their background, the selected entry,
+    /// their frame, and quieter text such as numbers and hints.
+    list: Color,
+    list_selected: Color,
+    list_border: Color,
+    list_number: Color,
+    /// The tab bar and the tabs not in view, the tab in view, and the
+    /// names of tabs not in view.
+    tabs: Color,
+    tab_current: Color,
+    tab_text: Color,
+}
+
+impl Chrome {
+    const DARK: Self = Self {
+        backdrop: Color::from_rgb8(0x10, 0x10, 0x10),
+        bar: Color::from_rgb8(0x20, 0x20, 0x20),
+        bar_text: Color::from_rgb8(0xd0, 0xd0, 0xd0),
+        bar_error: Color::from_rgb8(0xff, 0x6b, 0x6b),
+        list: Color::from_rgb8(0x1a, 0x1a, 0x1a),
+        list_selected: Color::from_rgb8(0x3a, 0x3a, 0x3a),
+        list_border: Color::from_rgb8(0x40, 0x40, 0x40),
+        list_number: Color::from_rgb8(0x80, 0x80, 0x80),
+        tabs: Color::from_rgb8(0x18, 0x18, 0x18),
+        tab_current: Color::from_rgb8(0x30, 0x30, 0x30),
+        tab_text: Color::from_rgb8(0x90, 0x90, 0x90),
+    };
+
+    const LIGHT: Self = Self {
+        backdrop: Color::from_rgb8(0xd4, 0xd4, 0xd4),
+        bar: Color::from_rgb8(0xe8, 0xe8, 0xe8),
+        bar_text: Color::from_rgb8(0x20, 0x20, 0x20),
+        bar_error: Color::from_rgb8(0xc0, 0x1c, 0x1c),
+        list: Color::from_rgb8(0xf6, 0xf6, 0xf6),
+        list_selected: Color::from_rgb8(0xd6, 0xd6, 0xd6),
+        list_border: Color::from_rgb8(0xb4, 0xb4, 0xb4),
+        list_number: Color::from_rgb8(0x6a, 0x6a, 0x6a),
+        tabs: Color::from_rgb8(0xdc, 0xdc, 0xdc),
+        tab_current: Color::from_rgb8(0xfa, 0xfa, 0xfa),
+        tab_text: Color::from_rgb8(0x5a, 0x5a, 0x5a),
+    };
+}
+
 /// The colour laid over every search result.
 const HIT: Color = Color::from_rgba8(0xff, 0xd0, 0x00, 0.35);
 /// The colour laid over the search result last jumped to.
@@ -51,20 +96,6 @@ const LABEL_SIZE: f32 = 12.0;
 /// is on.
 const SELECTION: Color = Color::from_rgba8(0x40, 0x90, 0xff, 0.35);
 const CURSOR: Color = Color::from_rgba8(0xff, 0x70, 0x00, 0.6);
-/// The colour of the list of recent documents.
-const LIST: Color = Color::from_rgb8(0x1a, 0x1a, 0x1a);
-/// The colour behind the selected entry in that list.
-const LIST_SELECTED: Color = Color::from_rgb8(0x3a, 0x3a, 0x3a);
-/// The colour of the frame around that list.
-const LIST_BORDER: Color = Color::from_rgb8(0x40, 0x40, 0x40);
-/// The colour of the number in front of each entry.
-const LIST_NUMBER: Color = Color::from_rgb8(0x80, 0x80, 0x80);
-/// The colour of the tab bar, and of the tabs not in view.
-const TABS: Color = Color::from_rgb8(0x18, 0x18, 0x18);
-/// The colour of the tab in view.
-const TAB_CURRENT: Color = Color::from_rgb8(0x30, 0x30, 0x30);
-/// The colour of the names of tabs not in view.
-const TAB_TEXT: Color = Color::from_rgb8(0x90, 0x90, 0x90);
 
 /// The height of one line of the cheat sheet, in pixels.
 const HELP_ROW: f32 = 20.0;
@@ -385,7 +416,7 @@ pub fn run(paths: Vec<PathBuf>) -> iced::Result {
     iced::application(move || App::boot(paths.clone()), App::update, App::view)
         .title(App::title)
         .subscription(|_: &App| App::subscription())
-        .theme(|_: &App| Some(Theme::Dark))
+        .theme(|app: &App| Some(app.theme()))
         .exit_on_close_request(false)
         .window(window::Settings {
             platform_specific: window::settings::PlatformSpecific {
@@ -1928,21 +1959,46 @@ impl App {
         iced::exit()
     }
 
+    /// The colours around the pages: light while the system prefers a
+    /// light theme, dark otherwise.
+    fn chrome(&self) -> Chrome {
+        if self.system_dark == Some(false) {
+            Chrome::LIGHT
+        } else {
+            Chrome::DARK
+        }
+    }
+
+    /// The theme for what is not given colours of its own.
+    fn theme(&self) -> Theme {
+        if self.system_dark == Some(false) {
+            Theme::Light
+        } else {
+            Theme::Dark
+        }
+    }
+
     fn view(&self) -> Element<'_, Message> {
+        let chrome = self.chrome();
         let pages = Canvas::new(Pages(self)).width(Fill).height(Fill);
         let marks = Canvas::new(Marks(self)).width(Fill).height(Fill);
         let mut layers = stack![pages, marks];
         if let Some(picker) = &self.picker {
-            layers = layers.push(list(picker));
+            layers = layers.push(list(picker, chrome));
         }
         if let Some(completing) = &self.completing {
-            layers = layers.push(completions(completing));
+            layers = layers.push(completions(completing, chrome));
         }
         if let Some(sidebar) = &self.sidebar {
-            layers = layers.push(contents(sidebar, &self.keymaps, self.sidebar_rows()));
+            layers = layers.push(contents(
+                sidebar,
+                &self.keymaps,
+                chrome,
+                self.sidebar_rows(),
+            ));
         }
         if let Some(help) = &self.help {
-            layers = layers.push(cheat_sheet(help, &self.keymaps, self.help_rows()));
+            layers = layers.push(cheat_sheet(help, &self.keymaps, chrome, self.help_rows()));
         }
         match self.tab_bar() {
             Some(tabs) => column![tabs, layers, self.bar()].into(),
@@ -1952,6 +2008,7 @@ impl App {
 
     /// The line at the top naming each tab, when there is more than one.
     fn tab_bar(&self) -> Option<Element<'_, Message>> {
+        let chrome = self.chrome();
         if self.tabs.len() < 2 {
             return None;
         }
@@ -1961,19 +2018,29 @@ impl App {
             let label = text(name)
                 .size(BAR_TEXT_SIZE)
                 .font(Font::MONOSPACE)
-                .color(if current { BAR_TEXT } else { TAB_TEXT })
+                .color(if current {
+                    chrome.bar_text
+                } else {
+                    chrome.tab_text
+                })
                 .wrapping(text::Wrapping::None);
             container(label)
                 .padding([3, 8])
                 .width(Fill)
                 .clip(true)
-                .style(move |_| container::background(if current { TAB_CURRENT } else { TABS }))
+                .style(move |_| {
+                    container::background(if current {
+                        chrome.tab_current
+                    } else {
+                        chrome.tabs
+                    })
+                })
                 .into()
         });
         Some(
             container(Row::with_children(tabs).spacing(1))
                 .width(Fill)
-                .style(|_| container::background(BAR))
+                .style(move |_| container::background(chrome.bar))
                 .into(),
         )
     }
@@ -1981,6 +2048,7 @@ impl App {
     /// The line at the bottom: the prompt while typing, otherwise a notice
     /// or the file name on the left and the position on the right.
     fn bar(&self) -> Element<'_, Message> {
+        let chrome = self.chrome();
         let label = |content: String, colour: Color| {
             text(content)
                 .size(BAR_TEXT_SIZE)
@@ -1991,7 +2059,7 @@ impl App {
         let left = match (&self.prompt, &self.notice) {
             _ if self.asking == Some(Question::Quit) => {
                 let yes = self.keymaps.confirm.first(ConfirmBinding::Yes);
-                label(format!("quit pdvim? ({yes}/n)"), BAR_ERROR)
+                label(format!("quit pdvim? ({yes}/n)"), chrome.bar_error)
             }
             _ if self.asking == Some(Question::CloseTab) => {
                 let name = self
@@ -2000,7 +2068,7 @@ impl App {
                     .map(Tab::name)
                     .unwrap_or_default();
                 let yes = self.keymaps.confirm.first(ConfirmBinding::Yes);
-                label(format!("close tab {name}? ({yes}/n)"), BAR_ERROR)
+                label(format!("close tab {name}? ({yes}/n)"), chrome.bar_error)
             }
             _ if self.visual.is_some() => {
                 let visual = self.visual.as_ref();
@@ -2019,7 +2087,7 @@ impl App {
                 let leave = keymap.first(visual::Binding::Leave);
                 label(
                     format!("{kind}{typed}    {yank} copies, {leave} leaves"),
-                    BAR_TEXT,
+                    chrome.bar_text,
                 )
             }
             _ if self.line_hints.is_some() => {
@@ -2029,7 +2097,10 @@ impl App {
                     .and_then(|(_, hints)| hints.typed())
                     .map(String::from)
                     .unwrap_or_default();
-                label(format!("select from line: {typed}\u{2588}"), BAR_TEXT)
+                label(
+                    format!("select from line: {typed}\u{2588}"),
+                    chrome.bar_text,
+                )
             }
             _ if self.hints.is_some() => {
                 let typed = self
@@ -2038,18 +2109,18 @@ impl App {
                     .and_then(Hints::typed)
                     .map(String::from)
                     .unwrap_or_default();
-                label(format!("follow link: {typed}\u{2588}"), BAR_TEXT)
+                label(format!("follow link: {typed}\u{2588}"), chrome.bar_text)
             }
             (Some((prompt, line)), _) => {
-                label(format!("{}{line}\u{2588}", prompt.sigil()), BAR_TEXT)
+                label(format!("{}{line}\u{2588}", prompt.sigil()), chrome.bar_text)
             }
-            (None, Notice::Error(message)) => label(message.clone(), BAR_ERROR),
-            (None, Notice::Info(message)) => label(message.clone(), BAR_TEXT),
+            (None, Notice::Error(message)) => label(message.clone(), chrome.bar_error),
+            (None, Notice::Info(message)) => label(message.clone(), chrome.bar_text),
             (None, Notice::None) => label(
                 self.document()
                     .map(|document| tilde(&document.path))
                     .unwrap_or_default(),
-                BAR_TEXT,
+                chrome.bar_text,
             ),
         };
         let position = self.document().map_or_else(String::new, |document| {
@@ -2064,13 +2135,16 @@ impl App {
                 num::round(reader.zoom() * 100.0),
             )
         });
-        let right = label(format!("{}  {position}", self.pending.display()), BAR_TEXT);
+        let right = label(
+            format!("{}  {position}", self.pending.display()),
+            chrome.bar_text,
+        );
         // A long notice is cut short rather than pushing the position away.
         let left = container(left).width(Fill).clip(true);
         container(row![left, right].spacing(16))
             .padding([3, 8])
             .width(Fill)
-            .style(|_| container::background(BAR))
+            .style(move |_| container::background(chrome.bar))
             .into()
     }
 }
@@ -2143,7 +2217,7 @@ fn narrowed(line: &str) -> Option<Completing> {
 
 /// The completions on offer, in a band over the bottom of the pages. A
 /// long list is shown a part at a time, the part with the selected one.
-fn completions(completing: &Completing) -> Element<'_, Message> {
+fn completions(completing: &Completing, chrome: Chrome) -> Element<'_, Message> {
     let selected = completing.selected;
     let first = selected.map_or(0, |index| {
         index
@@ -2163,13 +2237,17 @@ fn completions(completing: &Completing) -> Element<'_, Message> {
                 text(candidate.label.as_str())
                     .size(BAR_TEXT_SIZE)
                     .font(Font::MONOSPACE)
-                    .color(if current { BAR_TEXT } else { TAB_TEXT })
+                    .color(if current {
+                        chrome.bar_text
+                    } else {
+                        chrome.tab_text
+                    })
                     .wrapping(text::Wrapping::None),
             )
             .padding([1, 4])
             .style(move |_| {
                 if current {
-                    container::background(TAB_CURRENT)
+                    container::background(chrome.tab_current)
                 } else {
                     container::Style::default()
                 }
@@ -2184,19 +2262,24 @@ fn completions(completing: &Completing) -> Element<'_, Message> {
             text(format!("({place} of {count})"))
                 .size(BAR_TEXT_SIZE)
                 .font(Font::MONOSPACE)
-                .color(LIST_NUMBER),
+                .color(chrome.list_number),
         );
     }
     let band = container(entries.wrap().vertical_spacing(2))
         .padding([4, 8])
         .width(Fill)
-        .style(|_| container::background(BAR));
+        .style(move |_| container::background(chrome.bar));
     container(band).align_bottom(Fill).clip(true).into()
 }
 
 /// The cheat sheet, drawn over the pages: as many lines as fit, and a
 /// line at the foot saying where they are and how to move.
-fn cheat_sheet<'a>(help: &'a Help, keymaps: &Keymaps, rows: usize) -> Element<'a, Message> {
+fn cheat_sheet<'a>(
+    help: &'a Help,
+    keymaps: &Keymaps,
+    chrome: Chrome,
+    rows: usize,
+) -> Element<'a, Message> {
     let label = |content: &str, colour: Color| {
         text(content.to_owned())
             .size(LIST_TEXT_SIZE)
@@ -2206,7 +2289,7 @@ fn cheat_sheet<'a>(help: &'a Help, keymaps: &Keymaps, rows: usize) -> Element<'a
     };
     let lines = help.shown(rows).iter().map(|line| {
         let content: Element<'_, Message> = match line {
-            Line::Heading(heading) => label(heading, BAR_TEXT)
+            Line::Heading(heading) => label(heading, chrome.bar_text)
                 .font(Font {
                     weight: iced::font::Weight::Bold,
                     ..Font::MONOSPACE
@@ -2220,13 +2303,13 @@ fn cheat_sheet<'a>(help: &'a Help, keymaps: &Keymaps, rows: usize) -> Element<'a
             } => {
                 let keys = if keys.is_empty() { "-" } else { keys };
                 row![
-                    container(label(keys, BAR_TEXT))
+                    container(label(keys, chrome.bar_text))
                         .width(HELP_KEYS_WIDTH)
                         .clip(true),
-                    container(label(action, LIST_NUMBER))
+                    container(label(action, chrome.list_number))
                         .width(HELP_ACTION_WIDTH)
                         .clip(true),
-                    container(label(description, TAB_TEXT))
+                    container(label(description, chrome.tab_text))
                         .width(Fill)
                         .clip(true),
                 ]
@@ -2258,10 +2341,12 @@ fn cheat_sheet<'a>(help: &'a Help, keymaps: &Keymaps, rows: usize) -> Element<'a
         )
     };
     let foot = row![
-        container(label(&hint, LIST_NUMBER)).width(Fill).clip(true),
+        container(label(&hint, chrome.list_number))
+            .width(Fill)
+            .clip(true),
         label(
             &format!("{}-{last} of {count}", top.saturating_add(1)),
-            LIST_NUMBER
+            chrome.list_number
         ),
     ]
     .spacing(12);
@@ -2272,9 +2357,9 @@ fn cheat_sheet<'a>(help: &'a Help, keymaps: &Keymaps, rows: usize) -> Element<'a
     ])
     .padding(8)
     .max_width(HELP_WIDTH)
-    .style(|_| {
-        container::background(LIST).border(iced::Border {
-            color: LIST_BORDER,
+    .style(move |_| {
+        container::background(chrome.list).border(iced::Border {
+            color: chrome.list_border,
             width: 1.0,
             radius: 4.0.into(),
         })
@@ -2288,7 +2373,12 @@ fn cheat_sheet<'a>(help: &'a Help, keymaps: &Keymaps, rows: usize) -> Element<'a
 
 /// The table of contents, in a sidebar over the left of the pages: as many
 /// entries as fit, each set in by its depth, the selected one marked.
-fn contents<'a>(sidebar: &'a Outline, keymaps: &Keymaps, rows: usize) -> Element<'a, Message> {
+fn contents<'a>(
+    sidebar: &'a Outline,
+    keymaps: &Keymaps,
+    chrome: Chrome,
+    rows: usize,
+) -> Element<'a, Message> {
     let label = |content: String, colour: Color| {
         text(content)
             .size(LIST_TEXT_SIZE)
@@ -2310,14 +2400,18 @@ fn contents<'a>(sidebar: &'a Outline, keymaps: &Keymaps, rows: usize) -> Element
         let indent = SIDEBAR_INDENT * num::float(u32::try_from(entry.depth).unwrap_or(u32::MAX));
         let line = row![
             iced::widget::Space::new().width(indent),
-            label(marker.to_owned(), LIST_NUMBER),
+            label(marker.to_owned(), chrome.list_number),
             container(label(
                 entry.title.clone(),
-                if shown.selected { BAR_TEXT } else { TAB_TEXT }
+                if shown.selected {
+                    chrome.bar_text
+                } else {
+                    chrome.tab_text
+                }
             ))
             .width(Fill)
             .clip(true),
-            label(page, LIST_NUMBER),
+            label(page, chrome.list_number),
         ]
         .spacing(6);
         let selected = shown.selected;
@@ -2328,7 +2422,7 @@ fn contents<'a>(sidebar: &'a Outline, keymaps: &Keymaps, rows: usize) -> Element
             .align_y(iced::alignment::Vertical::Center)
             .style(move |_| {
                 if selected {
-                    container::background(TAB_CURRENT)
+                    container::background(chrome.tab_current)
                 } else {
                     container::Style::default()
                 }
@@ -2337,7 +2431,7 @@ fn contents<'a>(sidebar: &'a Outline, keymaps: &Keymaps, rows: usize) -> Element
     });
     let (top, count) = sidebar.position(rows);
     let last = top.saturating_add(rows).min(count);
-    let heading = container(label("Contents".to_owned(), BAR_TEXT).font(Font {
+    let heading = container(label("Contents".to_owned(), chrome.bar_text).font(Font {
         weight: iced::font::Weight::Bold,
         ..Font::MONOSPACE
     }))
@@ -2351,7 +2445,7 @@ fn contents<'a>(sidebar: &'a Outline, keymaps: &Keymaps, rows: usize) -> Element
             keymaps.outline.first(outline::Binding::Open),
             keymaps.outline.first(outline::Binding::Fold),
         ),
-        LIST_NUMBER,
+        chrome.list_number,
     ))
     .height(HELP_ROW)
     .padding([0, 6])
@@ -2364,9 +2458,9 @@ fn contents<'a>(sidebar: &'a Outline, keymaps: &Keymaps, rows: usize) -> Element
     .padding(8)
     .width(SIDEBAR_WIDTH)
     .height(Fill)
-    .style(|_| {
-        container::background(LIST).border(iced::Border {
-            color: LIST_BORDER,
+    .style(move |_| {
+        container::background(chrome.list).border(iced::Border {
+            color: chrome.list_border,
             width: 1.0,
             radius: 0.0.into(),
         })
@@ -2376,7 +2470,7 @@ fn contents<'a>(sidebar: &'a Outline, keymaps: &Keymaps, rows: usize) -> Element
 
 /// The list of recent documents, drawn over the pages. The first nine are
 /// numbered, for the digit that opens each.
-fn list(picker: &Picker) -> Element<'_, Message> {
+fn list(picker: &Picker, chrome: Chrome) -> Element<'_, Message> {
     let label = |content: String, colour: Color| {
         text(content)
             .size(LIST_TEXT_SIZE)
@@ -2384,7 +2478,7 @@ fn list(picker: &Picker) -> Element<'_, Message> {
             .color(colour)
             .wrapping(text::Wrapping::None)
     };
-    let heading = container(label("Recent documents".to_owned(), BAR_TEXT)).padding([4, 10]);
+    let heading = container(label("Recent documents".to_owned(), chrome.bar_text)).padding([4, 10]);
     let entries = picker.entries().iter().enumerate().map(|(index, path)| {
         let number = index
             .checked_add(1)
@@ -2392,8 +2486,8 @@ fn list(picker: &Picker) -> Element<'_, Message> {
             .map_or_else(|| " ".to_owned(), |number| number.to_string());
         let selected = index == picker.selected();
         let line = row![
-            label(number, LIST_NUMBER),
-            container(label(tilde(path), BAR_TEXT))
+            label(number, chrome.list_number),
+            container(label(tilde(path), chrome.bar_text))
                 .width(Fill)
                 .clip(true),
         ]
@@ -2403,7 +2497,7 @@ fn list(picker: &Picker) -> Element<'_, Message> {
             .width(Fill)
             .style(move |_| {
                 if selected {
-                    container::background(LIST_SELECTED)
+                    container::background(chrome.list_selected)
                 } else {
                     container::Style::default()
                 }
@@ -2414,9 +2508,9 @@ fn list(picker: &Picker) -> Element<'_, Message> {
     let panel = container(column![heading, body].spacing(4))
         .padding(8)
         .max_width(LIST_WIDTH)
-        .style(|_| {
-            container::background(LIST).border(iced::Border {
-                color: LIST_BORDER,
+        .style(move |_| {
+            container::background(chrome.list).border(iced::Border {
+                color: chrome.list_border,
                 width: 1.0,
                 radius: 4.0.into(),
             })
@@ -2467,7 +2561,7 @@ impl canvas::Program<Message> for Pages<'_> {
     ) -> Vec<canvas::Geometry> {
         let app = self.0;
         let mut frame = canvas::Frame::new(renderer, bounds.size());
-        frame.fill_rectangle(Point::ORIGIN, bounds.size(), BACKDROP);
+        frame.fill_rectangle(Point::ORIGIN, bounds.size(), app.chrome().backdrop);
         let Some(document) = app.document() else {
             return vec![frame.into_geometry()];
         };

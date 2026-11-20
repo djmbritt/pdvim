@@ -24,6 +24,11 @@ recolor-darkcolor = "#dddddd"
 # How far one press of `j` or `k` scrolls, in pixels.
 scroll-step = 40
 
+# Ask "quit pdvim? (y/n)" before quitting: when the last tab is closed,
+# with :qa, or when the window is closed. Press y to quit, any other key to
+# stay. Closing the window again while asked quits without asking.
+confirm-quit = false
+
 [keys]
 
 # Bind keys to an action by name, or to "none" to remove a default.

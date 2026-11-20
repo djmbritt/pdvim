@@ -208,6 +208,14 @@ struct Completing {
     typed: bool,
 }
 
+/// How a document with no view in the history starts.
+#[derive(Debug, Clone, Copy, Default)]
+struct Fresh {
+    recolor: bool,
+    /// Whether the margins are trimmed.
+    trim: bool,
+}
+
 /// What the bottom line says when nothing is being typed.
 enum Notice {
     None,
@@ -241,11 +249,12 @@ pub struct App {
     palette: Palette,
     /// How far one press of `j` scrolls, in logical pixels.
     scroll_step: f32,
-    /// Whether a document with no view in the history is recoloured.
-    recolor: bool,
-    /// Whether a document with no view in the history has its margins
-    /// trimmed.
-    trim: bool,
+    /// How a document with no view in the history starts.
+    fresh: Fresh,
+    /// Whether to ask before quitting.
+    confirm_quit: bool,
+    /// Whether the bottom line is asking whether to quit.
+    asking_to_quit: bool,
 }
 
 /// Runs the reader, opening each document given in a tab of its own.
@@ -287,8 +296,9 @@ impl App {
             notice,
             palette: Palette::default(),
             scroll_step: DEFAULT_SCROLL_STEP,
-            recolor: false,
-            trim: false,
+            fresh: Fresh::default(),
+            confirm_quit: false,
+            asking_to_quit: false,
         };
         // Started without a document, it offers the ones read lately.
         if paths.is_empty() {
@@ -370,6 +380,9 @@ impl App {
                 self.on_wheel(delta);
                 Task::none()
             }
+            // Asked a second time, as when a window manager insists, the
+            // window closes without asking again.
+            Message::CloseRequested if self.asking_to_quit => self.exit(),
             Message::CloseRequested => self.quit(),
             Message::Opened(request, path, result) => self.on_opened(request, path, result),
             Message::Rendered(id, page, key, result) => {
@@ -405,7 +418,14 @@ impl App {
                     return Task::none();
                 };
                 self.notice = Notice::None;
-                if self.picker.is_some() {
+                if self.asking_to_quit {
+                    // `y` quits; any other key thinks better of it.
+                    self.asking_to_quit = false;
+                    if matches!(key, Key::Char('y' | 'Y')) {
+                        return self.exit();
+                    }
+                    Task::none()
+                } else if self.picker.is_some() {
                     self.on_picker_key(key)
                 } else if self.prompt.is_some() {
                     self.on_prompt_key(key)
@@ -566,17 +586,18 @@ impl App {
             Command::Set(setting) => match setting {
                 Setting::Recolor(recolor) => match self.document_mut() {
                     Some(document) => document.recolor = recolor,
-                    None => self.recolor = recolor,
+                    None => self.fresh.recolor = recolor,
                 },
                 Setting::Trim(trim) => {
                     if self.document().is_some() {
                         return self.set_trim(self.current, trim);
                     }
-                    self.trim = trim;
+                    self.fresh.trim = trim;
                 }
                 Setting::RecolorPaper(paper) => self.palette.paper = paper,
                 Setting::RecolorInk(ink) => self.palette.ink = ink,
                 Setting::ScrollStep(step) => self.scroll_step = step,
+                Setting::ConfirmQuit(confirm) => self.confirm_quit = confirm,
             },
         }
         Task::none()
@@ -728,8 +749,10 @@ impl App {
         };
         let id = self.next_id();
         let mut reader = Reader::new(opened.sizes, (self.area.width, self.area.height));
-        let mut recolor = self.recolor;
-        let mut trim = self.trim;
+        let Fresh {
+            mut recolor,
+            mut trim,
+        } = self.fresh;
         let mut returning = None;
         let mut notice = Notice::None;
         match self.history.as_ref().map(|history| history.load(&path)) {
@@ -1081,8 +1104,18 @@ impl App {
         }
     }
 
-    /// Records where every document is being left, and closes the program.
+    /// Quits, or asks first when that is wanted.
     fn quit(&mut self) -> Task<Message> {
+        if self.confirm_quit {
+            self.asking_to_quit = true;
+            self.pending = Pending::default();
+            return Task::none();
+        }
+        self.exit()
+    }
+
+    /// Records where every document is being left, and closes the program.
+    fn exit(&mut self) -> Task<Message> {
         let documents: Vec<_> = self
             .tabs
             .iter_mut()
@@ -1149,6 +1182,7 @@ impl App {
                 .wrapping(text::Wrapping::None)
         };
         let left = match (&self.prompt, &self.notice) {
+            _ if self.asking_to_quit => label("quit pdvim? (y/n)".to_owned(), BAR_ERROR),
             (Some((prompt, line)), _) => {
                 label(format!("{}{line}\u{2588}", prompt.sigil()), BAR_TEXT)
             }

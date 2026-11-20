@@ -99,6 +99,7 @@ The mouse wheel also scrolls.
 | `:set recolor-lightcolor #rrggbb`     | Set the color white paper becomes when recolored (default `#1a1a1a`) |
 | `:set recolor-darkcolor #rrggbb`      | Set the color black ink becomes when recolored (default `#dddddd`)   |
 | `:set scroll-step {pixels}`           | Set how far one `j` or `k` scrolls                                   |
+| `:set confirm-quit [true\|false]`     | Ask before quitting                                                  |
 | `:map {keys} {action}`               | Bind keys to an action (see [Keys](#keys-1))                         |
 | `:unmap {keys}`                       | Remove a key binding                                                 |
 | `:mapclear`                           | Remove every key binding                                             |
@@ -146,6 +147,7 @@ A shorter file works too, since anything you leave out keeps its default:
 recolor = true
 trim = true
 scroll-step = 60
+confirm-quit = true
 recolor-lightcolor = "#1a1a1a"
 recolor-darkcolor = "#dddddd"
 
@@ -158,7 +160,7 @@ recolor-darkcolor = "#dddddd"
 "shift+q" = "quit"
 ```
 
-`[settings]` takes the same names and values as `:set`. `recolor` and `trim` decide how a document starts the first time you open it. After that, the document is restored the way you left it.
+`[settings]` takes the same names and values as `:set`. With `confirm-quit` on, pdvim asks `quit pdvim? (y/n)` before quitting: when you close the last tab, use `:qa`, or close the window. Press `y` to quit, or any other key to stay. If the window is closed again while pdvim is asking, for example by a window manager that insists, it quits without asking. `recolor` and `trim` decide how a document starts the first time you open it. After that, the document is restored the way you left it.
 
 `[keys]` binds keys to the [actions](#actions) below, on top of the default keys. Bind keys to `"none"` to remove a default.
 

@@ -225,6 +225,7 @@ mod tests {
         assert_eq!(
             settings,
             [
+                Setting::ConfirmQuit(false),
                 Setting::Recolor(false),
                 Setting::RecolorInk(palette.ink),
                 Setting::RecolorPaper(palette.paper),

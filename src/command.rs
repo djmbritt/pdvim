@@ -57,6 +57,8 @@ pub enum Setting {
     RecolorInk(Rgb),
     /// How far one press of `j` scrolls, in pixels.
     ScrollStep(f32),
+    /// Whether to ask before quitting.
+    ConfirmQuit(bool),
 }
 
 /// Why a command could not be understood.
@@ -112,7 +114,8 @@ pub fn canonical(name: &str) -> Option<&'static str> {
 }
 
 /// The names of the settings `:set` knows.
-pub const SETTINGS: [&str; 5] = [
+pub const SETTINGS: [&str; 6] = [
+    "confirm-quit",
     "recolor",
     "recolor-darkcolor",
     "recolor-lightcolor",
@@ -216,6 +219,7 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
         "trim" => parse_switch(value).map(Setting::Trim),
         "recolor-darkcolor" => Ok(Setting::RecolorInk(value.parse()?)),
         "recolor-lightcolor" => Ok(Setting::RecolorPaper(value.parse()?)),
+        "confirm-quit" => parse_switch(value).map(Setting::ConfirmQuit),
         "scroll-step" => match value.parse::<f32>() {
             Ok(step) if step.is_finite() && step > 0.0 => Ok(Setting::ScrollStep(step)),
             _ => Err(Error::NotPositive(value.to_owned())),
@@ -291,6 +295,10 @@ mod tests {
         assert_eq!(
             parse("set trim false"),
             Ok(Some(Command::Set(Setting::Trim(false))))
+        );
+        assert_eq!(
+            parse("set confirm-quit"),
+            Ok(Some(Command::Set(Setting::ConfirmQuit(true))))
         );
         assert_eq!(
             parse("set scroll-step 60"),

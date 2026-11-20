@@ -70,7 +70,7 @@ pub fn complete(line: &str) -> Completion {
         }
         Some("set") if words_before == 0 => words(last_word, command::SETTINGS),
         Some("set") if words_before == 1 => match rest.split_whitespace().next() {
-            Some("recolor" | "trim") => words(last_word, ["true", "false"]),
+            Some("confirm-quit" | "recolor" | "trim") => words(last_word, ["true", "false"]),
             _ => Vec::new(),
         },
         // The action comes after at least one key.

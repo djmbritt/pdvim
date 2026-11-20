@@ -7,10 +7,17 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: pdvim [FILE]...";
+const USAGE: &str = "usage: pdvim [FILE]...\n       pdvim --version";
 
 fn main() -> ExitCode {
     let paths: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
+    if paths
+        .iter()
+        .any(|path| matches!(path.to_str(), Some("--version" | "-V")))
+    {
+        println!("{}", pdvim::ABOUT);
+        return ExitCode::SUCCESS;
+    }
     if paths
         .iter()
         .any(|path| path.as_os_str().as_encoded_bytes().starts_with(b"-"))

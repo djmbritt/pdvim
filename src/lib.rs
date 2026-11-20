@@ -39,3 +39,12 @@ mod theme;
 mod visual;
 
 pub use app::run;
+
+/// What this program is, in a line: its name, version, and where it is
+/// made, as `:version` and `pdvim --version` say.
+pub const ABOUT: &str = concat!(
+    "pdvim ",
+    env!("CARGO_PKG_VERSION"),
+    " - ",
+    env!("CARGO_PKG_REPOSITORY"),
+);

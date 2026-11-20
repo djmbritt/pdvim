@@ -63,6 +63,7 @@ The binary is written to `target/release/pdvim`.
 
 ```sh
 pdvim [FILE]...
+pdvim --version
 ```
 
 Each file opens in a tab of its own. If you start pdvim without a file, it shows the documents you read most recently. Pick one, or open another file with `:open`.
@@ -167,6 +168,7 @@ A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t
 | `:o[pen] {file}`                       | Open a document in a new tab (`~` expands to your home directory)    |
 | `:rec[ent]`                            | Show recent documents                                                |
 | `:h[elp]`                              | Show every action and the keys bound to it                           |
+| `:ve[rsion]`                           | Show pdvim's version and where to find it on GitHub                  |
 | `:noh[lsearch]`                        | Hide search highlights                                               |
 | `:set recolor [true\|false\|auto]`     | Turn recoloring on or off, or follow the system's theme (default)    |
 | `:set trim [true\|false]`              | Turn margin trimming on or off                                       |

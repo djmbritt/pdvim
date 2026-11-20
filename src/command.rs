@@ -19,6 +19,8 @@ pub enum Command {
     Help,
     /// Say which theme is in force.
     ShowTheme,
+    /// Say which version of pdvim this is, and where it comes from.
+    Version,
     /// Open a new tab, with a document in it or empty.
     TabOpen(Option<PathBuf>),
     /// Close the tab in view, unless it is the last.
@@ -112,7 +114,7 @@ pub enum Error {
 }
 
 /// Every command by its full name, and the shorter names it also goes by.
-const NAMES: [(&str, &[&str]); 16] = [
+const NAMES: [(&str, &[&str]); 17] = [
     ("help", &["h"]),
     ("map", &[]),
     ("mapclear", &[]),
@@ -129,6 +131,7 @@ const NAMES: [(&str, &[&str]); 16] = [
     ("tabprevious", &["tabp", "tabN", "tabNext"]),
     ("theme", &["colo", "colorscheme"]),
     ("unmap", &[]),
+    ("version", &["ve"]),
 ];
 
 /// The full names of the commands, in alphabetical order.
@@ -209,6 +212,7 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
             Command::Open(expand_home(argument))
         }
         "recent" => Command::Recent,
+        "version" => Command::Version,
         // As `:set theme`; with nothing after it, says which is in force.
         "theme" if argument.is_empty() => Command::ShowTheme,
         "theme" => Command::Set(setting("theme", argument)?),
@@ -484,6 +488,12 @@ mod tests {
         assert_eq!(parse("rec"), Ok(Some(Command::Recent)));
         assert_eq!(parse("recent"), Ok(Some(Command::Recent)));
         assert_eq!(parse("qa"), Ok(Some(Command::QuitAll)));
+    }
+
+    #[test]
+    fn version_parses() {
+        assert_eq!(parse("version"), Ok(Some(Command::Version)));
+        assert_eq!(parse("ve"), Ok(Some(Command::Version)));
     }
 
     #[test]

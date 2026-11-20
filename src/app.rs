@@ -1264,6 +1264,7 @@ impl App {
             Command::QuitAll => return self.quit(),
             Command::Open(path) | Command::TabOpen(Some(path)) => return self.open_in_tab(path),
             Command::Recent => self.show_recent(),
+            Command::Version => self.notice = Notice::Info(crate::ABOUT.to_owned()),
             Command::ShowTheme => {
                 let theme = self.current_theme().name();
                 self.notice = Notice::Info(if self.theme.is_some() {

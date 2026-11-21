@@ -49,6 +49,7 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
                 B::NextChapter,
                 B::PreviousChapter,
                 B::Outline,
+                B::Overview,
             ],
         ),
         (
@@ -136,6 +137,7 @@ const fn heading(mode: Mode) -> &'static str {
         Mode::Visual => "Visual mode: selecting text",
         Mode::Hints => "Labels on links and lines",
         Mode::Outline => "Table of contents",
+        Mode::Overview => "Overview of the pages",
         Mode::Markings => "List of markings",
         Mode::Recent => "Lists of recent documents and tabs; typing narrows them",
         Mode::Help => "This list",
@@ -200,6 +202,7 @@ impl Help {
                 Mode::Visual => all(&mut lines, mode, &keymaps.visual),
                 Mode::Hints => all(&mut lines, mode, &keymaps.hints),
                 Mode::Outline => all(&mut lines, mode, &keymaps.outline),
+                Mode::Overview => all(&mut lines, mode, &keymaps.overview),
                 Mode::Markings => all(&mut lines, mode, &keymaps.markings),
                 Mode::Recent => all(&mut lines, mode, &keymaps.recent),
                 Mode::Help => all(&mut lines, mode, &keymaps.help),

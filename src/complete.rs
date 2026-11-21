@@ -323,7 +323,8 @@ mod tests {
     #[test]
     fn a_mode_completes_first_then_its_actions() {
         assert_eq!(texts(&complete("map vi")), ["visual"]);
-        assert_eq!(texts(&complete("unmap o")), ["outline"]);
+        assert_eq!(texts(&complete("unmap o")), ["outline", "overview"]);
+        assert_eq!(texts(&complete("unmap ov")), ["overview"]);
         assert_eq!(texts(&complete("map visual ")), Vec::<&str>::new());
         assert_eq!(texts(&complete("map visual Y ya")), ["yank"]);
         assert_eq!(texts(&complete("map v vis")), ["visual", "visual-line"]);

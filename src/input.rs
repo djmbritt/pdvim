@@ -193,6 +193,8 @@ pub enum Action {
     Copy(CopyWhat),
     /// Show the table of contents in a sidebar.
     ShowOutline,
+    /// Show every page small, side by side, to pick one.
+    ShowOverview,
     /// Wait for a letter, then put a mark there, or go to it.
     Mark(MarkVerb),
     /// Go back through the places jumped from, a number of times.
@@ -244,6 +246,7 @@ bindable! {
         PreviousChapter = "previous-chapter", "Go to the previous chapter or section";
         /// Show the table of contents in a sidebar.
         Outline = "outline", "Show the table of contents, to go to a chapter";
+        Overview = "overview", "Show every page small, side by side, to go to one";
         ZoomIn = "zoom-in", "Zoom in";
         ZoomOut = "zoom-out", "Zoom out";
         /// Zoom to the percentage given by a count, or to 100%.
@@ -424,6 +427,7 @@ impl Binding {
             Self::Undo => Action::Undo,
             Self::Redo => Action::Redo,
             Self::Outline => Action::ShowOutline,
+            Self::Overview => Action::ShowOverview,
             Self::SetMark => Action::Mark(MarkVerb::Set),
             Self::GoToMark => Action::Mark(MarkVerb::Go),
             Self::JumpBack => Action::JumpBack(count.unwrap_or(1)),

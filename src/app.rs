@@ -46,6 +46,7 @@ mod info;
 mod links;
 mod markings;
 mod mode;
+mod overview;
 mod reflow;
 mod tabs;
 mod unlock;
@@ -124,6 +125,9 @@ pub enum Message {
     /// A page of the document with this number finished rendering, or
     /// failed to.
     Rendered(u64, u32, RenderKey, Result<image::Handle, backend::Error>),
+    /// A page of the document with this number was rendered small, for
+    /// the overview, this way, or could not be.
+    RenderedSmall(u64, u32, RenderKey, Result<image::Handle, backend::Error>),
     /// A search in the document with this number finished, or failed.
     Found(u64, Search, Result<Vec<Hit>, backend::Error>),
     /// The pages in view of the document with this number were searched
@@ -253,6 +257,10 @@ struct Document {
     pages: HashMap<u32, (image::Handle, RenderKey)>,
     /// What each page being rendered right now is rendered for.
     rendering: HashMap<u32, RenderKey>,
+    /// The pages rendered small, for the overview, and how; and those
+    /// being rendered small, and how.
+    small: HashMap<u32, (image::Handle, RenderKey)>,
+    rendering_small: HashMap<u32, RenderKey>,
     /// What each page that failed to render was rendered for, so the same
     /// render is not tried again and again.
     failed: HashMap<u32, RenderKey>,
@@ -465,6 +473,9 @@ pub struct App {
     tab_list: Option<Picker<usize>>,
     /// The cheat sheet, while it is shown.
     help: Option<Help>,
+    /// Every page of a document small, to pick one: the document's number,
+    /// and where in its pages the overview is.
+    overview: Option<(u64, crate::overview::Overview)>,
     /// What the document in view says about itself, by name, while it is
     /// shown.
     info: Option<(String, Vec<(&'static str, String)>)>,
@@ -608,6 +619,7 @@ impl App {
             picker: None,
             tab_list: None,
             help: None,
+            overview: None,
             info: None,
             sidebar: None,
             hints: None,
@@ -820,6 +832,9 @@ impl App {
                 Task::none()
             }
             Message::Opened(request, path, result) => self.on_opened(request, path, result),
+            Message::RenderedSmall(id, page, key, result) => {
+                self.on_rendered_small(id, page, key, result)
+            }
             Message::Rendered(id, page, key, result) => {
                 self.on_rendered(id, page, key, result);
                 Task::none()
@@ -867,7 +882,7 @@ impl App {
                 Task::none()
             }
         };
-        Task::batch([task, self.render_missing()])
+        Task::batch([task, self.render_missing(), self.render_small()])
     }
 
     fn on_keyboard(&mut self, event: keyboard::Event) -> Task<Message> {
@@ -919,6 +934,8 @@ impl App {
                     let outcome = hints.feed(key, &self.keymaps.hints);
                     self.on_marking_hint(outcome);
                     Task::none()
+                } else if self.overview().is_some() {
+                    self.on_overview_key(key)
                 } else if self.sidebar.is_some() {
                     self.on_sidebar_key(key)
                 } else if self.help.is_some() {
@@ -2161,6 +2178,7 @@ impl App {
             Action::Field(pick) => return self.go_to_field(pick.into()),
             Action::Copy(what) => return self.copy(what),
             Action::ShowOutline => return self.show_outline(),
+            Action::ShowOverview => return self.show_overview(),
             Action::Mark(verb) => {
                 self.awaiting_mark = Some(verb);
                 return Task::none();
@@ -2337,6 +2355,8 @@ impl App {
             redo: Vec::new(),
             pages: HashMap::new(),
             rendering: HashMap::new(),
+            small: HashMap::new(),
+            rendering_small: HashMap::new(),
             failed: HashMap::new(),
             results: Results::default(),
             chapters: None,
@@ -2853,6 +2873,9 @@ impl App {
             }
             None => {}
         }
+        if let Some(grid) = self.overview_grid(chrome) {
+            layers = layers.push(grid);
+        }
         if let Some((name, facts)) = &self.info {
             layers = layers.push(info::panel(name, facts, chrome));
         }
@@ -2965,6 +2988,9 @@ impl App {
                 label(self.question(question), chrome.bar_error)
             }
             _ if let Some(status) = self.field_status() => label(status, chrome.bar_text),
+            _ if let Some(overview) = self.overview() => {
+                label(self.overview_status(overview), chrome.bar_text)
+            }
             _ if let Some(flash) = &self.flash => label(
                 format!("jump to: {}\u{2588}", flash.typed()),
                 chrome.bar_text,
@@ -3809,6 +3835,7 @@ fn move_view(document: &mut Document, action: Action, step: f32) {
         | Action::Write
         | Action::Chapter { .. }
         | Action::ShowOutline
+        | Action::ShowOverview
         | Action::Mark(_)
         | Action::JumpBack(_)
         | Action::JumpForward(_)

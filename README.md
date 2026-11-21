@@ -116,9 +116,12 @@ Put a count before a key to repeat it, as in vi. For example, `3j` scrolls three
 | `{n}G`, `{n}gg`                             | Go to page _n_                                                  |
 | `H` / `L`                                   | Go to the top / bottom of the current page                      |
 | `Tab`                                       | Show the table of contents                                      |
+| `go`                                        | Show every page small, side by side, to go to one               |
 | `]]` / `[[`                                 | Go to the next / previous chapter or section; `{n}]]` goes n on |
 
 The mouse wheel also scrolls.
+
+`go` shows every page of the document small, side by side in rows, with the page you're reading selected. Move with `h` `j` `k` `l` or the arrow keys, a screen at a time with `Ctrl-d` / `Ctrl-u`, and to the first and last page with `gg` / `G`, or to page _n_ with `{n}G`. `Enter` reads from the page selected, and `Esc` or `q` goes back to where you were. The pages are drawn as you read them, recolored or not, with their highlights, and the status bar names the page selected. Going to a page this way is a jump, so `Ctrl-o` comes back.
 
 `Tab` opens the table of contents in a sidebar, with the chapter you're reading selected. Move with `j` / `k`, `gg` / `G`, and `Ctrl-d` / `Ctrl-u`. `l` opens a chapter to show its sections, or steps into them, and `h` closes it or goes up to the chapter it's in. `Space` opens and closes. `Enter` goes to the chapter and closes the sidebar, and `Esc`, `q`, or `Tab` close it without going anywhere.
 

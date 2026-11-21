@@ -167,6 +167,8 @@ note-color = "#fdd835"
 # The table of contents, in a sidebar: j/k to move, l/h to open and close
 # a chapter's sections, enter to go there
 "tab" = "outline"
+# Every page small, side by side: move to one and press enter to read there
+"g o" = "overview"
 # The start of the next or previous chapter or section in it
 "] ]" = "next-chapter"
 "[ [" = "previous-chapter"
@@ -339,6 +341,32 @@ note-color = "#fdd835"
 # Then type some of a link's text to label only the links that hold it;
 # enter picks the only one left, or lets you type a label
 "/" = "filter"
+
+[keys.overview]
+
+# Every page small, side by side (g o): move with the keys you read with,
+# and enter reads from the page selected.
+"j" = "down"
+"down" = "down"
+"k" = "up"
+"up" = "up"
+"h" = "left"
+"left" = "left"
+"l" = "right"
+"right" = "right"
+"ctrl+d" = "screen-down"
+"pagedown" = "screen-down"
+"ctrl+u" = "screen-up"
+"pageup" = "screen-up"
+"g g" = "first"
+"home" = "first"
+"G" = "last"
+"end" = "last"
+"enter" = "go"
+"escape" = "close"
+"ctrl+c" = "close"
+"q" = "close"
+"g o" = "close"
 
 [keys.outline]
 

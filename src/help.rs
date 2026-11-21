@@ -64,6 +64,7 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
                 B::ToggleRecolor,
                 B::ToggleTrim,
                 B::ToggleBars,
+                B::ToggleColumns,
                 B::ToggleFullscreen,
             ],
         ),

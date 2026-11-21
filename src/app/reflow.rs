@@ -1,27 +1,94 @@
 //! Books without pages of their own, as EPUB and FB2, laid out on pages the
-//! size of the window: again when the window changes size or the type does,
-//! keeping the place read.
+//! size of the window, or of a column of it: again when the window, the
+//! columns or the type change, keeping the place read. A book always fits
+//! the window's width; the zoom keys change the size of its type instead.
 
 use std::path::Path;
 
 use iced::Task;
 
-use super::{App, Message};
+use super::{App, Message, Notice};
 use crate::backend::{self, Flow};
-use crate::history::{self, View};
+use crate::history::{self, Fit, View};
+use crate::input::Action;
+use crate::layout::GAP;
+use crate::num;
 use crate::reader::Reader;
 
+/// How much one press of a zoom key changes the type of a book, in points.
+const FONT_STEP: f32 = 1.0;
+
 impl App {
-    /// The page books are laid out on: the window, in the type set.
-    pub(super) fn flow(&self) -> Flow {
-        Flow::new(self.area.width, self.area.height, self.font_size)
+    /// The page a book is laid out on: the window, or one column of it,
+    /// in the type set. A row of pages and the gaps between them fill the
+    /// window's width exactly when the book fits it.
+    pub(super) fn flow(&self, columns: usize) -> Flow {
+        let columns = num::float(u32::try_from(columns.max(1)).unwrap_or(1));
+        let gaps = GAP * (columns - 1.0);
+        let width = (self.area.width - gaps) / columns;
+        Flow::new(width, self.area.height, self.font_size)
+    }
+
+    /// Whether the document in view is a book, laid out on the window.
+    pub(super) fn in_book(&self) -> bool {
+        self.document()
+            .is_some_and(|document| document.flow.is_some())
+    }
+
+    /// The page a document about to open would be laid out on, if it is a
+    /// book: in as many columns as it was left in, or as a document not
+    /// seen before starts with.
+    pub(super) fn flow_for(&self, path: &Path) -> Flow {
+        let left = self
+            .history
+            .as_ref()
+            .and_then(|history| history.load(path).ok().flatten());
+        self.flow(left.map_or(self.fresh.columns, |view| view.columns))
+    }
+
+    /// Sets how many pages sit side by side in the tab in view, laying a
+    /// book out again to match.
+    pub(super) fn set_columns(&mut self, columns: usize) -> Task<Message> {
+        let Some(document) = self.document_mut() else {
+            return Task::none();
+        };
+        document.reader.set_columns(columns);
+        self.notice = Notice::Info(if columns == 1 {
+            "one page to a row".to_owned()
+        } else {
+            format!("{columns} pages side by side")
+        });
+        self.reflow()
+    }
+
+    /// Sets the size of type books are laid out in, and lays them out again.
+    pub(super) fn set_font_size(&mut self, size: f32) -> Task<Message> {
+        let size = size.clamp(Flow::EM.0, Flow::EM.1);
+        self.font_size = size;
+        self.notice = Notice::Info(format!("font size {size}"));
+        self.reflow()
+    }
+
+    /// Carries out a zoom key in a book: bigger or smaller type, the type
+    /// set again, or a share of it. A book always fits the window's width,
+    /// so fitting it otherwise does nothing.
+    pub(super) fn zoom_book(&mut self, action: Action) -> Task<Message> {
+        let size = match action {
+            Action::ZoomIn => self.font_size + FONT_STEP,
+            Action::ZoomOut => self.font_size - FONT_STEP,
+            Action::ZoomTo(percent) => self.font_base * num::float(percent) / 100.0,
+            _ => {
+                self.notice = Notice::Info("a book always fits the window's width".to_owned());
+                return Task::none();
+            }
+        };
+        self.set_font_size(size)
     }
 
     /// Lays out again, on the page the window now makes, every book laid
     /// out on another, by opening it again in its tab. The book stays in
     /// view until the new layout is ready, and then shows the same place.
     pub(super) fn reflow(&mut self) -> Task<Message> {
-        let flow = self.flow();
         let mut tasks = Vec::new();
         for index in 0..self.tabs.len() {
             let Some(tab) = self.tabs.get(index) else {
@@ -30,6 +97,7 @@ impl App {
             let Some(document) = &tab.document else {
                 continue;
             };
+            let flow = self.flow(document.reader.columns());
             // Each layout waits for the one before it: a window dragged to
             // a new size is laid out for once the last is done.
             if tab.opening.is_some() || document.flow.is_none_or(|laid| laid == flow) {
@@ -71,11 +139,29 @@ impl App {
     }
 }
 
+/// Puts a reader's view back as it was left, moved to the same place if
+/// the book has been laid out anew, and says what view it took.
+pub(super) fn restore(reader: &mut Reader, view: View, laid_out: bool) -> View {
+    // Laid out as it was, to compare its height with the view's.
+    reader.set_columns(view.columns);
+    let view = refit(view, reader, laid_out);
+    reader.restore(view);
+    view
+}
+
 /// A view moved to the same place in a book laid out anew, which may have
-/// come out taller or shorter: as far down, as a share of the whole.
+/// come out taller or shorter: as far down, as a share of the whole, and
+/// fitting the window's width, as a book always does.
 pub(super) fn refit(view: View, reader: &Reader, laid_out: bool) -> View {
+    if !laid_out {
+        return view;
+    }
+    let view = View {
+        fit: Fit::Width,
+        ..view
+    };
     let extent = reader.extent();
-    if !laid_out || view.extent.is_nan() || view.extent <= 0.0 || !extent.is_finite() {
+    if view.extent.is_nan() || view.extent <= 0.0 || !extent.is_finite() {
         return view;
     }
     let y = view.y / view.extent * extent;
@@ -89,7 +175,6 @@ pub(super) fn refit(view: View, reader: &Reader, laid_out: bool) -> View {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::history::Fit;
     use crate::layout::{PageSize, Rotation};
 
     fn view(y: f32, extent: f32) -> View {
@@ -97,11 +182,12 @@ mod tests {
             x: 0.0,
             y,
             zoom: 1.0,
-            fit: Fit::Width,
+            fit: Fit::None,
             rotation: Rotation::None,
             recolor: false,
             trim: false,
             extent,
+            columns: 1,
         }
     }
 
@@ -117,6 +203,7 @@ mod tests {
         let moved = refit(view(extent / 4.0, extent / 2.0), &reader, true);
         assert!((moved.y - extent / 2.0).abs() < 0.01);
         assert!((moved.extent - extent).abs() < 0.01);
+        assert_eq!(moved.fit, Fit::Width);
         // A view from before the height was kept, or of a document with
         // pages of its own, stays as it was.
         assert!((refit(view(300.0, 0.0), &reader, true).y - 300.0).abs() < 0.01);

@@ -43,8 +43,15 @@ recolor-darkcolor = "theme"
 scroll-step = 40
 
 # The size of type, in points, that books without pages of their own (EPUB,
-# FB2) are laid out in, on pages the size of the window. From 4 to 72.
+# FB2) are laid out in, on pages the size of the window. From 4 to 72. In a
+# book, the zoom keys (+, -, =) make the type bigger or smaller instead.
 fontsize = 12
+
+# How many pages sit side by side in a document not opened before, from 1
+# to 4: 2 shows two-page spreads, and lays books out in two columns, each
+# half the window wide. z c and :set columns change only the tab in view,
+# and each document remembers its own.
+columns = 1
 
 # Ask "quit pdvim? (y/n)" before quitting: when the last tab is closed,
 # with :qa, or when the window is closed. Press y to quit, any other key to
@@ -166,6 +173,7 @@ note-color = "#fdd835"
 "t" = "toggle-trim"
 # Hide the tab bar and status bar while reading, or show them again
 "z b" = "toggle-bars"
+"z c" = "toggle-columns"
 "f11" = "toggle-fullscreen"
 
 # Search and prompts

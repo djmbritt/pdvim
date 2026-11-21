@@ -46,6 +46,11 @@ const PAPER: u8 = 245;
 /// The margin left around the content of a trimmed page, in points.
 const TRIM_MARGIN: f32 = 6.0;
 
+/// The most pages a document may have. A few kilobytes of HTML can lay
+/// out to hundreds of millions of pages, which would take minutes and
+/// gigabytes to measure; no real document comes near this.
+const MOST_PAGES: i32 = 100_000;
+
 /// The most search results reported for one page.
 const HITS_PER_PAGE: u32 = 500;
 
@@ -789,7 +794,7 @@ fn load(
         Unlocked::Wrong => return Err(Error::WrongPassword(name)),
     };
     let flow = lay_out(&mut document, flow).map_err(failed)?;
-    let sizes = page_sizes(&document).map_err(failed)?;
+    let sizes = page_sizes(&document, flow).map_err(failed)?;
     Ok((document, sizes, flow))
 }
 
@@ -854,9 +859,23 @@ fn reopen(path: &Path, password: Option<&str>) -> Result<Document, mupdf::Error>
     }
 }
 
-/// The unturned size of every page, in points.
-fn page_sizes(document: &Document) -> Result<Vec<PageSize>, mupdf::Error> {
+/// The unturned size of every page, in points: for a book laid out on a
+/// page, that page's, and for any other, each measured. A document of more
+/// pages than [`MOST_PAGES`] is refused.
+fn page_sizes(document: &Document, flow: Option<Flow>) -> Result<Vec<PageSize>, mupdf::Error> {
     let count = document.page_count()?;
+    if count > MOST_PAGES {
+        return Err(mupdf::Error::InvalidArgument(format!(
+            "it has {count} pages, more than the {MOST_PAGES} pdvim opens"
+        )));
+    }
+    if let Some(flow) = flow {
+        let size = PageSize {
+            width: flow.width,
+            height: flow.height,
+        };
+        return Ok(vec![size; usize::try_from(count).unwrap_or(0)]);
+    }
     let mut sizes = Vec::new();
     for number in 0..count {
         let bounds = document.load_page(number)?.bounds()?;
@@ -880,10 +899,10 @@ pub fn examine(bytes: &[u8], magic: &str, pages: u32) {
     if document.needs_password().unwrap_or(true) {
         return;
     }
-    if lay_out(&mut document, Flow::new(400.0, 600.0, 12.0)).is_err() {
+    let Ok(flow) = lay_out(&mut document, Flow::new(400.0, 600.0, 12.0)) else {
         return;
-    }
-    let Ok(sizes) = page_sizes(&document) else {
+    };
+    let Ok(sizes) = page_sizes(&document, flow) else {
         return;
     };
     let _ = outline(&document, || Document::from_bytes(bytes, magic));
@@ -2521,6 +2540,20 @@ mod tests {
     }
 
     #[test]
+    fn a_page_of_html_laid_out_to_millions_of_pages_is_refused() {
+        let bytes = seed(include_bytes!("../fuzz/seeds/formats/many-pages.html"));
+        let file = Scratch::of_kind("many", "html", bytes);
+        let start = std::time::Instant::now();
+        let refused = load(&file.0, None, FLOW);
+        assert!(
+            matches!(&refused, Err(Error::Open { reason, .. }) if reason.contains("pages")),
+            "{:?}",
+            refused.map(|(_, sizes, _)| sizes.len())
+        );
+        assert!(start.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    #[test]
     fn a_page_for_a_book_is_kept_within_reason() {
         let unshown = Flow::new(0.0, f32::NAN, 200.0);
         assert!(unshown.width >= 100.0 && unshown.height >= 100.0);
@@ -3114,5 +3147,7 @@ mod tests {
         assert_eq!(content_box(&[255, 250, 244, 255], 4, 4), Some((2, 0, 3, 1)));
     }
 }
+
+
 
 

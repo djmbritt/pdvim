@@ -461,7 +461,7 @@ pub fn reader(data: &[u8]) {
     while !bytes.0.is_empty() {
         let amount = f32::from(bytes.byte()) - 128.0;
         let whole = u32::from(bytes.byte());
-        match bytes.byte().checked_rem(17).unwrap_or(0) {
+        match bytes.byte().checked_rem(18).unwrap_or(0) {
             0 => reader.scroll_by(amount, 0.0),
             1 => reader.scroll_by(0.0, amount * 40.0),
             2 => reader.scroll_screens(amount / 16.0),
@@ -506,6 +506,7 @@ pub fn reader(data: &[u8]) {
                     bottom: amount * 4.0 + 12.0,
                 },
             ),
+            16 => reader.set_columns(usize::from(bytes.byte() & 7)),
             _ => {
                 // A view from the history, which is only as sound as the
                 // database it was read from.
@@ -524,6 +525,7 @@ pub fn reader(data: &[u8]) {
                     recolor: false,
                     trim: false,
                     extent: f32::from(bytes.byte()) * 1000.0,
+                    columns: usize::from(bytes.byte()),
                 });
             }
         }

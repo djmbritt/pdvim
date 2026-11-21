@@ -152,6 +152,8 @@ pub enum Action {
     ToggleTrim,
     /// Hide the tab bar and status bar, or show them.
     ToggleBars,
+    /// Show pages two side by side, or one to a row again.
+    ToggleColumns,
     /// Fill the screen with the window, or stop.
     ToggleFullscreen,
     SearchNext,
@@ -252,6 +254,7 @@ bindable! {
         ToggleRecolor = "toggle-recolor", "Turn recoloring on or off";
         ToggleTrim = "toggle-trim", "Turn margin trimming on or off";
         ToggleBars = "toggle-bars", "Hide the tab bar and status bar, or show them";
+        ToggleColumns = "toggle-columns", "Show two pages side by side, or one";
         ToggleFullscreen = "toggle-fullscreen", "Fill the screen, or stop";
         SearchForward = "search-forward", "Search forwards";
         SearchBackward = "search-backward", "Search backwards";
@@ -363,6 +366,7 @@ impl Binding {
             Self::ToggleRecolor => Action::ToggleRecolor,
             Self::ToggleTrim => Action::ToggleTrim,
             Self::ToggleBars => Action::ToggleBars,
+            Self::ToggleColumns => Action::ToggleColumns,
             Self::ToggleFullscreen => Action::ToggleFullscreen,
             Self::SearchNext => Action::SearchNext,
             Self::SearchPrevious => Action::SearchPrevious,

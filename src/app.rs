@@ -385,6 +385,8 @@ struct Fresh {
     recolor: bool,
     /// Whether the margins are trimmed.
     trim: bool,
+    /// How many pages sit side by side.
+    columns: usize,
 }
 
 /// A question the bottom line asks before doing something.
@@ -495,6 +497,8 @@ pub struct App {
     scroll_step: f32,
     /// The size of type books are laid out in, in points.
     font_size: f32,
+    /// The size of type set, which the zoom keys go back to in a book.
+    font_base: f32,
     /// How a document with no view in the history starts.
     fresh: Fresh,
     /// When to ask, and when to save.
@@ -610,7 +614,11 @@ impl App {
             markup_colours: MarkupColours::default(),
             scroll_step: 40.0,
             font_size: 12.0,
-            fresh: Fresh::default(),
+            font_base: 12.0,
+            fresh: Fresh {
+                columns: 1,
+                ..Fresh::default()
+            },
             care: Care::default(),
             bars: bars::Bars::default(),
             quitting_after: None,
@@ -768,8 +776,7 @@ impl App {
                 self.hints = None;
                 self.line_hints = None;
                 self.flash = None;
-                self.on_wheel(delta);
-                Task::none()
+                self.on_wheel(delta)
             }
             // Asked a second time, as when a window manager insists, the
             // window closes without asking again.
@@ -2045,8 +2052,14 @@ impl App {
             Setting::NoteColour(colour) => self.markup_colours.note = colour,
             Setting::ScrollStep(step) => self.scroll_step = step,
             Setting::FontSize(size) => {
-                self.font_size = size;
-                return self.reflow();
+                self.font_base = size;
+                return self.set_font_size(size);
+            }
+            Setting::Columns(columns) => {
+                if self.document().is_some() && !self.sourcing {
+                    return self.set_columns(columns);
+                }
+                self.fresh.columns = columns;
             }
             Setting::ConfirmQuit(confirm) => self.care.confirm_quit = confirm,
             Setting::Autosave(autosave) => self.care.autosave = autosave,
@@ -2115,7 +2128,22 @@ impl App {
                 return self.set_trim(self.current, trim);
             }
             Action::ToggleBars => self.bars.toggle(),
+            Action::ToggleColumns => {
+                let columns = self
+                    .document()
+                    .map_or(1, |document| document.reader.columns());
+                return self.set_columns(if columns == 1 { 2 } else { 1 });
+            }
             Action::ToggleFullscreen => return self.bars.toggle_fullscreen(),
+            Action::ZoomIn
+            | Action::ZoomOut
+            | Action::ZoomTo(_)
+            | Action::FitWidth
+            | Action::FitPage
+                if self.in_book() =>
+            {
+                return self.zoom_book(action);
+            }
             _ => {}
         }
         let step = self.scroll_step;
@@ -2125,15 +2153,23 @@ impl App {
         Task::none()
     }
 
-    fn on_wheel(&mut self, delta: mouse::ScrollDelta) {
+    fn on_wheel(&mut self, delta: mouse::ScrollDelta) -> Task<Message> {
         let line = self.scroll_step * WHEEL_STEPS;
         let (right, down) = match delta {
             mouse::ScrollDelta::Lines { x, y } => (-x * line, -y * line),
             mouse::ScrollDelta::Pixels { x, y } => (-x, -y),
         };
         let zooming = self.modifiers.control();
+        if zooming && down != 0.0 && self.in_book() {
+            let action = if down < 0.0 {
+                Action::ZoomIn
+            } else {
+                Action::ZoomOut
+            };
+            return self.zoom_book(action);
+        }
         let Some(document) = self.document_mut() else {
-            return;
+            return Task::none();
         };
         if !zooming {
             document.reader.scroll_by(right, down);
@@ -2142,6 +2178,7 @@ impl App {
         } else if down > 0.0 {
             document.reader.zoom_out();
         }
+        Task::none()
     }
 
     /// Starts opening a document in a new tab, or in the tab in view if
@@ -2166,7 +2203,7 @@ impl App {
         tab.opening = Some((request, path.clone()));
         self.notice = Notice::Info(format!("opening {}", tilde(&path)));
         Task::perform(
-            backend::open(path.clone(), None, self.flow()),
+            backend::open(path.clone(), None, self.flow_for(&path)),
             move |result| Message::Opened(request, path, result),
         )
     }
@@ -2197,14 +2234,15 @@ impl App {
         let Fresh {
             mut recolor,
             mut trim,
+            columns,
         } = self.fresh;
         let mut returning = None;
         let mut notice = Notice::None;
         let laid_out = opened.flow.is_some();
+        reader.set_columns(columns);
         match self.starting_view(index, &path) {
             Some(Ok(Some(view))) => {
-                let view = reflow::refit(view, &reader, laid_out);
-                reader.restore(view);
+                let view = reflow::restore(&mut reader, view, laid_out);
                 recolor = view.recolor;
                 trim = view.trim;
                 // A trimmed view only makes sense once the margins are
@@ -3728,6 +3766,7 @@ fn move_view(document: &mut Document, action: Action, step: f32) {
         | Action::SearchPrevious
         | Action::ToggleTrim
         | Action::ToggleBars
+        | Action::ToggleColumns
         | Action::ToggleFullscreen => {}
     }
 }

@@ -62,6 +62,8 @@ pub struct View {
     /// view is moved to match. Nothing for views saved before this was
     /// kept.
     pub extent: f32,
+    /// How many pages sat side by side.
+    pub columns: usize,
 }
 
 /// Why the history could not be read or written.
@@ -127,6 +129,14 @@ impl History {
         if !has_extent {
             connection
                 .execute_batch("ALTER TABLE view ADD COLUMN extent REAL NOT NULL DEFAULT 0")?;
+        }
+        // Nor do those from before pages could sit side by side.
+        let has_columns = connection
+            .prepare("SELECT 1 FROM pragma_table_info('view') WHERE name = 'columns'")?
+            .exists([])?;
+        if !has_columns {
+            connection
+                .execute_batch("ALTER TABLE view ADD COLUMN columns INTEGER NOT NULL DEFAULT 1")?;
         }
         // Marks: a letter for a place. A small letter belongs to one
         // document; a capital belongs to all, and is in the table once.
@@ -255,7 +265,7 @@ impl History {
         let view = self
             .connection
             .query_row(
-                "SELECT x, y, zoom, fit, rotation, recolor, trim, extent FROM view WHERE path = ?1",
+                "SELECT x, y, zoom, fit, rotation, recolor, trim, extent, columns FROM view WHERE path = ?1",
                 params![path.to_string_lossy()],
                 |row| {
                     Ok(View {
@@ -267,6 +277,7 @@ impl History {
                         recolor: row.get(5)?,
                         trim: row.get(6)?,
                         extent: row.get(7)?,
+                        columns: usize::try_from(row.get::<_, u32>(8)?).unwrap_or(1),
                     })
                 },
             )
@@ -284,13 +295,15 @@ impl History {
     /// the Unix epoch.
     fn save_at(&self, path: &Path, view: View, left_at: i64) -> Result<(), Error> {
         self.connection.execute(
-            "INSERT INTO view (path, x, y, zoom, fit, rotation, recolor, trim, left_at, extent)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            "INSERT INTO view
+                (path, x, y, zoom, fit, rotation, recolor, trim, left_at, extent, columns)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
              ON CONFLICT (path) DO UPDATE SET
                 x = excluded.x, y = excluded.y, zoom = excluded.zoom,
                 fit = excluded.fit, rotation = excluded.rotation,
                 recolor = excluded.recolor, trim = excluded.trim,
-                left_at = excluded.left_at, extent = excluded.extent",
+                left_at = excluded.left_at, extent = excluded.extent,
+                columns = excluded.columns",
             params![
                 path.to_string_lossy(),
                 view.x,
@@ -302,6 +315,7 @@ impl History {
                 view.trim,
                 left_at,
                 view.extent,
+                u32::try_from(view.columns).unwrap_or(1),
             ],
         )?;
         Ok(())
@@ -446,6 +460,7 @@ mod tests {
         assert!(view.recolor);
         assert!(!view.trim);
         assert!(view.extent.abs() < f32::EPSILON);
+        assert_eq!(view.columns, 1);
         // Opening it a second time changes nothing.
         let history = History::with(history.connection).unwrap();
         assert!(history.load(Path::new("/tmp/old.pdf")).unwrap().is_some());
@@ -463,6 +478,7 @@ mod tests {
             recolor: false,
             trim: false,
             extent: 0.0,
+            columns: 1,
         };
         history.save_at(Path::new("/tmp/a.pdf"), view, 100).unwrap();
         history.save_at(Path::new("/tmp/b.pdf"), view, 300).unwrap();
@@ -498,6 +514,7 @@ mod tests {
             recolor: true,
             trim: true,
             extent: 4000.0,
+            columns: 2,
         };
         history.save(path, first).unwrap();
         assert_eq!(history.load(path).unwrap(), Some(first));

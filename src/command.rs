@@ -160,6 +160,8 @@ pub enum Setting {
     /// The size of type, in points, that books without pages of their
     /// own, as EPUB, are laid out in.
     FontSize(f32),
+    /// How many pages sit side by side, from 1 to 4.
+    Columns(usize),
 }
 
 /// Whether pages are recoloured for a dark background.
@@ -191,6 +193,8 @@ pub enum Error {
     UnknownTheme(String),
     #[error("`{0}` is not a positive number")]
     NotPositive(String),
+    #[error("`{0}` is not a number of columns from 1 to 4")]
+    NotColumns(String),
     #[error("`{0}` is not a size of type from 4 to 72")]
     NotFontSize(String),
     #[error("`{0}` is not two or more different lower-case letters or digits")]
@@ -251,8 +255,9 @@ pub fn canonical(name: &str) -> Option<&'static str> {
 }
 
 /// The names of the settings `:set` knows.
-pub const SETTINGS: [&str; 21] = [
+pub const SETTINGS: [&str; 22] = [
     "autosave",
+    "columns",
     "confirm-quit",
     "confirm-tab-close",
     "fontsize",
@@ -556,6 +561,10 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
         "strikeout-color" => Ok(Setting::StrikeOutColour(value.parse()?)),
         "squiggly-color" => Ok(Setting::SquigglyColour(value.parse()?)),
         "note-color" => Ok(Setting::NoteColour(value.parse()?)),
+        "columns" => match value.parse::<usize>() {
+            Ok(columns @ 1..=4) => Ok(Setting::Columns(columns)),
+            _ => Err(Error::NotColumns(value.to_owned())),
+        },
         "fontsize" => match value.parse::<f32>() {
             Ok(size) if (Flow::EM.0..=Flow::EM.1).contains(&size) => Ok(Setting::FontSize(size)),
             _ => Err(Error::NotFontSize(value.to_owned())),
@@ -743,6 +752,12 @@ mod tests {
             Err(Error::NotRecolor("maybe".into()))
         );
         assert_eq!(parse("set fontsize 3"), Err(Error::NotFontSize("3".into())));
+        assert_eq!(parse("set columns 0"), Err(Error::NotColumns("0".into())));
+        assert_eq!(parse("set columns 5"), Err(Error::NotColumns("5".into())));
+        assert_eq!(
+            parse("set columns 2"),
+            Ok(Some(Command::Set(Setting::Columns(2))))
+        );
         assert_eq!(
             parse("set fontsize big"),
             Err(Error::NotFontSize("big".into()))

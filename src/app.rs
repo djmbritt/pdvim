@@ -2129,7 +2129,9 @@ impl App {
             }
             Action::ToggleBars => self.bars.toggle(),
             Action::ToggleColumns => {
-                let columns = self.document().map_or(1, |document| document.reader.columns());
+                let columns = self
+                    .document()
+                    .map_or(1, |document| document.reader.columns());
                 return self.set_columns(if columns == 1 { 2 } else { 1 });
             }
             Action::ToggleFullscreen => return self.bars.toggle_fullscreen(),

@@ -7,8 +7,10 @@ license = "AGPL-3.0-or-later"
 repository = "https://github.com/djmbritt/pdvim"
 
 [dependencies]
+# Fonts installed on the system, for what documents lack: see src/fonts.rs.
+font-kit = "0.14"
 iced = { version = "0.14.0", features = ["canvas", "image"] }
-mupdf = { version = "0.8.0", default-features = false, features = ["base14-fonts", "system-fonts"] }
+mupdf = { version = "0.8.0", default-features = false, features = ["base14-fonts", "epub", "html", "cbz", "img", "xps", "svg"] }
 rusqlite = { version = "0.42", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2"

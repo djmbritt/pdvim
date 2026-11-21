@@ -16,6 +16,7 @@ use mupdf::{
     Colorspace, DestinationKind, Device, DisplayList, Document, Matrix, Pixmap, TextPageFlags,
 };
 
+use crate::fonts;
 use crate::layout::{PageSize, Rect, Rotation};
 use crate::num;
 use crate::recolor::{Palette, Rgb};
@@ -306,6 +307,42 @@ fn pdf_date(written: &str) -> String {
     date
 }
 
+/// The page a document without pages of its own, as an EPUB book, is laid
+/// out on: its size, and the size of its type, all in points.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Flow {
+    pub width: f32,
+    pub height: f32,
+    pub em: f32,
+}
+
+impl Flow {
+    /// The smallest page laid out on, in points either way.
+    const SMALLEST: f32 = 100.0;
+    /// The largest page laid out on, in points either way.
+    const LARGEST: f32 = 10_000.0;
+    /// The smallest and largest type, in points.
+    pub const EM: (f32, f32) = (4.0, 72.0);
+
+    /// A page of this size, kept within reason: a window not yet shown,
+    /// with no size, gets a page of a book's shape.
+    pub fn new(width: f32, height: f32, em: f32) -> Self {
+        let fit = |side: f32, otherwise: f32| {
+            if side.is_finite() && side >= Self::SMALLEST {
+                side.min(Self::LARGEST)
+            } else {
+                otherwise
+            }
+        };
+        let em = if em.is_finite() { em } else { 12.0 };
+        Self {
+            width: fit(width, 600.0),
+            height: fit(height, 800.0),
+            em: em.clamp(Self::EM.0, Self::EM.1),
+        }
+    }
+}
+
 /// A document that has just been opened.
 #[derive(Debug, Clone)]
 pub struct Opened {
@@ -316,6 +353,9 @@ pub struct Opened {
     /// The number printed on each page, as `xii` or `A-3`, when the
     /// document gives any that are not just the page's place.
     pub labels: Option<Vec<String>>,
+    /// The page it was laid out on, for a document without pages of its
+    /// own.
+    pub flow: Option<Flow>,
 }
 
 /// A request to the worker, with the channel to answer on.
@@ -658,19 +698,22 @@ impl Backend {
 }
 
 /// Opens a document on a new worker thread, unlocking it with the
-/// password if it is locked.
+/// password if it is locked, and laying it out on the page given if it has
+/// no pages of its own.
 pub fn open(
     path: PathBuf,
     password: Option<String>,
+    flow: Flow,
 ) -> impl Future<Output = Result<Opened, Error>> {
+    fonts::install();
     let (reply, answer) = oneshot::channel();
     let (requests, inbox) = mpsc::channel();
     let name = path.display().to_string();
     let spawned = thread::Builder::new()
         .name("pdvim-document".to_owned())
         .spawn(move || {
-            let document = match load(&path, password.as_deref()) {
-                Ok((document, sizes)) => {
+            let document = match load(&path, password.as_deref(), flow) {
+                Ok((document, sizes, flow)) => {
                     let backend = Backend { requests };
                     let info = Box::new(read_info(&document));
                     let labels = page_labels(&document);
@@ -680,6 +723,7 @@ pub fn open(
                             sizes,
                             info,
                             labels,
+                            flow,
                         }))
                         .is_err()
                     {
@@ -726,21 +770,37 @@ fn file_path(path: &Path) -> Result<&str, mupdf::Error> {
     path.to_str().ok_or(mupdf::Error::InvalidUtf8)
 }
 
-/// Opens the file, unlocking it with the password if it is locked, and
-/// measures every page.
-fn load(path: &Path, password: Option<&str>) -> Result<(Document, Vec<PageSize>), Error> {
+/// Opens the file, unlocking it with the password if it is locked, lays it
+/// out on the page given if it has no pages of its own, and measures every
+/// page.
+fn load(
+    path: &Path,
+    password: Option<&str>,
+    flow: Flow,
+) -> Result<(Document, Vec<PageSize>, Option<Flow>), Error> {
     let name = path.display().to_string();
     let failed = |error: mupdf::Error| Error::Open {
         path: name.clone(),
         reason: reason(&error, &name),
     };
-    let document = match unlocked(path, password).map_err(failed)? {
+    let mut document = match unlocked(path, password).map_err(failed)? {
         Unlocked::Open(document) => document,
         Unlocked::Locked => return Err(Error::Encrypted(name)),
         Unlocked::Wrong => return Err(Error::WrongPassword(name)),
     };
+    let flow = lay_out(&mut document, flow).map_err(failed)?;
     let sizes = page_sizes(&document).map_err(failed)?;
-    Ok((document, sizes))
+    Ok((document, sizes, flow))
+}
+
+/// Lays a document without pages of its own out on the page given, and
+/// says so; leaves any other as it is.
+fn lay_out(document: &mut Document, flow: Flow) -> Result<Option<Flow>, mupdf::Error> {
+    if !document.is_reflowable()? {
+        return Ok(None);
+    }
+    document.layout(flow.width, flow.height, flow.em)?;
+    Ok(Some(flow))
 }
 
 /// A document opened, or still locked.
@@ -808,20 +868,25 @@ fn page_sizes(document: &Document) -> Result<Vec<PageSize>, mupdf::Error> {
     Ok(sizes)
 }
 
-/// Opens bytes as a PDF and reads up to `pages` pages of it the way the
-/// worker reads an open document, for fuzzing. What fails is not reported:
-/// only a panic or a crash is a finding.
-pub fn examine(bytes: &[u8], pages: u32) {
-    let Ok(document) = Document::from_bytes(bytes, "application/pdf") else {
+/// Opens bytes as a document of the kind `magic` names, as
+/// `application/pdf` or `epub`, and reads up to `pages` pages of it the way
+/// the worker reads an open document, for fuzzing. What fails is not
+/// reported: only a panic or a crash is a finding.
+pub fn examine(bytes: &[u8], magic: &str, pages: u32) {
+    fonts::install();
+    let Ok(mut document) = Document::from_bytes(bytes, magic) else {
         return;
     };
     if document.needs_password().unwrap_or(true) {
         return;
     }
+    if lay_out(&mut document, Flow::new(400.0, 600.0, 12.0)).is_err() {
+        return;
+    }
     let Ok(sizes) = page_sizes(&document) else {
         return;
     };
-    let _ = outline(&document, || Document::from_bytes(bytes, "application/pdf"));
+    let _ = outline(&document, || Document::from_bytes(bytes, magic));
     for number in (0..num::len(sizes.len())).take(num::index(pages)) {
         // The fuzzer stops at the first panic, before an unwind could be
         // caught, so the panic the worker already guards against is let
@@ -1948,6 +2013,13 @@ fn page_number(page: u32) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    /// The page the tests lay books out on.
+    const FLOW: Flow = Flow {
+        width: 400.0,
+        height: 600.0,
+        em: 12.0,
+    };
+
     use super::*;
 
     /// A file for a test, removed when the test is done with it. Declared
@@ -1957,8 +2029,13 @@ mod tests {
 
     impl Scratch {
         fn new(name: &str, content: impl AsRef<[u8]>) -> Self {
-            let path =
-                std::env::temp_dir().join(format!("pdvim-{name}-{}.pdf", std::process::id()));
+            Self::of_kind(name, "pdf", content)
+        }
+
+        /// A file with the extension given, as `epub`.
+        fn of_kind(name: &str, extension: &str, content: impl AsRef<[u8]>) -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("pdvim-{name}-{}.{extension}", std::process::id()));
             std::fs::write(&path, content).unwrap();
             Self(path)
         }
@@ -2375,15 +2452,96 @@ mod tests {
     /// `secret` by AES-256.
     const LOCKED: &[u8] = include_bytes!("../fuzz/seeds/pdf/encrypted.pdf");
 
+    /// A file of the formats seeds, which start with a byte that picks the
+    /// format for the fuzzer, without that byte.
+    fn seed(bytes: &'static [u8]) -> &'static [u8] {
+        bytes.split_first().unwrap().1
+    }
+
+    const BOOK: &[u8] = include_bytes!("../fuzz/seeds/formats/book.epub");
+    const STORY: &[u8] = include_bytes!("../fuzz/seeds/formats/story.fb2");
+    const COMIC: &[u8] = include_bytes!("../fuzz/seeds/formats/comic.cbz");
+    const PAPER: &[u8] = include_bytes!("../fuzz/seeds/formats/paper.xps");
+    const DRAWING: &[u8] = include_bytes!("../fuzz/seeds/formats/drawing.svg");
+    const PNG: &[u8] = include_bytes!("../fuzz/seeds/formats/picture.png");
+    const JPEG: &[u8] = include_bytes!("../fuzz/seeds/formats/picture.jpg");
+
+    #[test]
+    fn books_comics_drawings_and_images_open() {
+        let kinds: [(&str, &[u8], usize, bool); 7] = [
+            ("epub", BOOK, 0, true),
+            ("fb2", STORY, 0, true),
+            ("cbz", COMIC, 3, false),
+            ("xps", PAPER, 2, false),
+            ("svg", DRAWING, 1, false),
+            ("png", PNG, 1, false),
+            ("jpg", JPEG, 1, false),
+        ];
+        for (extension, bytes, pages, reflowed) in kinds {
+            let file = Scratch::of_kind("format", extension, seed(bytes));
+            let (document, sizes, flow) = load(&file.0, None, FLOW).unwrap();
+            assert_eq!(flow.is_some(), reflowed, "{extension}");
+            if reflowed {
+                // Laid out on pages the size asked for, as many as it takes.
+                assert!(sizes.len() > 1, "{extension}");
+                assert!(
+                    sizes.iter().all(|size| size.width == FLOW.width),
+                    "{extension}"
+                );
+            } else {
+                assert_eq!(sizes.len(), pages, "{extension}");
+            }
+            assert!(record(&document, 0).is_ok(), "{extension}");
+            // Only a PDF takes markings, or can be saved.
+            assert!(editable(&document).is_err(), "{extension}");
+        }
+    }
+
+    #[test]
+    fn a_book_in_bigger_type_takes_more_pages() {
+        let file = Scratch::of_kind("book", "epub", seed(BOOK));
+        let (_, small, _) = load(&file.0, None, FLOW).unwrap();
+        let big = Flow { em: 24.0, ..FLOW };
+        let (document, large, flow) = load(&file.0, None, big).unwrap();
+        assert_eq!(flow, Some(big));
+        assert!(large.len() > small.len());
+        // Its table of contents and text are read as a PDF's are.
+        let chapters = outline(&document, || reopen(&file.0, None)).unwrap();
+        let titles: Vec<&str> = chapters
+            .iter()
+            .map(|chapter| chapter.title.as_str())
+            .collect();
+        assert_eq!(titles, ["Chapter 1", "Chapter 2"]);
+        let first: String = page_text(&document, 0).unwrap()[0]
+            .chars
+            .iter()
+            .map(|glyph| glyph.character)
+            .collect();
+        assert_eq!(first.trim(), "Chapter 1");
+    }
+
+    #[test]
+    fn a_page_for_a_book_is_kept_within_reason() {
+        let unshown = Flow::new(0.0, f32::NAN, 200.0);
+        assert!(unshown.width >= 100.0 && unshown.height >= 100.0);
+        assert!((unshown.em - Flow::EM.1).abs() < f32::EPSILON);
+        let window = Flow::new(800.0, 50_000.0, 12.0);
+        assert!((window.width - 800.0).abs() < f32::EPSILON);
+        assert!(window.height <= 10_000.0);
+    }
+
     #[test]
     fn a_locked_document_opens_only_with_its_password() {
         let file = Scratch::new("locked", LOCKED);
-        assert!(matches!(load(&file.0, None), Err(Error::Encrypted(_))));
         assert!(matches!(
-            load(&file.0, Some("guess")),
+            load(&file.0, None, FLOW),
+            Err(Error::Encrypted(_))
+        ));
+        assert!(matches!(
+            load(&file.0, Some("guess"), FLOW),
             Err(Error::WrongPassword(_))
         ));
-        let (document, sizes) = load(&file.0, Some("secret")).unwrap();
+        let (document, sizes, _) = load(&file.0, Some("secret"), FLOW).unwrap();
         assert_eq!(sizes.len(), 1);
         let text: String = page_text(&document, 0).unwrap()[0]
             .chars
@@ -2399,7 +2557,7 @@ mod tests {
     fn a_locked_document_stays_locked_when_marked_and_saved() {
         let file = Scratch::new("locked-saved", LOCKED);
         let copy = Scratch::new("locked-copy", b"");
-        let (document, _) = load(&file.0, Some("secret")).unwrap();
+        let (document, _, _) = load(&file.0, Some("secret"), FLOW).unwrap();
         let markup = Markup {
             kind: MarkupKind::Highlight,
             pages: vec![(
@@ -2418,8 +2576,8 @@ mod tests {
         save_to(&document, &file.0, None).unwrap();
         save_to(&document, &file.0, Some(&copy.0)).unwrap();
         for saved in [&file.0, &copy.0] {
-            assert!(matches!(load(saved, None), Err(Error::Encrypted(_))));
-            let (document, _) = load(saved, Some("secret")).unwrap();
+            assert!(matches!(load(saved, None, FLOW), Err(Error::Encrypted(_))));
+            let (document, _, _) = load(saved, Some("secret"), FLOW).unwrap();
             assert_eq!(page_markings(&document, 0).unwrap().len(), 1);
         }
     }
@@ -2551,7 +2709,7 @@ mod tests {
         damaged.truncate(at);
         damaged.extend_from_slice(b"startxref\n9\n%%EOF\n");
         let file = Scratch::new("damaged", &damaged);
-        let (document, _) = load(&file.0, None).unwrap();
+        let (document, _, _) = load(&file.0, None, FLOW).unwrap();
         let pdf = mupdf::pdf::PdfDocument::try_from(document.clone()).unwrap();
         assert!(!pdf.can_be_saved_incrementally());
         let markup = Markup {
@@ -2956,3 +3114,5 @@ mod tests {
         assert_eq!(content_box(&[255, 250, 244, 255], 4, 4), Some((2, 0, 3, 1)));
     }
 }
+
+

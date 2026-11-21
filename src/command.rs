@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use crate::backend::Flow;
 use crate::bindings::{Bound, Mode};
 use crate::input::{Binding, Key};
 use crate::keymap::{self, Bindable};
@@ -156,6 +157,9 @@ pub enum Setting {
     /// Whether the status bar shows while reading; off, it shows only
     /// while something is typed or said.
     StatusBar(bool),
+    /// The size of type, in points, that books without pages of their
+    /// own, as EPUB, are laid out in.
+    FontSize(f32),
 }
 
 /// Whether pages are recoloured for a dark background.
@@ -187,6 +191,8 @@ pub enum Error {
     UnknownTheme(String),
     #[error("`{0}` is not a positive number")]
     NotPositive(String),
+    #[error("`{0}` is not a size of type from 4 to 72")]
+    NotFontSize(String),
     #[error("`{0}` is not two or more different lower-case letters or digits")]
     NotHintChars(String),
     #[error("commands can only be bound to keys in normal mode")]
@@ -245,10 +251,11 @@ pub fn canonical(name: &str) -> Option<&'static str> {
 }
 
 /// The names of the settings `:set` knows.
-pub const SETTINGS: [&str; 20] = [
+pub const SETTINGS: [&str; 21] = [
     "autosave",
     "confirm-quit",
     "confirm-tab-close",
+    "fontsize",
     "highlight-color",
     "hintchars",
     "incsearch",
@@ -549,6 +556,10 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
         "strikeout-color" => Ok(Setting::StrikeOutColour(value.parse()?)),
         "squiggly-color" => Ok(Setting::SquigglyColour(value.parse()?)),
         "note-color" => Ok(Setting::NoteColour(value.parse()?)),
+        "fontsize" => match value.parse::<f32>() {
+            Ok(size) if (Flow::EM.0..=Flow::EM.1).contains(&size) => Ok(Setting::FontSize(size)),
+            _ => Err(Error::NotFontSize(value.to_owned())),
+        },
         "scroll-step" => match value.parse::<f32>() {
             Ok(step) if step.is_finite() && step > 0.0 => Ok(Setting::ScrollStep(step)),
             _ => Err(Error::NotPositive(value.to_owned())),
@@ -695,6 +706,10 @@ mod tests {
             parse("set scroll-step 60"),
             Ok(Some(Command::Set(Setting::ScrollStep(60.0))))
         );
+        assert_eq!(
+            parse("set fontsize 14.5"),
+            Ok(Some(Command::Set(Setting::FontSize(14.5))))
+        );
     }
 
     #[test]
@@ -726,6 +741,11 @@ mod tests {
         assert_eq!(
             parse("set recolor maybe"),
             Err(Error::NotRecolor("maybe".into()))
+        );
+        assert_eq!(parse("set fontsize 3"), Err(Error::NotFontSize("3".into())));
+        assert_eq!(
+            parse("set fontsize big"),
+            Err(Error::NotFontSize("big".into()))
         );
         assert_eq!(
             parse("set scroll-step -3"),

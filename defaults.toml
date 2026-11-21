@@ -42,6 +42,10 @@ recolor-darkcolor = "theme"
 # How far one press of `j` or `k` scrolls, in pixels.
 scroll-step = 40
 
+# The size of type, in points, that books without pages of their own (EPUB,
+# FB2) are laid out in, on pages the size of the window. From 4 to 72.
+fontsize = 12
+
 # Ask "quit pdvim? (y/n)" before quitting: when the last tab is closed,
 # with :qa, or when the window is closed. Press y to quit, any other key to
 # stay. Closing the window again while asked quits without asking.

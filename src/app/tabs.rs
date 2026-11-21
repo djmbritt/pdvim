@@ -58,9 +58,10 @@ impl App {
         self.current = index;
         self.arriving = Some((path.clone(), place));
         self.notice = Notice::Info(format!("opening {}", tilde(&path)));
-        Task::perform(backend::open(path.clone(), None), move |result| {
-            Message::Opened(request, path, result)
-        })
+        Task::perform(
+            backend::open(path.clone(), None, self.flow()),
+            move |result| Message::Opened(request, path, result),
+        )
     }
 
     /// Lists the open tabs, each with its number, name and file, the one in

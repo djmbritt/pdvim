@@ -23,6 +23,7 @@ mod complete;
 mod config;
 mod dirs;
 mod flash;
+mod fonts;
 #[doc(hidden)]
 pub mod fuzz;
 mod help;

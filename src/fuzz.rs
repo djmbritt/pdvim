@@ -523,6 +523,7 @@ pub fn reader(data: &[u8]) {
                     rotation,
                     recolor: false,
                     trim: false,
+                    extent: f32::from(bytes.byte()) * 1000.0,
                 });
             }
         }
@@ -558,7 +559,24 @@ fn check_reader(reader: &Reader, count: usize) {
 /// their sizes, links, text, matches, margins and pixels, and the table of
 /// contents.
 pub fn pdf(data: &[u8]) {
-    backend::examine(data, PAGES);
+    backend::examine(data, "application/pdf", PAGES);
+}
+
+/// The kinds of document besides PDF that MuPDF opens, as it names them.
+const FORMATS: [&str; 10] = [
+    "epub", "fb2", "cbz", "xps", "svg", "html", "png", "jpg", "gif", "tif",
+];
+
+/// Opens the bytes after the first as a document of the kind the first
+/// picks, an EPUB book, a comic, an image and so on, and reads the first
+/// pages as [`pdf`] does.
+pub fn formats(data: &[u8]) {
+    let Some((first, bytes)) = data.split_first() else {
+        return;
+    };
+    if let Some(kind) = FORMATS.iter().cycle().nth(usize::from(*first)) {
+        backend::examine(bytes, kind, PAGES);
+    }
 }
 
 #[cfg(test)]
@@ -577,6 +595,7 @@ mod tests {
             modes(data);
             reader(data);
             pdf(data);
+            formats(data);
         }
     }
 

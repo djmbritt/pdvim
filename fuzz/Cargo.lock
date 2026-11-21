@@ -2276,7 +2276,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "185fb74927a40c569b7152c01c73f4c0206059b8b3d37c7eb007cc3f63453b64"
 dependencies = [
  "bitflags 2.13.2",
- "font-kit",
  "mupdf-sys",
  "once_cell",
  "percent-encoding",
@@ -2944,6 +2943,7 @@ dependencies = [
 name = "pdvim"
 version = "0.1.14"
 dependencies = [
+ "font-kit",
  "iced",
  "mupdf",
  "rusqlite",

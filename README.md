@@ -1,6 +1,6 @@
 # pdvim
 
-A minimal, keyboard-driven PDF reader with vi key bindings.
+A minimal, keyboard-driven PDF reader with vi key bindings. It also reads EPUB and FB2 books, CBZ comics, XPS documents, SVG drawings and images.
 
 pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.rs/) to draw the window. Pages are laid out in one continuous column. It also remembers where you stopped reading each document.
 
@@ -30,6 +30,7 @@ pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.r
 - Chapter by chapter with `]]` / `[[`, and the printed page numbers (`xii`, `A-3`) in the status bar and `:goto`
 - The mode always named at the left of the status bar, in a color for its kind, as vim status lines do
 - Password-protected PDFs, and `:info` for the title, author and dates
+- EPUB and FB2 books, laid out on pages the size of the window in the type size you set, and laid out again when the window changes; CBZ and CBT comics, XPS documents, SVG drawings, and PNG, JPEG, GIF, TIFF, BMP and other images
 
 ## Screenshots
 
@@ -83,6 +84,16 @@ pdvim --version
 Each file opens in a tab of its own. If you start pdvim without a file, it shows the documents you read most recently. Pick one, or open another file with `:open`.
 
 `:open` and the recent list put each document in a new tab, unless the tab in view is empty. A document that is already open in a tab is brought into view instead.
+
+### Books, comics and images
+
+Besides PDF, pdvim opens EPUB and FB2 books, CBZ and CBT comics, XPS and OpenXPS documents, SVG drawings, and images: PNG, JPEG, GIF, BMP, TIFF, JPEG 2000, JPEG XR, PSD and the PNM family. Completion after `:open` offers all of these.
+
+A book has no pages of its own, so pdvim lays it out on pages the size of the window, in type of the size `:set fontsize` gives (12 points by default). When the window changes size, or the type does, the book is laid out again, and you stay at the same place in it, measured as a share of the whole book. The book in view stays on screen while it is laid out. Your place is remembered the same way between sessions, so a book left in a small window opens at the same passage in a big one. Marks and the jump list point at pages, so they can land a little off after the book is laid out again.
+
+Characters a document's own fonts lack are drawn from the fonts installed on your system, Chinese, Japanese and Korean included (from Noto CJK, Source Han and the like, when installed).
+
+Searching, copying, following links, the table of contents and visual mode work in every format that has text. Highlights, notes, forms and `:w` are for PDF only: marking another format says so.
 
 ## Keys
 
@@ -295,6 +306,7 @@ The box at the left of the status bar always names the mode, which says what the
 | `:set theme-dark {name}`               | Set the theme followed while the system is dark                      |
 | `:set theme-light {name}`              | Set the theme followed while the system is light                     |
 | `:set scroll-step {pixels}`            | Set how far one `j` or `k` scrolls                                   |
+| `:set fontsize {points}`               | Set the type size books (EPUB, FB2) are laid out in (default 12)     |
 | `:set hintchars {letters}`             | Set the letters labels are made of (default `asdfghjkl`)             |
 | `:set incsearch [true\|false]`         | Highlight the matches in view while a search is typed (default on)   |
 | `:set tabbar [true\|false]`            | Show the tab bar when more than one tab is open (default on)         |
@@ -491,7 +503,7 @@ pdvim saves where you left each document in `$XDG_DATA_HOME/pdvim/history.sqlite
 
 ## Fuzzing
 
-`fuzz/` holds [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) targets for the parts of pdvim that read input it does not control: PDF files, the configuration file, `:` commands, key names and key presses. See [fuzz/README.md](fuzz/README.md).
+`fuzz/` holds [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) targets for the parts of pdvim that read input it does not control: PDF files and the other formats MuPDF opens, the configuration file, `:` commands, key names and key presses. See [fuzz/README.md](fuzz/README.md).
 
 ```sh
 cargo install cargo-fuzz

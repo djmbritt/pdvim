@@ -46,6 +46,7 @@ mod info;
 mod links;
 mod markings;
 mod mode;
+mod reflow;
 mod tabs;
 mod unlock;
 
@@ -255,6 +256,8 @@ struct Document {
     fields: Option<Vec<(Rect, backend::Field)>>,
     /// The field last gone to, to go back to.
     last_field: Option<Annotation>,
+    /// The page it was laid out on, for a book without pages of its own.
+    flow: Option<backend::Flow>,
     /// The lines of text on each page read so far.
     text: visual::Text,
     /// The pages whose text is being read right now.
@@ -490,6 +493,8 @@ pub struct App {
     markup_colours: MarkupColours,
     /// How far one press of `j` scrolls, in logical pixels.
     scroll_step: f32,
+    /// The size of type books are laid out in, in points.
+    font_size: f32,
     /// How a document with no view in the history starts.
     fresh: Fresh,
     /// When to ask, and when to save.
@@ -604,6 +609,7 @@ impl App {
             theme_light: theme::Theme::PdvimLight,
             markup_colours: MarkupColours::default(),
             scroll_step: 40.0,
+            font_size: 12.0,
             fresh: Fresh::default(),
             care: Care::default(),
             bars: bars::Bars::default(),
@@ -742,9 +748,10 @@ impl App {
                     document.reader.set_window((area.width, area.height));
                 }
                 // The window may have moved to a display with another scale.
-                window::latest()
+                let scale = window::latest()
                     .and_then(window::scale_factor)
-                    .map(Message::Scaled)
+                    .map(Message::Scaled);
+                Task::batch([scale, self.reflow()])
             }
             Message::Pasted(text) => {
                 self.paste(text.as_deref().unwrap_or_default());
@@ -2037,6 +2044,10 @@ impl App {
             Setting::SquigglyColour(colour) => self.markup_colours.squiggly = colour,
             Setting::NoteColour(colour) => self.markup_colours.note = colour,
             Setting::ScrollStep(step) => self.scroll_step = step,
+            Setting::FontSize(size) => {
+                self.font_size = size;
+                return self.reflow();
+            }
             Setting::ConfirmQuit(confirm) => self.care.confirm_quit = confirm,
             Setting::Autosave(autosave) => self.care.autosave = autosave,
             Setting::ConfirmTabClose(confirm) => self.care.confirm_tab_close = confirm,
@@ -2154,9 +2165,10 @@ impl App {
         };
         tab.opening = Some((request, path.clone()));
         self.notice = Notice::Info(format!("opening {}", tilde(&path)));
-        Task::perform(backend::open(path.clone(), None), move |result| {
-            Message::Opened(request, path, result)
-        })
+        Task::perform(
+            backend::open(path.clone(), None, self.flow()),
+            move |result| Message::Opened(request, path, result),
+        )
     }
 
     /// Puts a document that finished opening in the tab that asked for it.
@@ -2188,8 +2200,10 @@ impl App {
         } = self.fresh;
         let mut returning = None;
         let mut notice = Notice::None;
-        match self.history.as_ref().map(|history| history.load(&path)) {
+        let laid_out = opened.flow.is_some();
+        match self.starting_view(index, &path) {
             Some(Ok(Some(view))) => {
+                let view = reflow::refit(view, &reader, laid_out);
                 reader.restore(view);
                 recolor = view.recolor;
                 trim = view.trim;
@@ -2228,6 +2242,7 @@ impl App {
             backend: opened.backend,
             info: opened.info,
             labels: opened.labels,
+            flow: opened.flow,
             reader,
             recolor,
             trim: false,
@@ -2263,11 +2278,13 @@ impl App {
         if let Some(left) = &left {
             self.remember(left);
         }
-        if trim {
+        let trimming = if trim {
             self.set_trim(index, true)
         } else {
             Task::none()
-        }
+        };
+        // The window may have changed size while it was laid out.
+        Task::batch([trimming, self.reflow()])
     }
 
     /// Hides or shows the blank margins of every page. The margins are

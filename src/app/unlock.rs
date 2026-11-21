@@ -50,7 +50,7 @@ impl App {
             return Task::none();
         };
         self.notice = Notice::Info(format!("opening {}", tilde(&path)));
-        let opening = backend::open(path.clone(), Some(password));
+        let opening = backend::open(path.clone(), Some(password), self.flow());
         // The next locked document is asked about meanwhile; this one comes
         // back to the end of the line if the password is wrong.
         self.prompt_for_password();

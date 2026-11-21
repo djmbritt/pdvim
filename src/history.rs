@@ -57,6 +57,11 @@ pub struct View {
     pub recolor: bool,
     /// Whether the margins are trimmed.
     pub trim: bool,
+    /// How tall the document was, in points: a book laid out on the window
+    /// comes out taller or shorter in a window of another size, and the
+    /// view is moved to match. Nothing for views saved before this was
+    /// kept.
+    pub extent: f32,
 }
 
 /// Why the history could not be read or written.
@@ -114,6 +119,14 @@ impl History {
         if !has_left {
             connection
                 .execute_batch("ALTER TABLE view ADD COLUMN left_at INTEGER NOT NULL DEFAULT 0")?;
+        }
+        // Nor do those from before books were laid out on the window.
+        let has_extent = connection
+            .prepare("SELECT 1 FROM pragma_table_info('view') WHERE name = 'extent'")?
+            .exists([])?;
+        if !has_extent {
+            connection
+                .execute_batch("ALTER TABLE view ADD COLUMN extent REAL NOT NULL DEFAULT 0")?;
         }
         // Marks: a letter for a place. A small letter belongs to one
         // document; a capital belongs to all, and is in the table once.
@@ -242,7 +255,7 @@ impl History {
         let view = self
             .connection
             .query_row(
-                "SELECT x, y, zoom, fit, rotation, recolor, trim FROM view WHERE path = ?1",
+                "SELECT x, y, zoom, fit, rotation, recolor, trim, extent FROM view WHERE path = ?1",
                 params![path.to_string_lossy()],
                 |row| {
                     Ok(View {
@@ -253,6 +266,7 @@ impl History {
                         rotation: Rotation::from_quarters(row.get(4)?),
                         recolor: row.get(5)?,
                         trim: row.get(6)?,
+                        extent: row.get(7)?,
                     })
                 },
             )
@@ -270,13 +284,13 @@ impl History {
     /// the Unix epoch.
     fn save_at(&self, path: &Path, view: View, left_at: i64) -> Result<(), Error> {
         self.connection.execute(
-            "INSERT INTO view (path, x, y, zoom, fit, rotation, recolor, trim, left_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            "INSERT INTO view (path, x, y, zoom, fit, rotation, recolor, trim, left_at, extent)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT (path) DO UPDATE SET
                 x = excluded.x, y = excluded.y, zoom = excluded.zoom,
                 fit = excluded.fit, rotation = excluded.rotation,
                 recolor = excluded.recolor, trim = excluded.trim,
-                left_at = excluded.left_at",
+                left_at = excluded.left_at, extent = excluded.extent",
             params![
                 path.to_string_lossy(),
                 view.x,
@@ -287,6 +301,7 @@ impl History {
                 view.recolor,
                 view.trim,
                 left_at,
+                view.extent,
             ],
         )?;
         Ok(())
@@ -430,6 +445,7 @@ mod tests {
         let view = history.load(Path::new("/tmp/old.pdf")).unwrap().unwrap();
         assert!(view.recolor);
         assert!(!view.trim);
+        assert!(view.extent.abs() < f32::EPSILON);
         // Opening it a second time changes nothing.
         let history = History::with(history.connection).unwrap();
         assert!(history.load(Path::new("/tmp/old.pdf")).unwrap().is_some());
@@ -446,6 +462,7 @@ mod tests {
             rotation: Rotation::None,
             recolor: false,
             trim: false,
+            extent: 0.0,
         };
         history.save_at(Path::new("/tmp/a.pdf"), view, 100).unwrap();
         history.save_at(Path::new("/tmp/b.pdf"), view, 300).unwrap();
@@ -480,6 +497,7 @@ mod tests {
             rotation: Rotation::Quarter,
             recolor: true,
             trim: true,
+            extent: 4000.0,
         };
         history.save(path, first).unwrap();
         assert_eq!(history.load(path).unwrap(), Some(first));

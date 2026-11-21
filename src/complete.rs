@@ -11,9 +11,13 @@ use crate::input::Binding;
 use crate::keymap::Bindable;
 use crate::theme::Theme;
 
-/// The kinds of file offered after `open`: the documents pdvim reads. MuPDF
-/// is built with PDF only, so other kinds would not open.
-const DOCUMENTS: [&str; 1] = ["pdf"];
+/// The kinds of file offered after `open`: the documents pdvim reads, as
+/// MuPDF is built for it: PDF, EPUB and FB2 books, comic book
+/// archives, XPS documents, SVG drawings and images.
+const DOCUMENTS: [&str; 25] = [
+    "pdf", "epub", "fb2", "cbz", "cbt", "xps", "oxps", "svg", "bmp", "gif", "j2k", "jfif", "jp2",
+    "jpeg", "jpg", "jpx", "jxr", "pbm", "pgm", "png", "pnm", "ppm", "psd", "tif", "tiff",
+];
 
 /// One way the word being typed could end.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -349,7 +353,7 @@ mod tests {
             .iter()
             .map(|candidate| candidate.label.as_str())
             .collect();
-        assert_eq!(labels, ["Book.PDF", "paper one.pdf", "Papers/"]);
+        assert_eq!(labels, ["Book.PDF", "paper one.pdf", "Papers/", "story.epub"]);
         assert!(
             completion
                 .candidates

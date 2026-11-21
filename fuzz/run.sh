@@ -19,6 +19,10 @@ run() {
     set -- -max_total_time="$seconds" -timeout=10 "$@"
     case $target in
         pdf) set -- "$@" -dict=dicts/pdf.dict -rss_limit_mb=4096 ;;
+        # MuPDF leaks a little reading a damaged comic page (cbz_load_page
+        # keeps its buffer in a variable not marked fz_var), which would
+        # stop every run.
+        formats) set -- "$@" -rss_limit_mb=4096 -detect_leaks=0 ;;
         config) set -- "$@" -dict=dicts/config.dict ;;
     esac
     cargo +nightly fuzz run "$target" "corpus/$target" "seeds/$target" -- "$@"

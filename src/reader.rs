@@ -95,11 +95,18 @@ impl Reader {
         self.refit(Anchor::Top);
     }
 
+    /// How tall the whole document is, turned as it is, in points, with
+    /// its margins left on.
+    pub fn extent(&self) -> f32 {
+        Layout::new(&self.sizes, self.rotation).height()
+    }
+
     /// The view as it is now, for the history. `recolor` is not the
     /// reader's to know, so the caller passes it through.
-    pub const fn view(&self, recolor: bool) -> View {
+    pub fn view(&self, recolor: bool) -> View {
         let trim = self.crops.is_some();
         View {
+            extent: self.extent(),
             x: self.x,
             y: self.y,
             zoom: self.zoom,

@@ -6,7 +6,9 @@ use std::path::PathBuf;
 
 use iced::Task;
 
-use super::{App, Message, Notice, info, tilde};
+use super::{App, Message, Notice, Tab, info, tilde};
+use crate::backend;
+use crate::reader::Place;
 use crate::command::TabPlace;
 use crate::picker::{Choice, Entry, Picker};
 
@@ -14,36 +16,51 @@ use crate::picker::{Choice, Entry, Picker};
 const CLOSED_KEPT: usize = 20;
 
 impl App {
-    /// Remembers a tab being closed, by its place and its document's file,
-    /// to open again.
-    pub(super) fn closing(&mut self, index: usize, path: PathBuf) {
-        self.closed.push((index, path));
+    /// Remembers a tab being closed, by its place, its document's file
+    /// and where it was in the document, to open again.
+    pub(super) fn closing(&mut self, index: usize, path: PathBuf, place: Place) {
+        self.closed.push((index, path, place));
         let over = self.closed.len().saturating_sub(CLOSED_KEPT);
         self.closed.drain(..over);
     }
 
     /// Opens the tabs closed last again, the last first, each in the place
-    /// it had. Each comes back where it was left, as the history says.
+    /// it had and where it was left in its document; in a tab of its own
+    /// even when the document is open in another.
     pub(super) fn reopen_tabs(&mut self, times: u32) -> Task<Message> {
         let mut tasks = Vec::new();
         for _ in 0..times {
-            let Some((index, path)) = self.closed.pop() else {
+            let Some((index, path, place)) = self.closed.pop() else {
                 if tasks.is_empty() {
                     self.notice = Notice::Error("no closed tabs to open again".to_owned());
                 }
                 break;
             };
-            if !path.is_file() {
-                continue;
-            }
-            // A document open again since only comes into view.
-            let open = self.tabs.iter().any(|tab| tab.holds(&path));
-            tasks.push(self.open_in_tab(path));
-            if !open {
-                self.move_tab(TabPlace::At(index));
+            if path.is_file() {
+                tasks.push(self.open_new_tab(path, index, place));
             }
         }
         Task::batch(tasks)
+    }
+
+    /// Opens a document in a new tab at a place among the tabs, and goes
+    /// to a place in it, whether or not it is open in another tab already.
+    pub(super) fn open_new_tab(&mut self, path: PathBuf, index: usize, place: Place) -> Task<Message> {
+        let request = self.next_id();
+        let index = index.min(self.tabs.len());
+        self.tabs.insert(
+            index,
+            Tab {
+                document: None,
+                opening: Some((request, path.clone())),
+            },
+        );
+        self.current = index;
+        self.arriving = Some((path.clone(), place));
+        self.notice = Notice::Info(format!("opening {}", tilde(&path)));
+        Task::perform(backend::open(path.clone(), None), move |result| {
+            Message::Opened(request, path, result)
+        })
     }
 
     /// Lists the open tabs, each with its number, name and file, the one in
@@ -138,7 +155,8 @@ impl App {
                 self.tabs.push(tab);
             } else if let Some(document) = tab.document {
                 self.remember(&document);
-                self.closing(index, document.path);
+                let place = document.reader.place();
+                self.closing(index, document.path, place);
             }
         }
         self.current = 0;

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use iced::Task;
 
-use super::{App, Labelled, Message, Notice, Tab, document_by_id, open_externally, tilde};
+use super::{App, Labelled, Message, Notice, document_by_id, open_externally, tilde};
 use crate::backend::{self, Link, Target, TextLine};
 use crate::hints::{Hints, Outcome};
 use crate::input::LinkGoal;
@@ -222,21 +222,14 @@ impl App {
         let down = top
             .filter(|_| height > 0.0)
             .map_or(0.0, |top| top / height);
-        let request = self.next_id();
-        let place = self.current.saturating_add(1).min(self.tabs.len());
-        self.tabs.insert(
-            place,
-            Tab {
-                document: None,
-                opening: Some((request, path.clone())),
-            },
-        );
-        self.current = place;
-        self.arriving = Some((path.clone(), Place { page, down }));
-        self.notice = Notice::Info(format!("opening {} at page {}", tilde(&path), page.saturating_add(1)));
-        Task::perform(backend::open(path.clone(), None), move |result| {
-            Message::Opened(request, path, result)
-        })
+        let beside = self.current.saturating_add(1);
+        let task = self.open_new_tab(path.clone(), beside, Place { page, down });
+        self.notice = Notice::Info(format!(
+            "opening {} at page {}",
+            tilde(&path),
+            page.saturating_add(1)
+        ));
+        task
     }
 }
 

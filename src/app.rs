@@ -526,9 +526,9 @@ pub struct App {
     preview: Option<incsearch::Preview>,
     /// The last command line run, typed or bound to keys, for `.`.
     last_line: Option<String>,
-    /// The tabs closed, the last closed last: each one's place and its
-    /// document's file, to open again.
-    closed: Vec<(usize, PathBuf)>,
+    /// The tabs closed, the last closed last: each one's place, its
+    /// document's file, and where it was in the document, to open again.
+    closed: Vec<(usize, PathBuf, Place)>,
     /// Whether a configuration is being read, when settings for documents
     /// only set what new ones start with.
     sourcing: bool,
@@ -2566,7 +2566,8 @@ impl App {
             .and_then(|tab| tab.document.take())
         {
             self.remember(&document);
-            self.closing(self.current, document.path);
+            let place = document.reader.place();
+            self.closing(self.current, document.path, place);
         }
         self.remove_tab(self.current);
         Task::none()

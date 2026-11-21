@@ -263,10 +263,12 @@ note-color = "#fdd835"
 "U" = "reopen-tab"
 
 # Copy the path of the document's file, its title, or the text of the page
-# in view
+# in view; or label the pictures and figures in view, to copy one as a
+# picture
 "y y" = "yank-path"
 "y t" = "yank-title"
 "y p" = "yank-page"
+"y i" = "yank-picture"
 
 # What the document says about itself: title, author, dates and more
 "ctrl+g" = "info"

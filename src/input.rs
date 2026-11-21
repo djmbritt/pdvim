@@ -81,6 +81,8 @@ pub enum LinkGoal {
     NewTab,
     /// Copy where it goes.
     Copy,
+    /// Copy a picture or figure, labelled instead of the links.
+    Picture,
 }
 
 /// What to copy about the document in view.
@@ -317,6 +319,7 @@ bindable! {
         YankPath = "yank-path", "Copy the path of the document's file";
         YankTitle = "yank-title", "Copy the document's title, or its file's name";
         YankPage = "yank-page", "Copy the text of the page in view";
+        YankPicture = "yank-picture", "Label the pictures and figures in view; type a label to copy one";
         /// Like `:info`.
         Info = "info", "Show the document's title, author, dates and more";
         Abort = "abort", "Cancel a half-typed command, hide highlights";
@@ -395,6 +398,7 @@ impl Binding {
             Self::FollowLink => Action::FollowLink(LinkGoal::Follow),
             Self::FollowLinkTab => Action::FollowLink(LinkGoal::NewTab),
             Self::YankLink => Action::FollowLink(LinkGoal::Copy),
+            Self::YankPicture => Action::FollowLink(LinkGoal::Picture),
             Self::Visual => Action::Visual { lines: false },
             Self::VisualLine => Action::Visual { lines: true },
             Self::Flash => Action::Flash,

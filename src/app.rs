@@ -161,6 +161,11 @@ pub enum Message {
     /// The text on some pages of the document with this number was read,
     /// or could not be.
     TextFound(u64, Vec<u32>, Result<backend::PageText, backend::Error>),
+    /// The pictures and figures on some pages of the document with this
+    /// number were found, or could not be.
+    FiguresFound(u64, Result<backend::PageFigures, backend::Error>),
+    /// A picture was copied to the clipboard, or could not be.
+    PictureCopied(Result<(), String>),
     /// A page was written to this file, or could not be.
     Exported(PathBuf, Result<(), backend::Error>),
     /// A command run with `:!`, as typed, finished, or could not be run.
@@ -256,6 +261,8 @@ struct Document {
     chapters: Option<Vec<backend::Chapter>>,
     /// The links on each page whose links have been asked for.
     links: HashMap<u32, Vec<Link>>,
+    /// The pictures and figures on the pages looked at so far.
+    figures: HashMap<u32, Vec<Rect>>,
     /// The fields of its forms, in reading order, once found.
     fields: Option<Vec<(Rect, backend::Field)>>,
     /// The field last gone to, to go back to.
@@ -845,6 +852,8 @@ impl App {
                 self.on_links(id, result);
                 Task::none()
             }
+            Message::FiguresFound(id, result) => self.on_figures(id, result),
+            Message::PictureCopied(result) => self.on_picture_copied(result),
             Message::Measured(id, result) => {
                 self.on_measured(id, result);
                 Task::none()
@@ -2332,6 +2341,7 @@ impl App {
             results: Results::default(),
             chapters: None,
             links: HashMap::new(),
+            figures: HashMap::new(),
             fields: None,
             last_field: None,
             text: HashMap::new(),
@@ -2983,7 +2993,7 @@ impl App {
                 let verb = match self.link_goal {
                     LinkGoal::Follow => "follow",
                     LinkGoal::NewTab => "open in a new tab",
-                    LinkGoal::Copy => "copy",
+                    LinkGoal::Copy | LinkGoal::Picture => "copy",
                 };
                 let typed = hints.typed().map(String::from).unwrap_or_default();
                 let filter = hints
@@ -3087,6 +3097,8 @@ enum TextFor {
 enum Labelled {
     Link(Link),
     Marking(Marking),
+    /// A picture or figure: its area on the unturned page.
+    Picture(Rect),
 }
 
 /// Completes the word at the end of a command line. The first press
@@ -3633,19 +3645,21 @@ impl canvas::Program<Message> for Marks<'_> {
         }
         if let Some(hints) = &self.0.hints {
             for hint in hints.shown() {
-                let link = match &hint.item {
-                    Labelled::Link(link) => link,
+                let labelled = match &hint.item {
+                    Labelled::Link(link) => link.area,
+                    Labelled::Picture(area) => *area,
                     Labelled::Marking(marking) => {
                         markings::draw_marking_label(&mut frame, document, hint.label, marking);
                         continue;
                     }
                 };
-                let Some(area) = document.reader.area_on_screen(hint.page, link.area) else {
+                let Some(area) = document.reader.area_on_screen(hint.page, labelled) else {
                     continue;
                 };
                 let area = rectangle(area);
                 frame.fill_rectangle(area.position(), area.size(), LINK);
-                // The label sits on the link's top-left corner.
+                // The label sits on the top-left corner of the link, or of
+                // the picture.
                 draw_label(&mut frame, hint.label, Point::new(area.x, area.y));
             }
         }

@@ -120,6 +120,7 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
                 B::YankPath,
                 B::YankTitle,
                 B::YankPage,
+                B::YankPicture,
                 B::Abort,
                 B::Quit,
             ],

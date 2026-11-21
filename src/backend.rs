@@ -230,6 +230,10 @@ pub type PageText = Vec<(u32, Vec<TextLine>)>;
 /// The links on some pages, each page, counted from 0, with its links.
 pub type PageLinks = Vec<(u32, Vec<Link>)>;
 
+/// The pictures and figures on some pages, each page, counted from 0, with
+/// the area of each on the unturned page, in points.
+pub type PageFigures = Vec<(u32, Vec<Rect>)>;
+
 /// What a document says about itself. Fields it leaves empty are none.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Info {
@@ -410,6 +414,7 @@ enum Request {
     Search(String, Option<Vec<u32>>, oneshot::Sender<Result<Vec<Hit>, Error>>),
     Measure(oneshot::Sender<Result<Vec<Rect>, Error>>),
     Links(Vec<u32>, oneshot::Sender<Result<PageLinks, Error>>),
+    Figures(Vec<u32>, oneshot::Sender<Result<PageFigures, Error>>),
     Text(Vec<u32>, oneshot::Sender<Result<PageText, Error>>),
     Markup(Markup, oneshot::Sender<Result<Vec<Annotation>, Error>>),
     Remove(
@@ -629,6 +634,16 @@ impl Backend {
     }
 
     /// Finds the links on some pages, each page with its links.
+    /// Finds the pictures and figures on some pages.
+    pub fn figures(
+        &self,
+        pages: Vec<u32>,
+    ) -> impl Future<Output = Result<PageFigures, Error>> + use<> {
+        let (reply, answer) = oneshot::channel();
+        let _ = self.requests.send(Request::Figures(pages, reply));
+        async move { answer.await.unwrap_or(Err(Error::Closed)) }
+    }
+
     pub fn links(&self, pages: Vec<u32>) -> impl Future<Output = Result<PageLinks, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
         let _ = self.requests.send(Request::Links(pages, reply));
@@ -1766,6 +1781,211 @@ fn export_page(document: &Document, export: &Export) -> Result<(), Error> {
     std::io::Write::write_all(&mut file, &bytes).map_err(|error| failed(&error))
 }
 
+/// The pictures and figures on a page: each picture, and each drawing
+/// made of lines and shapes, such as a chart or a table, with any picture
+/// in it, measured from the corner of the page. The page is drawn to a
+/// device that only notes where each picture and shape lands; MuPDF's own
+/// reading of the page leaves out the shapes that are only outlined.
+fn page_figures(document: &Document, number: u32) -> Result<Vec<Rect>, mupdf::Error> {
+    let page = document.load_page(page_number(number))?;
+    let bounds = page.bounds()?;
+    let found = std::rc::Rc::new(std::cell::RefCell::new(Drawn::default()));
+    {
+        let device = Device::from_native(Noting(std::rc::Rc::clone(&found)))?;
+        page.run(&device, &Matrix::IDENTITY)?;
+    }
+    let drawn = found.take();
+    let area = |rect: &mupdf::Rect| Rect {
+        left: rect.x0 - bounds.x0,
+        top: rect.y0 - bounds.y0,
+        right: rect.x1 - bounds.x0,
+        bottom: rect.y1 - bounds.y0,
+    };
+    let pictures: Vec<Rect> = drawn.pictures.iter().map(area).collect();
+    let shapes: Vec<Rect> = drawn.shapes.iter().map(area).collect();
+    let page_area = Rect {
+        left: 0.0,
+        top: 0.0,
+        right: bounds.width(),
+        bottom: bounds.height(),
+    };
+    Ok(figures(&pictures, &shapes, page_area))
+}
+
+/// Where the pictures and shapes on a page land.
+#[derive(Default)]
+struct Drawn {
+    pictures: Vec<mupdf::Rect>,
+    shapes: Vec<mupdf::Rect>,
+}
+
+/// A device that draws nothing, and notes where pictures and shapes land.
+struct Noting(std::rc::Rc<std::cell::RefCell<Drawn>>);
+
+impl Noting {
+    fn shape(&self, path: &mupdf::Path, stroke: &mupdf::StrokeState, transform: &Matrix) {
+        let mut drawn = self.0.borrow_mut();
+        if drawn.shapes.len() < FIGURE_SHAPES
+            && let Ok(area) = path.bounds(stroke, transform)
+        {
+            drawn.shapes.push(area);
+        }
+    }
+}
+
+impl mupdf::NativeDevice for Noting {
+    fn fill_path(
+        &mut self,
+        path: &mupdf::Path,
+        _even_odd: bool,
+        transform: Matrix,
+        _colour_space: &Colorspace,
+        _colour: &[f32],
+        _alpha: f32,
+        _params: mupdf::ColorParams,
+    ) {
+        self.shape(path, &mupdf::StrokeState::default(), &transform);
+    }
+
+    fn stroke_path(
+        &mut self,
+        path: &mupdf::Path,
+        stroke: &mupdf::StrokeState,
+        transform: Matrix,
+        _colour_space: &Colorspace,
+        _colour: &[f32],
+        _alpha: f32,
+        _params: mupdf::ColorParams,
+    ) {
+        self.shape(path, stroke, &transform);
+    }
+
+    fn fill_image(
+        &mut self,
+        _image: &mupdf::Image,
+        transform: Matrix,
+        _alpha: f32,
+        _params: mupdf::ColorParams,
+    ) {
+        // A picture fills the square from 0 to 1, moved into place.
+        let unit = mupdf::Rect {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 1.0,
+            y1: 1.0,
+        };
+        self.0.borrow_mut().pictures.push(unit.transform(&transform));
+    }
+}
+
+/// How near, in points, shapes are to count as one drawing.
+const FIGURE_GAP: f32 = 8.0;
+/// How small, in points along either side, a figure may be.
+const FIGURE_SMALLEST: f32 = 24.0;
+/// The most shapes on a page drawn into figures; past these, the rest are
+/// left out, as finding which belong together would take too long.
+const FIGURE_SHAPES: usize = 4000;
+
+/// Gathers pictures and shapes into figures: those that touch or nearly
+/// touch are one. Shapes that fill most of the page, such as its
+/// background, are left out, and so are figures too small to be anything
+/// but a rule or a dot.
+fn figures(pictures: &[Rect], shapes: &[Rect], page: Rect) -> Vec<Rect> {
+    let size = |area: &Rect| (area.right - area.left) * (area.bottom - area.top);
+    let page_size = size(&page);
+    let parts: Vec<Rect> = pictures
+        .iter()
+        .copied()
+        .chain(
+            shapes
+                .iter()
+                .take(FIGURE_SHAPES)
+                .filter(|shape| size(shape) < page_size * 0.9)
+                .copied(),
+        )
+        .collect();
+    let near = |area: &Rect, other: &Rect| {
+        other.left <= area.right + FIGURE_GAP
+            && area.left <= other.right + FIGURE_GAP
+            && other.top <= area.bottom + FIGURE_GAP
+            && area.top <= other.bottom + FIGURE_GAP
+    };
+    let join = |area: Rect, other: Rect| Rect {
+        left: area.left.min(other.left),
+        top: area.top.min(other.top),
+        right: area.right.max(other.right),
+        bottom: area.bottom.max(other.bottom),
+    };
+    // First the parts near one another, each pair looked at once: each
+    // part points to one in its group, and the group's first points to
+    // itself.
+    let mut group: Vec<usize> = (0..parts.len()).collect();
+    let first = |group: &mut Vec<usize>, part: usize| {
+        let mut leader = part;
+        while let Some(&up) = group.get(leader).filter(|up| **up != leader) {
+            leader = up;
+        }
+        // Each part on the way points straight to it from now on, so
+        // that the way stays short.
+        let mut on = part;
+        while let Some(slot) = group.get_mut(on).filter(|slot| **slot != leader) {
+            on = std::mem::replace(slot, leader);
+        }
+        leader
+    };
+    for (index, area) in parts.iter().enumerate() {
+        for (other, other_area) in parts.iter().enumerate().skip(index.saturating_add(1)) {
+            if near(area, other_area) {
+                let (one, two) = (first(&mut group, index), first(&mut group, other));
+                if let Some(slot) = group.get_mut(two) {
+                    *slot = one;
+                }
+            }
+        }
+    }
+    let mut groups: Vec<(usize, Rect)> = Vec::new();
+    for (index, area) in parts.iter().enumerate() {
+        let leader = first(&mut group, index);
+        match groups.iter_mut().find(|(other, _)| *other == leader) {
+            Some((_, joined)) => *joined = join(*joined, *area),
+            None => groups.push((leader, *area)),
+        }
+    }
+    // Then the groups that have grown near one another, few as they are,
+    // until none are.
+    let mut parts: Vec<Rect> = groups.into_iter().map(|(_, area)| area).collect();
+    let mut index = 0;
+    while let Some(&area) = parts.get(index) {
+        let found = parts
+            .iter()
+            .enumerate()
+            .skip(index.saturating_add(1))
+            .find(|(_, other)| near(&area, other))
+            .map(|(other, _)| other);
+        if let Some(other) = found {
+            let other = parts.swap_remove(other);
+            if let Some(part) = parts.get_mut(index) {
+                *part = join(area, other);
+            }
+            index = 0;
+        } else {
+            index = index.saturating_add(1);
+        }
+    }
+    parts
+        .into_iter()
+        .filter(|area| {
+            area.right - area.left >= FIGURE_SMALLEST && area.bottom - area.top >= FIGURE_SMALLEST
+        })
+        .map(|area| Rect {
+            left: area.left.max(page.left),
+            top: area.top.max(page.top),
+            right: area.right.min(page.right),
+            bottom: area.bottom.min(page.bottom),
+        })
+        .collect()
+}
+
 /// An entry of MuPDF's outline as pdvim's own.
 fn chapter(outline: mupdf::Outline) -> Chapter {
     Chapter {
@@ -1879,6 +2099,15 @@ impl Worker {
             }
             Request::Links(pages, reply) => {
                 let _ = reply.send(self.links(&pages));
+            }
+            Request::Figures(pages, reply) => {
+                let _ = reply.send(
+                    pages
+                        .iter()
+                        .map(|&page| Ok((page, page_figures(&self.document, page)?)))
+                        .collect::<Result<_, mupdf::Error>>()
+                        .map_err(|error| Error::Text(error.to_string())),
+                );
             }
             Request::Markup(highlight, reply) => {
                 self.recordings.clear();
@@ -2576,6 +2805,76 @@ mod tests {
         let saved = Document::open(copy.0.to_str().unwrap()).unwrap();
         let page = mupdf::pdf::PdfPage::try_from(saved.load_page(0).unwrap()).unwrap();
         assert_eq!(page.annotations().count(), 1);
+    }
+
+    #[test]
+    fn shapes_near_one_another_make_one_figure_and_rules_none() {
+        let rect = |left, top, right, bottom| Rect {
+            left,
+            top,
+            right,
+            bottom,
+        };
+        let page = rect(0.0, 0.0, 600.0, 800.0);
+        let shapes = [
+            // A chart: an axis, bars a little apart, and a frame around a
+            // picture in it.
+            rect(100.0, 100.0, 102.0, 300.0),
+            rect(110.0, 200.0, 130.0, 300.0),
+            rect(135.0, 150.0, 155.0, 300.0),
+            rect(158.0, 250.0, 178.0, 300.0),
+            // A rule under a heading, too thin to be a figure.
+            rect(50.0, 400.0, 550.0, 401.0),
+            // The page's background.
+            rect(0.0, 0.0, 600.0, 800.0),
+            // A table's lines, far below.
+            rect(100.0, 600.0, 500.0, 601.0),
+            rect(100.0, 640.0, 500.0, 641.0),
+            rect(100.0, 600.0, 101.0, 641.0),
+            rect(499.0, 600.0, 500.0, 641.0),
+        ];
+        let pictures = [rect(170.0, 120.0, 260.0, 200.0), rect(400.0, 700.0, 410.0, 710.0)];
+        assert_eq!(
+            figures(&pictures, &shapes, page),
+            [rect(100.0, 100.0, 260.0, 300.0), rect(100.0, 600.0, 500.0, 641.0)]
+        );
+    }
+
+    #[test]
+    fn the_figures_of_a_page_are_found() {
+        // A page with a filled square, 100 points a side, a square only
+        // outlined, far from it, and a line of text that is no figure.
+        let content = "0 0 1 rg 100 500 100 100 re f \
+                       0 0 0 RG 1 w 350 100 m 450 100 l 450 200 l 350 200 l h S \
+                       BT /F1 12 Tf 72 700 Td (Hello) Tj ET";
+        let file = Scratch::new(
+            "figures",
+            pdf(&[
+                "<< /Type /Catalog /Pages 2 0 R >>",
+                "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R \
+                 /Resources << /Font << /F1 5 0 R >> >> >>",
+                &format!(
+                    "<< /Length {} >>\nstream\n{content}\nendstream",
+                    content.len()
+                ),
+                "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            ]),
+        );
+        let document = Document::open(file.0.to_str().unwrap()).unwrap();
+        let mut found = page_figures(&document, 0).unwrap();
+        found.sort_by(|one, other| one.top.total_cmp(&other.top));
+        // Measured from the top: 792 - 600 = 192 down, and 792 - 200 =
+        // 592, give or take half the outline's width.
+        let near = |area: &Rect, (left, top, right, bottom): (f32, f32, f32, f32)| {
+            (area.left - left).abs() <= 1.0
+                && (area.top - top).abs() <= 1.0
+                && (area.right - right).abs() <= 1.0
+                && (area.bottom - bottom).abs() <= 1.0
+        };
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert!(near(&found[0], (100.0, 192.0, 200.0, 292.0)), "{found:?}");
+        assert!(near(&found[1], (350.0, 592.0, 450.0, 692.0)), "{found:?}");
     }
 
     #[test]

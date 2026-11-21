@@ -272,8 +272,11 @@ A tab, and the window while its tab is in view, goes by the document's title whe
 | `yt` | Copy the document's title, or its file name without one |
 | `yp` | Copy the text of the page in view                       |
 | `yh` | Copy the text of the marking `]h`, `[h` or `gh` picked  |
+| `yi` | Label pictures and figures; type a label to copy one    |
 
 To copy part of a page, select it in [visual mode](#selecting-text) and press `y`.
+
+`yi` labels the pictures in view, and the drawings made of lines and shapes, such as charts, diagrams and tables, each as one figure. Type a label to copy that one to the clipboard as a picture, as it is printed, with the words in it, and at least twice as sharp as at 100%. Paste it into a chat, a document or an image editor. Rules, underlines and other lines too thin to be a figure are left out. `/` and some text narrows the labels to the figures with that text in them.
 
 ### The mode
 

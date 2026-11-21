@@ -2942,7 +2942,7 @@ dependencies = [
 
 [[package]]
 name = "pdvim"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "iced",
  "mupdf",

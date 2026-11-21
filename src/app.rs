@@ -241,6 +241,8 @@ struct Document {
     links: HashMap<u32, Vec<Link>>,
     /// The fields of its forms, in reading order, once found.
     fields: Option<Vec<(Rect, backend::Field)>>,
+    /// The field last gone to, to go back to.
+    last_field: Option<Annotation>,
     /// The lines of text on each page read so far.
     text: visual::Text,
     /// The pages whose text is being read right now.
@@ -2071,7 +2073,7 @@ impl App {
             Action::Marking(what) => return self.on_marking_action(what),
             Action::Visual { lines } => return self.start_visual(lines),
             Action::Flash => return self.start_flash(),
-            Action::FirstField => return self.go_to_field(forms::FieldGoal::First),
+            Action::Field(pick) => return self.go_to_field(pick.into()),
             Action::ShowOutline => return self.show_outline(),
             Action::Mark(verb) => {
                 self.awaiting_mark = Some(verb);
@@ -2128,7 +2130,7 @@ impl App {
             | Action::FollowLink
             | Action::Visual { .. }
             | Action::Flash
-            | Action::FirstField
+            | Action::Field(_)
             | Action::Undo
             | Action::Redo
             | Action::Marking(_)
@@ -2274,6 +2276,7 @@ impl App {
             chapters: None,
             links: HashMap::new(),
             fields: None,
+            last_field: None,
             text: HashMap::new(),
             reading: std::collections::HashSet::new(),
             jumps: Jumps::default(),

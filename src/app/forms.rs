@@ -7,7 +7,7 @@ use iced::{Font, Point, Size, Task};
 
 use super::{App, Document, Message, Notice, rectangle};
 use crate::backend::{Annotation, Field, FieldKind, OFF};
-use crate::input::{Key, PromptBinding};
+use crate::input::{FieldPick, Key, PromptBinding};
 use crate::keymap::{Counts, Fed};
 use crate::layout::Rect;
 use crate::theme::Colours;
@@ -19,8 +19,22 @@ use super::markings::{Edit, Step};
 pub(super) enum FieldGoal {
     /// The first in view, or the next below it.
     First,
+    /// The last in view, or the one before it above.
+    Last,
+    /// The one last gone to in the document.
+    Again,
     /// The one after, or before, this one, coming round at the ends.
     Step { from: Annotation, forward: bool },
+}
+
+impl From<FieldPick> for FieldGoal {
+    fn from(pick: FieldPick) -> Self {
+        match pick {
+            FieldPick::First => Self::First,
+            FieldPick::Last => Self::Last,
+            FieldPick::Again => Self::Again,
+        }
+    }
 }
 
 /// The most options a list shows at once.
@@ -295,6 +309,9 @@ impl App {
                 return Task::none();
             }
         };
+        if let Some(document) = self.document_mut() {
+            document.last_field = Some(field.widget);
+        }
         let edit = Edit::Filled {
             widget: field.widget,
             before: field.value,
@@ -309,6 +326,7 @@ impl App {
         // The field is shown, so that what is typed shows where it goes.
         if let Some(document) = self.document_mut() {
             document.reader.reveal(field.widget.0, area);
+            document.last_field = Some(field.widget);
         }
         self.field_edit = Some(FieldEdit {
             id,
@@ -406,32 +424,15 @@ impl App {
             self.notice = Notice::Info("no fields to fill in".to_owned());
             return Task::none();
         }
-        let reader = &document.reader;
-        let index = match goal {
-            // Not above the view: in it, or else the next below it.
-            FieldGoal::First => fields
-                .iter()
-                .position(|(area, field)| {
-                    reader
-                        .area_on_screen(field.widget.0, *area)
-                        .is_some_and(|area| area.bottom > 0.0)
-                })
-                .unwrap_or(0),
-            FieldGoal::Step { from, forward } => {
-                let count = fields.len();
-                fields
-                    .iter()
-                    .position(|(_, field)| field.widget == from)
-                    .map_or(0, |index| {
-                        if forward {
-                            index.saturating_add(1).checked_rem(count).unwrap_or(0)
-                        } else {
-                            index
-                                .checked_sub(1)
-                                .unwrap_or_else(|| count.saturating_sub(1))
-                        }
-                    })
-            }
+        let Some(index) = field_index(
+            fields,
+            &document.reader,
+            self.area.height,
+            goal,
+            document.last_field,
+        ) else {
+            self.notice = Notice::Info("no field gone to yet in this document".to_owned());
+            return Task::none();
         };
         let Some((area, field)) = fields.get(index).cloned() else {
             return Task::none();
@@ -503,6 +504,47 @@ impl App {
             key(PromptBinding::Cancel),
         );
         Some(format!("-- FIELD -- {}    {how}", edit.field.name))
+    }
+}
+
+/// Which of the fields, in reading order, a goal comes to, with the view
+/// in a window this high and the field last gone to; none when there is
+/// none to go back to.
+fn field_index(
+    fields: &[(Rect, Field)],
+    reader: &crate::reader::Reader,
+    height: f32,
+    goal: FieldGoal,
+    last: Option<Annotation>,
+) -> Option<usize> {
+    let on_screen = |(area, field): &(Rect, Field)| reader.area_on_screen(field.widget.0, *area);
+    let at = |widget: Annotation| fields.iter().position(|(_, field)| field.widget == widget);
+    let count = fields.len();
+    match goal {
+        // Not above the view: in it, or else the next below it.
+        FieldGoal::First => Some(
+            fields
+                .iter()
+                .position(|field| on_screen(field).is_some_and(|area| area.bottom > 0.0))
+                .unwrap_or(0),
+        ),
+        // Not below the view: in it, or else the one before above it.
+        FieldGoal::Last => Some(
+            fields
+                .iter()
+                .rposition(|field| on_screen(field).is_some_and(|area| area.top < height))
+                .unwrap_or_else(|| count.saturating_sub(1)),
+        ),
+        FieldGoal::Again => last.and_then(at),
+        FieldGoal::Step { from, forward } => Some(at(from).map_or(0, |index| {
+            if forward {
+                index.saturating_add(1).checked_rem(count).unwrap_or(0)
+            } else {
+                index
+                    .checked_sub(1)
+                    .unwrap_or_else(|| count.saturating_sub(1))
+            }
+        })),
     }
 }
 

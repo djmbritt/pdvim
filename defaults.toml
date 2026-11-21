@@ -152,9 +152,11 @@ note-color = "#fdd835"
 # Links: label every link in view, and every highlight and note, then type
 # a label's two letters to follow the link or pick the marking
 "f" = "follow-link"
-# Forms: go to the first field in view to fill it in; tab goes on to the
-# next field, and shift+tab back
+# Forms: go to the first or last field in view to fill it in, or back to
+# the one last gone to; tab goes on to the next field, and shift+tab back
 "g i" = "first-field"
+"g I" = "last-field"
+"g ;" = "field-again"
 
 # Selecting text: label every line in view, type a label to start there,
 # move with h j k l, w b e, 0 $, and press y to copy

@@ -124,12 +124,14 @@ The mouse wheel also scrolls.
 | --- | ------------------------ |
 | `f` | Label every link, form field, highlight and note in view |
 | `gi` | Fill in the first form field in view; `Tab` goes on to the next |
+| `gI` | Fill in the last form field in view |
+| `g;` | Go back to the form field you were in last |
 
 After `f`, each link in view is highlighted and gets a label of two letters. Type a label to follow its link. A link to another place in the document goes there. A web or mail link (`http`, `https`, `mailto`) opens in your default program; links to anything else, such as files, are not followed. Highlights, notes and the other markings get labels too, just left of them; typing one picks that marking as `]h` would, so its note shows and `d` and `c` work on it. `Backspace` takes back the first letter, and `Esc` puts the labels away.
 
 The fields of a PDF form get labels too, so `f` is also how you fill one in. Picking a checkbox ticks or unticks it, and picking a radio button picks it. Picking a text field lets you type into it where it is on the page: `Left` / `Right` and `Home` / `End` move the cursor, `Backspace`, `Ctrl-w` and `Ctrl-u` rub out a character, a word or everything, `Ctrl-v` pastes, `Enter` fills it in and `Esc` leaves it as it was. Picking a list or a drop-down opens its options under the field, starting at the one it holds: type to narrow them, `Down` / `Up` (or `Ctrl-n` / `Ctrl-p`) to move, and `Enter` to pick. Read-only fields, buttons and signatures get no label. The form's scripts are not run. Filling in a field is a change like a highlight: `u` takes it back, `:w` saves it into the file, and pdvim asks before quitting with it unsaved.
 
-`gi` goes straight to the first field in view, or the next one below it, as in Vimium. From there `Tab` goes on to the next field, filling in the one you leave with what you typed or picked, and `Shift-Tab` goes back; past the last field it comes round to the first, across pages. A checkbox or radio button reached this way gets a frame, and `Space` or `Enter` ticks it. Inside a list, `Tab` goes on to the next field too; `Down` / `Up` move through the options.
+`gi` goes straight to the first field in view, or the next one below it, as in Vimium, and `gI` to the last field in view, or the one before it above. `g;` goes back to the field you were in last, in the document in view. From there `Tab` goes on to the next field, filling in the one you leave with what you typed or picked, and `Shift-Tab` goes back; past the last field it comes round to the first, across pages. A checkbox or radio button reached this way gets a frame, and `Space` or `Enter` ticks it. Inside a list, `Tab` goes on to the next field too; `Down` / `Up` move through the options.
 
 ### Marks and jumps
 

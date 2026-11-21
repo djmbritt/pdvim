@@ -59,6 +59,17 @@ impl Prompt {
     }
 }
 
+/// Which field of a form to go to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldPick {
+    /// The first in view, or the next below it.
+    First,
+    /// The last in view, or the one before it above.
+    Last,
+    /// The one last gone to.
+    Again,
+}
+
 /// What to do with the mark whose letter is typed next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MarkVerb {
@@ -141,8 +152,8 @@ pub enum Action {
     },
     /// Ask for text in view to start selecting at, as flash.nvim's `s`.
     Flash,
-    /// Go to the first field of a form in view, to fill it in.
-    FirstField,
+    /// Go to a field of a form, to fill it in.
+    Field(FieldPick),
     /// Show the table of contents in a sidebar.
     ShowOutline,
     /// Wait for a letter, then put a mark there, or go to it.
@@ -221,6 +232,9 @@ bindable! {
         Flash = "flash", "Type text in view, then its label, to start selecting there";
         /// As `gi` in Vimium: tab then goes from field to field.
         FirstField = "first-field", "Fill in the first field of a form in view; tab goes to the next";
+        LastField = "last-field", "Fill in the last field of a form in view";
+        /// The field gone to last, with gi, gI, f or tab.
+        FieldAgain = "field-again", "Go back to the field of a form last gone to";
         NextMarking = "next-marking", "Go to the next highlight or other marking";
         PreviousMarking = "previous-marking", "Go to the previous highlight or other marking";
         /// The marking last gone to with next-marking or previous-marking.
@@ -320,7 +334,9 @@ impl Binding {
             Self::Visual => Action::Visual { lines: false },
             Self::VisualLine => Action::Visual { lines: true },
             Self::Flash => Action::Flash,
-            Self::FirstField => Action::FirstField,
+            Self::FirstField => Action::Field(FieldPick::First),
+            Self::LastField => Action::Field(FieldPick::Last),
+            Self::FieldAgain => Action::Field(FieldPick::Again),
             Self::NextMarking => Action::Marking(MarkingAction::Step {
                 forward: true,
                 times: count.unwrap_or(1),

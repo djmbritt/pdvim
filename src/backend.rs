@@ -651,7 +651,7 @@ enum Unlocked {
 
 /// Opens a file, unlocking it with the password if it needs one.
 fn unlocked(path: &Path, password: Option<&str>) -> Result<Unlocked, mupdf::Error> {
-    let mut document = Document::open(file_path(path)?)?;
+    let mut document = opened(path, cfg!(windows))?;
     if !document.needs_password()? {
         return Ok(Unlocked::Open(document));
     }
@@ -663,6 +663,22 @@ fn unlocked(path: &Path, password: Option<&str>) -> Result<Unlocked, mupdf::Erro
     } else {
         Unlocked::Wrong
     })
+}
+
+/// Opens a file. A PDF that MuPDF had to repair is saved by writing it
+/// whole beside the file, then putting that in the file's place, which
+/// Windows refuses while the file is open. So where `release` is set, such
+/// a PDF is read into memory instead, and the file let go.
+fn opened(path: &Path, release: bool) -> Result<Document, mupdf::Error> {
+    let document = Document::open(file_path(path)?)?;
+    let repaired = mupdf::pdf::PdfDocument::try_from(document.clone())
+        .is_ok_and(|pdf| !pdf.can_be_saved_incrementally());
+    if !(release && repaired) {
+        return Ok(document);
+    }
+    let bytes = std::fs::read(path)?;
+    drop(document);
+    Document::from_bytes(&bytes, "application/pdf")
 }
 
 /// Opens a file again, unlocked as it was the first time.
@@ -1893,6 +1909,40 @@ mod tests {
     }
 
     #[test]
+    fn a_damaged_file_read_into_memory_lets_its_file_be_replaced() {
+        let mut damaged = text_pdf();
+        let at = damaged
+            .windows(9)
+            .rposition(|bytes| bytes == b"startxref")
+            .unwrap();
+        damaged.truncate(at);
+        damaged.extend_from_slice(b"startxref\n9\n%%EOF\n");
+        let file = Scratch::new("damaged-in-memory", &damaged);
+        let document = opened(&file.0, true).unwrap();
+        let markup = Markup {
+            kind: MarkupKind::Highlight,
+            pages: vec![(
+                0,
+                vec![Rect {
+                    left: 10.0,
+                    top: 10.0,
+                    right: 100.0,
+                    bottom: 30.0,
+                }],
+            )],
+            colour: Rgb(0xff, 0xff, 0x00),
+        };
+        highlight_in(&document, &markup).unwrap();
+        save_to(&document, &file.0, None).unwrap();
+        // Once more, now that the file has been replaced.
+        highlight_in(&document, &markup).unwrap();
+        save_to(&document, &file.0, None).unwrap();
+        let saved = Document::open(file.0.to_str().unwrap()).unwrap();
+        let page = mupdf::pdf::PdfPage::try_from(saved.load_page(0).unwrap()).unwrap();
+        assert_eq!(page.annotations().count(), 2);
+    }
+
+    #[test]
     fn a_damaged_file_is_marked_and_saved_whole() {
         // A file whose cross-reference table is not where it says, as in
         // many downloaded books, so that MuPDF repairs it on opening.
@@ -1904,7 +1954,7 @@ mod tests {
         damaged.truncate(at);
         damaged.extend_from_slice(b"startxref\n9\n%%EOF\n");
         let file = Scratch::new("damaged", &damaged);
-        let document = Document::open(file.0.to_str().unwrap()).unwrap();
+        let (document, _) = load(&file.0, None).unwrap();
         let pdf = mupdf::pdf::PdfDocument::try_from(document.clone()).unwrap();
         assert!(!pdf.can_be_saved_incrementally());
         let markup = Markup {

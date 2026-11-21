@@ -118,23 +118,18 @@ impl Editor {
     pub fn feed(&mut self, fed: Fed<PromptBinding>) -> Typed {
         use PromptBinding as B;
         let shown = self.shown().len();
-        // Tab goes on to the next field, keeping what is in this one.
+        // Tab goes on to the next field, and escape leaves the field, each
+        // keeping what is in it.
         if let Fed::Bound(binding @ (B::Complete | B::CompletePrevious), _) = fed {
-            let value = match &*self {
-                Self::Text { text, .. } => Some(text.iter().collect()),
-                Self::Choice { .. } => self
-                    .shown()
-                    .get(self.selected())
-                    .map(|option| (*option).clone()),
-                Self::Toggle => None,
-            };
             return Typed::Move {
                 forward: binding == B::Complete,
-                value,
+                value: self.value(),
             };
         }
+        if let Fed::Bound(B::Cancel, _) = fed {
+            return self.value().map_or(Typed::Cancel, Typed::Done);
+        }
         match (self, fed) {
-            (_, Fed::Bound(B::Cancel, _)) => Typed::Cancel,
             (Self::Toggle, Fed::Bound(B::Submit, _)) => Typed::Toggle,
             (Self::Toggle, Fed::Unbound(keys))
                 if keys
@@ -154,6 +149,19 @@ impl Editor {
                 },
                 fed,
             ) => pick(options, typed, selected, shown, fed),
+        }
+    }
+
+    /// What the field is to hold: what is typed, or the option picked;
+    /// none for a box, or a list narrowed to nothing.
+    fn value(&self) -> Option<String> {
+        match self {
+            Self::Text { text, .. } => Some(text.iter().collect()),
+            Self::Choice { .. } => self
+                .shown()
+                .get(self.selected())
+                .map(|option| (*option).clone()),
+            Self::Toggle => None,
         }
     }
 
@@ -498,7 +506,7 @@ impl App {
             Editor::Toggle => format!("space or {} ticks it", key(PromptBinding::Submit)),
         };
         let how = format!(
-            "{how}, {}/{} to the next/previous field, {} leaves it",
+            "{how}, {}/{} to the next/previous field, {} leaves it as it is",
             key(PromptBinding::Complete),
             key(PromptBinding::CompletePrevious),
             key(PromptBinding::Cancel),
@@ -762,7 +770,12 @@ mod tests {
         );
         bound(&mut editor, PromptBinding::RubOutWord);
         assert_eq!(bound(&mut editor, PromptBinding::Submit), done("JAMary ne"));
-        assert_eq!(bound(&mut editor, PromptBinding::Cancel), Typed::Cancel);
+        // Escape keeps what is typed, as enter does.
+        assert_eq!(bound(&mut editor, PromptBinding::Cancel), done("JAMary ne"));
+        assert_eq!(
+            bound(&mut Editor::Toggle, PromptBinding::Cancel),
+            Typed::Cancel
+        );
     }
 
     fn countries() -> Vec<String> {

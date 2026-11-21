@@ -75,6 +75,8 @@ pub enum MarkingAction {
     Delete,
     /// Change the note on the marking last gone to.
     ChangeNote,
+    /// Copy the text of the marking last gone to.
+    Yank,
     /// Label the markings in view, to pick one by its label.
     Label,
     /// List them in a sidebar.
@@ -217,6 +219,8 @@ bindable! {
         DeleteMarking = "delete-marking", "Take away the marking last gone to";
         /// The text of a note, or the comment on another kind of marking.
         ChangeNote = "change-note", "Change the note on the marking gone to";
+        /// The text a highlight or other marking is over, or a note's text.
+        YankMarking = "yank-marking", "Copy the text of the marking gone to";
         /// Like `f` for links: a label on each marking in view.
         LabelMarkings = "label-markings", "Label the markings in view; type a label to pick one";
         Markings = "markings", "List the highlights and other markings, to go to one";
@@ -318,6 +322,7 @@ impl Binding {
             Self::DeleteMarking => Action::Marking(MarkingAction::Delete),
             Self::Markings => Action::Marking(MarkingAction::List),
             Self::ChangeNote => Action::Marking(MarkingAction::ChangeNote),
+            Self::YankMarking => Action::Marking(MarkingAction::Yank),
             Self::LabelMarkings => Action::Marking(MarkingAction::Label),
             Self::Undo => Action::Undo,
             Self::Redo => Action::Redo,

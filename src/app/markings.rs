@@ -139,6 +139,8 @@ pub enum Wanted {
     DeleteCurrent,
     /// Change the note on the marking last gone to.
     ChangeCurrent,
+    /// Copy the text of the marking last gone to.
+    YankCurrent,
     /// Change the note on the marking at a character, from visual mode.
     ChangeAt(u32, Rect),
     /// Label the markings in view, to pick one.
@@ -160,6 +162,7 @@ impl App {
             MarkingAction::Step { forward, times } => Wanted::Step { forward, times },
             MarkingAction::Delete => Wanted::DeleteCurrent,
             MarkingAction::ChangeNote => Wanted::ChangeCurrent,
+            MarkingAction::Yank => Wanted::YankCurrent,
             MarkingAction::Label => Wanted::Label,
             MarkingAction::List => Wanted::List,
         };
@@ -223,6 +226,9 @@ impl App {
                 }
                 Task::none()
             }
+            Wanted::YankCurrent => self
+                .picked()
+                .map_or_else(Task::none, |marking| self.yank_marking(&marking)),
             Wanted::ChangeAt(page, character) => {
                 match self.marking_at(page, character) {
                     Some(marking) => self.ask_to_change(&marking),
@@ -438,6 +444,27 @@ impl App {
             document.marking = Some(picked.annotation());
             self.notice = Notice::Info(describe(picked, index, count));
         }
+    }
+
+    /// Copies the text of a marking: what a highlight or other marking is
+    /// over, or a note's text.
+    fn yank_marking(&mut self, marking: &Marking) -> Task<Message> {
+        let text = if marking.kind == MarkupKind::Note {
+            marking.kept.contents.clone().unwrap_or_default()
+        } else {
+            marking.text.clone()
+        };
+        if text.is_empty() {
+            self.notice = Notice::Info(format!("the {} has no text", marking.kind.noun()));
+            return Task::none();
+        }
+        let count = text.chars().count();
+        self.notice = Notice::Info(format!(
+            "copied the {}: {count} character{}",
+            marking.kind.noun(),
+            if count == 1 { "" } else { "s" }
+        ));
+        iced::clipboard::write(text)
     }
 
     /// Opens the prompt to change the note on a marking, with the note it

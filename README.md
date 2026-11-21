@@ -212,12 +212,13 @@ A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t
 | `gh`        | Label the markings in view; type a label to pick one       |
 | `d`         | Take away the marking `]h`, `[h` or `gh` picked            |
 | `c`         | Change the note on the marking `]h`, `[h` or `gh` picked   |
+| `y`         | Copy the picked marking's text, or a note's text           |
 | `Shift-Tab` | List the markings in a sidebar, with their text and page   |
 | `u`         | Take back the last marking, or the last taking away of one |
 | `Ctrl-r`    | Put back what `u` took back                                |
 | `Ctrl-s`    | Save the markings into the file, like `:w`                 |
 
-These go through every highlight, underline, strike-out, squiggly underline and note in the document, whether pdvim or another program made it. `]h` starts from the marking it last went to while that is in view, and from the top of the view otherwise; the marking it goes to gets a frame, which `Esc` hides. `gh` puts a label of two letters beside each marking in view, as `f` does for links; typing a label picks that marking, so that `d` and `c` work on it. In the sidebar, `j` and `k` move, `Enter` goes to the marking selected, `d` takes it away, `c` changes its note, and `q`, `Esc` or `Shift-Tab` close the list. In visual mode, `d` takes away the markings under the selection. Taking a marking away is a change like any other: `:w` saves it, and `u` puts the marking back.
+These go through every highlight, underline, strike-out, squiggly underline and note in the document, whether pdvim or another program made it. `]h` starts from the marking it last went to while that is in view, and from the top of the view otherwise; the marking it goes to gets a frame, which `Esc` hides. `gh` puts a label of two letters beside each marking in view, as `f` does for links; typing a label picks that marking, so that `d`, `c` and `y` work on it. In the sidebar, `j` and `k` move, `Enter` goes to the marking selected, `d` takes it away, `c` changes its note, and `q`, `Esc` or `Shift-Tab` close the list. In visual mode, `d` takes away the markings under the selection. Taking a marking away is a change like any other: `:w` saves it, and `u` puts the marking back.
 
 ### Tabs
 

@@ -1,36 +1,21 @@
 # pdvim
 
-A minimal, keyboard-driven PDF reader with vi key bindings. It also reads EPUB and FB2 books, CBZ comics, XPS documents, SVG drawings and images.
+A keyboard-driven PDF reader with vi keys. pdvim also reads EPUB and FB2 books, CBZ comics, XPS documents, SVG drawings and images.
 
-pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.rs/) to draw the window. Pages are laid out in one continuous column. It also remembers where you stopped reading each document.
+pdvim renders pages with [MuPDF](https://mupdf.com/) and draws its window with [iced](https://iced.rs/). Pages run in one continuous column, or up to four side by side. pdvim remembers where you stopped in every document.
 
 ![pdvim showing the first page of Alice's Adventures in Wonderland, with two tabs open](docs/screenshots/reading.png)
 
-## Features
+## What it does
 
-- vi-style movement with counts (`12j`, `5J`, `42G`)
-- Search forwards and backwards with `/` and `?`, then jump between matches with `n` and `N`
-- Zoom, fit to width, fit to page, and rotate
-- Recoloring for dark backgrounds, with colors you choose (like Zathura's `recolor`), following the system's light or dark theme by default
-- Themes, including the four [Catppuccin](https://catppuccin.com) flavors, for the bars, lists and recolored pages
-- Trimming of blank page margins
-- Per-document memory of page, zoom, fit, rotation and columns, stored in SQLite
-- A list of recently read documents to reopen from
-- A configuration file for settings and key bindings
-- Selecting and copying text from the keyboard, with a visual mode like vim's
-- A sidebar with the table of contents, to go to a chapter
-- Marks (`ma`, `` `a ``, and `A`–`Z` across documents) and a jump list (`Ctrl-o`, `Ctrl-i`), as in vim
-- Following links from the keyboard: `f` labels every link, form field, highlight and note in view, and typing a label follows the link, fills in the field, or picks the marking
-- Filling in PDF forms: typing into text fields on the page, picking from drop-downs, and ticking boxes
-- A cheat sheet of the key bindings in force, with `:help`
-- `Tab` completion of commands, settings, and file paths in the command prompt, and `Up` / `Down` to recall earlier commands and searches
-- Tabs, with vim's `gt` / `gT`, `Ctrl-Tab` / `Ctrl-Shift-Tab`, and `:tabedit`
-- Highlighting, underlining, striking out and squiggling text into the PDF, saved with `:w` or `Ctrl-s`, with undo
-- Going through the markings with `]h` / `[h`, and listing them in a sidebar
-- Chapter by chapter with `]]` / `[[`, and the printed page numbers (`xii`, `A-3`) in the status bar and `:goto`
-- The mode always named at the left of the status bar, in a color for its kind, as vim status lines do
-- Password-protected PDFs, and `:info` for the title, author and dates
-- EPUB and FB2 books, laid out on pages the size of the window in the type size you set, and laid out again when the window changes; CBZ and CBT comics, XPS documents, SVG drawings, and PNG, JPEG, GIF, TIFF, BMP and other images
+- **Moves like vi.** `j` / `k`, `gg` / `G`, counts such as `12G`, marks (`ma`, `` `a ``), a jump list (`Ctrl-o` / `Ctrl-i`), search with `/` and `?`, and `.` to repeat a command.
+- **Needs no mouse.** `f` puts a label on every link and form field in view. Type a label to follow the link or fill in the field. `yi` does the same for pictures and figures, to copy one as an image.
+- **Selects text like vim.** `v` and `V` start a selection at a labelled line, and `w`, `e`, `f`, `ip` and the other motions grow it. Copy the selection, or highlight, underline, strike out or squiggle it.
+- **Saves standard annotations.** Highlights and notes go into the PDF when you save with `:w`, so other readers show them too. `u` undoes them.
+- **Reads well at night.** Recolors pages to suit a dark theme, and follows the system's light or dark setting. The four [Catppuccin](https://catppuccin.com) flavors are built in. It can also trim blank margins.
+- **Finds its way around.** A table of contents sidebar, `]]` / `[[` from chapter to chapter, a grid of every page with `go`, and printed page numbers such as `xii`.
+- **Also has** tabs, a list of recent documents, password-protected PDFs, fillable forms, `:!` shell commands, and `:export` to PNG or SVG.
+- **Is configured in one file.** A TOML file holds settings and key bindings for every mode. Settings can differ by path, and keys can run command lines.
 
 ## Screenshots
 
@@ -38,7 +23,7 @@ The table of contents, in the Catppuccin Mocha theme, with the page recolored to
 
 ![The table of contents sidebar over a recolored page of the Ghostscript manual](docs/screenshots/contents.png)
 
-Visual mode starts from a line picked by its label, then moves like vim:
+Visual mode starts from a line picked by its label:
 
 ![Two-letter labels on each line of text, to start selecting from](docs/screenshots/labels.png)
 
@@ -54,22 +39,20 @@ A highlight, an underline, a squiggly underline, and a selection in progress:
 
 Each [release](https://github.com/djmbritt/pdvim/releases) has packages for:
 
-| Platform             | Download                                                                                                                    |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Linux, x86-64        | `pdvim_VERSION-1_amd64.deb`, or `pdvim-VERSION-x86_64-unknown-linux-gnu.tar.gz`                                             |
-| Linux, x86-64        | `pdvim-VERSION-x86_64.AppImage`, or `pdvim-VERSION-x86_64.flatpak` to install with `flatpak install --user`                 |
-| macOS, Apple silicon | `pdvim-VERSION-aarch64-apple-darwin.dmg`, or the `.tar.gz` for the terminal                                                 |
-| macOS, Intel         | `pdvim-VERSION-x86_64-apple-darwin.dmg`, or the `.tar.gz`                                                                   |
-| Windows, x86-64      | `pdvim-VERSION-x86_64-pc-windows-msvc.zip`                                                                                  |
-| Arch Linux           | `yay -S pdvim` or `paru -S pdvim` from the AUR, or `makepkg -si` in [`packaging/`](packaging/) to build what is checked out |
+| Platform             | Download                                                                                        |
+| -------------------- | ----------------------------------------------------------------------------------------------- |
+| Linux, x86-64        | `pdvim_VERSION-1_amd64.deb`, or `pdvim-VERSION-x86_64-unknown-linux-gnu.tar.gz`                 |
+| Linux, x86-64        | `pdvim-VERSION-x86_64.AppImage`, or `pdvim-VERSION-x86_64.flatpak` for `flatpak install --user` |
+| Arch Linux           | `yay -S pdvim` or `paru -S pdvim` from the AUR, or `makepkg -si` in [`packaging/`](packaging/)  |
+| macOS, Apple silicon | `pdvim-VERSION-aarch64-apple-darwin.dmg`, or the `.tar.gz` for the terminal                     |
+| macOS, Intel         | `pdvim-VERSION-x86_64-apple-darwin.dmg`, or the `.tar.gz`                                       |
+| Windows, x86-64      | `pdvim-VERSION-x86_64-pc-windows-msvc.zip`                                                      |
 
-The Flatpak reads its configuration from `~/.config/pdvim` too, but keeps its reading history apart, in `~/.var/app/io.github.djmbritt.pdvim`. It can open documents in your home folder, `/media`, `/run/media` and `/mnt`.
+The packages install the manual pages too: `man pdvim` covers the keys and commands, and `man 5 pdvim` covers the configuration file.
 
-On macOS and Windows pdvim keeps its configuration in `~/.config/pdvim` and `%APPDATA%\pdvim`, and its reading history in `~/.local/share/pdvim` and `%LOCALAPPDATA%\pdvim`.
+### Building from source
 
-## Building
-
-pdvim needs Rust 2024 edition (Rust 1.85 or newer). The `mupdf` crate builds MuPDF from source, so you also need a C toolchain and `libclang`.
+pdvim needs Rust 1.85 or newer (the 2024 edition). The `mupdf` crate builds MuPDF from source, so you also need a C toolchain and `libclang`.
 
 ```sh
 cargo build --release
@@ -77,360 +60,245 @@ cargo build --release
 
 The binary is written to `target/release/pdvim`.
 
-## Usage
+## Getting started
 
 ```sh
-pdvim [FILE]...
-pdvim --version
+pdvim paper.pdf book.epub   # each file opens in a tab of its own
+pdvim                       # pick from the documents you read last
 ```
 
-`man pdvim` describes the keys and commands, and `man 5 pdvim` the configuration file, once pdvim is installed from a package.
+Some keys to try first:
 
-Each file opens in a tab of its own. If you start pdvim without a file, it shows the documents you read most recently. Pick one, or open another file with `:open`.
+- `j` / `k` scroll, `J` / `K` turn the page, and `gg` / `G` go to the first or last page.
+- `Tab` opens the table of contents, and `go` shows every page small.
+- `/` searches, and `n` / `N` go to the next or previous match.
+- `f` follows a link by its label.
+- `v` selects text. Then `y` copies it, or `H` highlights it. `:w` saves the highlights into the file.
+- `:help` lists every key, and `q` closes the tab.
 
-`:open` and the recent list put each document in a new tab, unless the tab in view is empty. A document that is already open in a tab is brought into view instead.
-
-### Books, comics and images
-
-Besides PDF, pdvim opens EPUB and FB2 books, CBZ and CBT comics, XPS and OpenXPS documents, SVG drawings, and images: PNG, JPEG, GIF, BMP, TIFF, JPEG 2000, JPEG XR, PSD and the PNM family. Completion after `:open` offers all of these.
-
-A book has no pages of its own, so pdvim lays it out on pages the size of the window, in type of the size `:set fontsize` gives (12 points by default). A book always fits the window's width: in a book, the zoom keys change the type instead. `+` and `-` make it a point bigger or smaller, `=` and `z0` go back to the size set, `{n}=` makes it _n_% of that, and `zw` and `zp` do nothing. With two columns (`zc`, or `:set columns 2`), the book is laid out on pages half the window wide, two side by side. Columns are set for the tab in view only, and each document remembers its own, as it does its zoom; `columns` in the configuration file sets how documents not opened before start. When the window, the columns or the type change, the book is laid out again, and you stay at the same place in it, measured as a share of the whole book. The book in view stays on screen while it is laid out. Your place is remembered the same way between sessions, so a book left in a small window opens at the same passage in a big one. Marks and the jump list point at pages, so they can land a little off after the book is laid out again.
-
-Characters a document's own fonts lack are drawn from the fonts installed on your system, Chinese, Japanese and Korean included (from Noto CJK, Source Han and the like, when installed).
-
-Searching, copying, following links, the table of contents and visual mode work in every format that has text. Highlights, notes, forms and `:w` are for PDF only: marking another format says so.
+Put a count before a key to repeat it, as in vi: `3j` scrolls three steps, and `12G` goes to page 12. `Esc` cancels a key sequence you have half typed.
 
 ## Keys
 
-Put a count before a key to repeat it, as in vi. For example, `3j` scrolls three steps down and `12G` goes to page 12.
+These are the default keys. `:help` shows the keys bound right now, and `man pdvim` describes each one in full.
 
-### Movement
+### Moving
 
-| Key                                         | Action                                                          |
-| ------------------------------------------- | --------------------------------------------------------------- |
-| `j` / `k` / `h` / `l`, arrow keys           | Scroll down / up / left / right                                 |
-| `Ctrl-d` / `Ctrl-u`                         | Scroll half a screen down / up                                  |
-| `Ctrl-f`, `Space` / `Ctrl-b`, `Shift-Space` | Scroll a full screen down / up                                  |
-| `J`, `PageDown` / `K`, `PageUp`             | Go to the next / previous page                                  |
-| `gg`, `Home` / `G`, `End`                   | Go to the first / last page                                     |
-| `{n}G`, `{n}gg`                             | Go to page _n_                                                  |
-| `H` / `L`                                   | Go to the top / bottom of the current page                      |
-| `Tab`                                       | Show the table of contents                                      |
-| `go`                                        | Show every page small, side by side, to go to one               |
-| `]]` / `[[`                                 | Go to the next / previous chapter or section; `{n}]]` goes n on |
+| Key                                         | Action                                                |
+| ------------------------------------------- | ----------------------------------------------------- |
+| `j` / `k` / `h` / `l`, arrow keys           | Scroll down / up / left / right                       |
+| `Ctrl-d` / `Ctrl-u`                         | Scroll half a screen down / up                        |
+| `Ctrl-f`, `Space` / `Ctrl-b`, `Shift-Space` | Scroll a full screen down / up                        |
+| `J`, `PageDown` / `K`, `PageUp`             | Go to the next / previous page                        |
+| `gg`, `Home` / `G`, `End`                   | Go to the first / last page, or page _n_ with a count |
+| `H` / `L`                                   | Go to the top / bottom of the page                    |
+| `]]` / `[[`                                 | Go to the next / previous chapter                     |
+| `Tab`                                       | Show the table of contents                            |
+| `go`                                        | Show every page small, to pick one                    |
+| `m{a-z}` / `m{A-Z}`                         | Mark this place in this document / for any document   |
+| `` `{letter} ``, `'{letter}`                | Go to a mark                                          |
+| `Ctrl-o` / `Ctrl-i`                         | Go back / forward through the jumps                   |
 
-The mouse wheel also scrolls.
+A jump is `gg`, `G`, a search match, a chapter, a followed link or a mark. `:marks` lists the marks, which are kept after pdvim closes.
 
-`go` shows every page of the document small, side by side in rows, with the page you're reading selected. Move with `h` `j` `k` `l` or the arrow keys, a screen at a time with `Ctrl-d` / `Ctrl-u`, and to the first and last page with `gg` / `G`, or to page _n_ with `{n}G`. `Enter` reads from the page selected, and `Esc` or `q` goes back to where you were. The pages are drawn as you read them, recolored or not, with their highlights, and the status bar names the page selected. Going to a page this way is a jump, so `Ctrl-o` comes back.
+The table of contents moves with `j` / `k`, and `l` / `h` open and close a chapter's sections. The page grid moves with `h` `j` `k` `l`. In both, `Enter` goes to the item selected, and `Esc` or `q` goes back. Going somewhere this way counts as a jump, so `Ctrl-o` brings you back.
 
-`Tab` opens the table of contents in a sidebar, with the chapter you're reading selected. Move with `j` / `k`, `gg` / `G`, and `Ctrl-d` / `Ctrl-u`. `l` opens a chapter to show its sections, or steps into them, and `h` closes it or goes up to the chapter it's in. `Space` opens and closes. `Enter` goes to the chapter and closes the sidebar, and `Esc`, `q`, or `Tab` close it without going anywhere.
+### Viewing
 
-### View
-
-| Key                   | Action                           |
-| --------------------- | -------------------------------- |
-| `+`, `zi` / `-`, `zo` | Zoom in / out                    |
-| `=`, `z0`             | Zoom to 100%                     |
-| `{n}=`, `{n}zz`       | Zoom to _n_%                     |
-| `zw`                  | Fit the page width to the window |
-| `zp`                  | Fit the whole page in the window |
-| `r`                   | Rotate                           |
-| `R`                   | Turn recoloring on or off        |
-| `t`                   | Turn margin trimming on or off   |
+| Key                   | Action                                     |
+| --------------------- | ------------------------------------------ |
+| `+`, `zi` / `-`, `zo` | Zoom in / out                              |
+| `=`, `z0`             | Zoom to 100%, or to _n_% with a count      |
+| `zw` / `zp`           | Fit the page's width / the whole page      |
+| `r`                   | Rotate                                     |
+| `R`                   | Turn recoloring on or off                  |
+| `t`                   | Turn margin trimming on or off             |
+| `zc`                  | Show two pages side by side, or one        |
 | `zb`                  | Hide the tab and status bars, or show them |
-| `zc`                  | Show two pages side by side, or one |
-| `F11`                 | Fill the screen, or stop         |
+| `F11`                 | Fill the screen, or stop                   |
 
-With the status bar hidden, by `zb` or `:set statusbar false`, it still comes back while it has something to show: a prompt, a message, a key sequence half typed, or a mode other than `NORMAL`. It then lies over the bottom of the pages, so they don't move. `:set tabbar false` hides the tab bar for good, and `zb` hides both until you press it again.
+### Searching and commands
 
-### Links
+| Key       | Action                                            |
+| --------- | ------------------------------------------------- |
+| `/` / `?` | Search forwards / backwards                       |
+| `n` / `N` | Go to the next / previous match                   |
+| `:`       | Open the command prompt                           |
+| `.`       | Run the last command line again                   |
+| `o`       | Show the documents you read recently              |
+| `Ctrl-g`  | Show the document's title, author, dates and more |
+| `Esc`     | Cancel, and hide the search highlights            |
+| `q`       | Close the tab, and quit after the last one        |
 
-| Key | Action                   |
-| --- | ------------------------ |
-| `f` | Label every link, form field, highlight and note in view |
-| `F` | Label the links; type a label to open its place in a new tab |
-| `;y` | Label the links; type a label to copy where it goes |
-| `gi` | Fill in the first form field in view; `Tab` goes on to the next |
-| `gI` | Fill in the last form field in view |
-| `g;` | Go back to the form field you were in last |
+Matches are highlighted while you type a search. At the prompt, `Tab` completes commands, settings and file paths, and `Up` / `Down` bring back earlier commands and searches. That history is kept after pdvim closes.
 
-After `f`, each link in view is highlighted and gets a label of two letters. Type a label to follow its link. A link to another place in the document goes there. A web or mail link (`http`, `https`, `mailto`) opens in your default program; links to anything else, such as files, are not followed. Highlights, notes and the other markings get labels too, just left of them; typing one picks that marking as `]h` would, so its note shows and `d` and `c` work on it. `Backspace` takes back the first letter, and `Esc` puts the labels away.
+### Links and forms
 
-`F` and `;y` label the links only. After `F`, typing a label opens the place in the document that the link goes to in a new tab, next to this one, and leaves this tab where it was; a web or mail link opens in your default program, as with `f`. The new tab has the document to itself, so markings made in one tab don't show in the other until you save them and open the document again. After `;y`, typing a label copies where the link goes: its address, or for a place in the document, the file's path followed by `#page=` and the page, as browsers open it.
+| Key  | Action                                                  |
+| ---- | ------------------------------------------------------- |
+| `f`  | Label every link, form field and marking in view        |
+| `F`  | Label the links, and open the one you pick in a new tab |
+| `;y` | Label the links, and copy where the one you pick goes   |
+| `gi` | Fill in the first form field in view                    |
+| `g;` | Go back to the form field you were in last              |
 
-After `f`, `F`, `;y`, `v` or `gh`, press `/` and type some text to narrow the labels to what holds it, ignoring case: the words of a link and its address, a field's name, a marking's text, or a line's text. The labels start again from the first, so they stay short. `Enter` picks the only label left, or stops typing text when several are left, so you can type a label; `Backspace` rubs out a character of the text. `:set hintchars` sets the letters labels are made of, as in `:set hintchars hjklasdf`; the first ones are used most, and more of the alphabet is added when there are too many things for two letters to label.
-
-The fields of a PDF form get labels too, so `f` is also how you fill one in. Picking a checkbox ticks or unticks it, and picking a radio button picks it. Picking a text field lets you type into it where it is on the page: `Left` / `Right` and `Home` / `End` move the cursor, `Backspace`, `Ctrl-w` and `Ctrl-u` rub out a character, a word or everything, `Ctrl-v` pastes, `Enter` or `Esc` fills it in and leaves it. Picking a list or a drop-down opens its options under the field, starting at the one it holds: type to narrow them, `Down` / `Up` (or `Ctrl-n` / `Ctrl-p`) to move, and `Enter` or `Esc` to pick the one highlighted. Read-only fields, buttons and signatures get no label. The form's scripts are not run. Filling in a field is a change like a highlight: `u` takes it back, `:w` saves it into the file, and pdvim asks before quitting with it unsaved.
-
-`gi` goes straight to the first field in view, or the next one below it, as in Vimium, and `gI` to the last field in view, or the one before it above. `g;` goes back to the field you were in last, in the document in view. From there `Tab` goes on to the next field, filling in the one you leave with what you typed or picked, and `Shift-Tab` goes back; past the last field it comes round to the first, across pages. A checkbox or radio button reached this way gets a frame, and `Space` or `Enter` ticks it. Inside a list, `Tab` goes on to the next field too; `Down` / `Up` move through the options.
-
-### Marks and jumps
-
-| Key                          | Action                                                               |
-| ---------------------------- | -------------------------------------------------------------------- |
-| `m{a-z}`                     | Mark this place in the document                                      |
-| `m{A-Z}`                     | Mark this place, to come back to from any document                   |
-| `` `{letter} ``, `'{letter}` | Go to a mark, opening its document for `A`–`Z`                       |
-| ` `` `, `''`                 | Go back to where the last jump left from                             |
-| `Ctrl-o` / `Ctrl-i`          | Go back through the jumps, or forward again; `{n}Ctrl-o` goes n back |
-
-A jump is `gg`, `G`, `{n}G`, `:{n}`, a search match, a chapter from the table of contents, a followed link, or a mark. Marks are kept in the reading history, so they last after pdvim closes; the jump list lasts while the document is open. `:marks` lists the marks, and `:delm[arks] {letters}` or `:delmarks !` takes them away.
+Type a label to pick its link or field. Web and mail links open in your default program. Picking a text field lets you type into it on the page, and `Tab` goes on to the next field. Checkboxes tick and lists drop down. After any key that shows labels, `/` and some text narrows the labels to the items that hold it.
 
 ### Selecting text
 
-| Key       | Action                                  |
-| --------- | --------------------------------------- |
-| `v` / `V` | Select characters / whole lines of text |
-| `s`       | Jump to text you type, and select from there |
+`v` selects characters and `V` selects whole lines. Each line in view gets a label, and typing one starts the selection there. `s` starts it at the text you type instead, as [flash.nvim](https://github.com/folke/flash.nvim) does.
 
-After `v` or `V`, each line of text in view gets a label of two letters, and so does each sentence that starts partway along a line. Type a label to put the cursor there, and start selecting from there. The status bar then lists what you can do next, each with its key; `d` and `c` show there when there is a marking to take away or change.
+| Key in visual mode         | Action                                                     |
+| -------------------------- | ---------------------------------------------------------- |
+| `h` `j` `k` `l`            | Move the cursor a character or a line                      |
+| `w` / `b` / `e`            | Move to the next word / the word before / the word's end   |
+| `0` / `^` / `$`            | Move to the start / the first letter / the end of the line |
+| `f` `F` `t` `T`, `;` / `,` | Move to a character on the line, and repeat that           |
+| `ip` / `ap`                | Select the paragraph                                       |
+| `o`                        | Move to the other end of the selection                     |
+| `y`                        | Copy the selection                                         |
+| `H` / `U` / `S` / `W`      | Highlight / underline / strike out / squiggle it           |
+| `n`                        | Put a note beside the line                                 |
+| `c` / `d`                  | Change the note on a marking / take markings away          |
+| `Esc`                      | Leave without copying                                      |
 
-`s` jumps by what you type, as [flash.nvim](https://github.com/folke/flash.nvim) does. Type some of the text in view: each match is highlighted and gets a label just after it, the nearest first. Keep typing to narrow the matches, or type a label to start selecting there; `Enter` goes to the nearest match, `Backspace` takes back a letter, and `Esc` gives up. Labels never start with a letter that could carry on what you typed, so a letter is always one or the other. While there are few matches the labels are one letter, and two when there are more. Lowercase matches either case; a capital makes the case count. In visual mode, `s` moves the cursor the same way, and the selection stretches to it.
+The status bar always lists what you can do next.
 
-| Key in visual mode        | Action                                                     |
-| ------------------------- | ---------------------------------------------------------- |
-| `h` / `l`, arrow keys     | Move the cursor a character left / right                   |
-| `j` / `k`, arrow keys     | Move the cursor a line down / up, onto the next pages      |
-| `w` / `b` / `e`           | Move to the next word / the word before / word's end       |
-| `0` / `$`, `Home` / `End` | Move to the start / end of the line                        |
-| `^`                       | Move to the first character on the line that isn't a space |
-| `f` / `F` + a character   | Move to the next / previous such character on the line     |
-| `t` / `T` + a character   | Move to just before / just after it                        |
-| `;` / `,`                 | Repeat the last `f`, `F`, `t`, or `T` / the other way      |
-| `s`                       | Jump the cursor to text you type, by its label             |
-| `o`                       | Move the cursor to the other end of the selection          |
-| `ip`, `ap`                | Select the paragraph; `ap` copies a blank line after it    |
-| `v` / `V`                 | Switch to selecting characters / lines, or leave           |
-| `y`                       | Copy the selection to the clipboard, and leave             |
-| `H`                       | Highlight the selection in the PDF file, and leave         |
-| `U`                       | Underline the selection, and leave                         |
-| `S`                       | Strike out the selection, and leave                        |
-| `W`                       | Underline the selection with a squiggle, and leave         |
-| `n`                       | Put a note beside the cursor's line, typed at the prompt   |
-| `c`                       | Change the note on the marking at the cursor, and leave    |
-| `d`                       | Take away the markings under the selection, and leave      |
-| `Esc`, `Ctrl-c`           | Leave without copying                                      |
+### Highlights and notes
 
-`H`, `U`, `S` and `W` add the marking to the document as a standard PDF annotation (a highlight, underline, strike-out or squiggly underline), which other PDF readers show too once it is saved. Each has its color setting: `highlight-color`, `underline-color`, `strikeout-color` and `squiggly-color`. Nothing is written until you save with `:w`; until then the tab, the status bar and the window title show `[+]`, and closing the document asks first. `:w` saves into the file incrementally: everything that was in it when pdvim opened it stays byte for byte as it was, and the changes are written after it. `:w copy.pdf` writes the whole document with its highlights to a new file instead, and leaves the original alone. Set `autosave` to save every change into the file as it is made. Many downloaded PDFs are slightly damaged, and MuPDF repairs them as it opens them; such a file can't be added to, so `:w` writes it whole, beside the original, and then puts it in the original's place. That repairs the file too.
+| Key              | Action                                                   |
+| ---------------- | -------------------------------------------------------- |
+| `]h` / `[h`      | Go to the next / previous marking                        |
+| `gh`             | Label the markings in view, to pick one                  |
+| `d` / `c` / `yh` | Take away / change the note on / copy the marking picked |
+| `Shift-Tab`      | List every marking in a sidebar                          |
+| `u` / `Ctrl-r`   | Undo / redo                                              |
+| `Ctrl-s`, `:w`   | Save the markings into the file                          |
 
-`n` opens the prompt as `:note `; type the note and press `Enter`. The note is a sticky-note annotation, which shows as an icon over the first letter of the cursor's sentence, and which other PDF readers open to show its text. The icon lets the text under it show through, and stays inside the text, so trimming the margins with `t` keeps it in view; notes and highlights never change how much `t` trims. `:note {text}` in normal mode puts one in the margin at the top of the window. Notes count as markings: `]h` / `[h` go to them and show their text, the markings sidebar lists them, `d` takes one away, `u` takes one back, and `:w` saves them. To change a note, go to it with `]h` or `[h`, or pick it with `gh`, and press `c`, or press `c` on it in the sidebar: the prompt opens with the note as it is, to change and `Enter`. `u` changes it back. In visual mode, a band over the bottom of the pages shows the note on the marking at the cursor, or on a note beside its line, and `c` changes it. `c` on a highlight or another marking sets the comment on it, which other PDF readers show with it.
-
-Press `u` to take back the last marking, or the last taking away of one, and `Ctrl-r` to put back what `u` took back. Taking back everything since the last save leaves nothing to save. pdvim remembers what to undo for each open document until you close it.
-
-`ip` selects the whole paragraph the cursor is in, and `ap` the same but copies it with a blank line after, as vim's do. Press `ip` again, or put a count before it as in `3ip`, to take in the paragraphs after it. A PDF has no blank lines between paragraphs, so pdvim finds where they end from the page: a line that stops short of the right edge the full lines share, a gap bigger than the usual one between lines, a first line indented past the lines around it, or the top of a new column. A paragraph ends at the bottom of its page.
-
-A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t`, and `T` look along the cursor's line only, and the cursor stays put if the character isn't there. These are the default keys; the `[keys.visual]` table of the [configuration](#configuration) changes them.
-
-### Highlights and other markings
-
-| Key         | Action                                                     |
-| ----------- | ---------------------------------------------------------- |
-| `]h` / `[h` | Go to the next / previous marking; `{n}]h` goes n on       |
-| `gh`        | Label the markings in view; type a label to pick one       |
-| `d`         | Take away the marking `]h`, `[h` or `gh` picked            |
-| `c`         | Change the note on the marking `]h`, `[h` or `gh` picked   |
-| `yh`        | Copy the picked marking's text, or a note's text           |
-| `Shift-Tab` | List the markings in a sidebar, with their text and page   |
-| `u`         | Take back the last marking, or the last taking away of one |
-| `Ctrl-r`    | Put back what `u` took back                                |
-| `Ctrl-s`    | Save the markings into the file, like `:w`                 |
-
-These go through every highlight, underline, strike-out, squiggly underline and note in the document, whether pdvim or another program made it. `]h` starts from the marking it last went to while that is in view, and from the top of the view otherwise; the marking it goes to gets a frame, which `Esc` hides. `gh` puts a label of two letters beside each marking in view, as `f` does for links; typing a label picks that marking, so that `d`, `c` and `yh` work on it. In the sidebar, `j` and `k` move, `Enter` goes to the marking selected, `d` takes it away, `c` changes its note, and `q`, `Esc` or `Shift-Tab` close the list. In visual mode, `d` takes away the markings under the selection. Taking a marking away is a change like any other: `:w` saves it, and `u` puts the marking back.
-
-### Tabs
-
-| Key                                       | Action                        |
-| ----------------------------------------- | ----------------------------- |
-| `gt`, `Ctrl-Tab` / `gT`, `Ctrl-Shift-Tab` | Go to the next / previous tab |
-| `{n}gt`, `{n}Ctrl-Tab`                    | Go to tab _n_                 |
-| `b`                                       | List the tabs; type to narrow, `Enter` to go to one |
-| `U`                                       | Open the tab closed last again |
-
-`U` brings back the tab closed last, in the place it had, and the document where you left it; press it again for the one closed before. pdvim keeps the last 20 tabs closed with `q`, `:q`, `:tabclose` or `:tabonly`, until it quits.
-
-A password-protected PDF asks for its password in the status bar when it opens, showing a dot for each character typed. A wrong password asks again; `Esc` gives up and closes its tab. pdvim keeps the password only while the document is open, and a locked PDF stays locked with the same password when you save markings into it or save a copy with `:w copy.pdf`.
-
-When a book numbers its pages differently from their place in the file, as with roman numerals for the front matter, the status bar shows the printed number first: `xii (14/300)`. `:{n}` goes to the page at place _n_, and `:goto {label}` to the page with that number printed on it; a number printed on no page is taken as a place.
-
-A tab, and the window while its tab is in view, goes by the document's title when the PDF gives one, and by the file name otherwise. Titles that are only the name of the file the PDF was made from, such as `Microsoft Word - report.docx` or `untitled`, are passed over.
-
-### Search and prompt
-
-| Key                       | Action                                                 |
-| ------------------------- | ------------------------------------------------------ |
-| `/` / `?`                 | Search forwards / backwards                            |
-| `n` / `N`                 | Go to the next / previous match                        |
-| `:`                       | Open the command prompt                                |
-| `.`, `{n}.`               | Run the last command again, or _n_ times               |
-| `o`                       | Show recent documents                                  |
-| `Esc`, `Ctrl-c`, `Ctrl-[` | Cancel a half-typed command and hide search highlights |
-| `q`                       | Close the tab, and quit after the last one             |
-| `Ctrl-g`                  | Show the document's title, author, dates and more      |
+Nothing is written until you save. Until then the tab shows `[+]`, and pdvim asks before closing the document. `:w copy.pdf` saves a copy instead, and the `autosave` setting saves each change as you make it. `:note {text}` puts a sticky note at the top of the window.
 
 ### Copying
 
 | Key  | Action                                                  |
 | ---- | ------------------------------------------------------- |
 | `yy` | Copy the path of the document's file                    |
-| `yt` | Copy the document's title, or its file name without one |
+| `yt` | Copy the document's title                               |
 | `yp` | Copy the text of the page in view                       |
-| `yh` | Copy the text of the marking `]h`, `[h` or `gh` picked  |
-| `yi` | Label pictures and figures; type a label to copy one    |
+| `yi` | Label the pictures and figures, to copy one as an image |
 
-To copy part of a page, select it in [visual mode](#selecting-text) and press `y`.
+### Tabs
 
-`yi` labels the pictures in view, and the drawings made of lines and shapes, such as charts, diagrams and tables, each as one figure. Type a label to copy that one to the clipboard as a picture, as it is printed, with the words in it, and at least twice as sharp as at 100%. Paste it into a chat, a document or an image editor. Rules, underlines and other lines too thin to be a figure are left out. `/` and some text narrows the labels to the figures with that text in them.
+| Key                                       | Action                                    |
+| ----------------------------------------- | ----------------------------------------- |
+| `gt`, `Ctrl-Tab` / `gT`, `Ctrl-Shift-Tab` | Go to the next / previous tab, or tab _n_ |
+| `b`                                       | List the tabs, and type to find one       |
+| `U`                                       | Open the tab you closed last again        |
 
-### The mode
+### Modes
 
-The box at the left of the status bar always names the mode, which says what the next key does. Modes of a kind share a color, taken from the theme:
+The box at the left of the status bar always names the mode. Modes of the same kind share a color:
 
-| Color  | Modes                                                                                     |
-| ------ | ----------------------------------------------------------------------------------------- |
-| Blue   | `NORMAL`: reading                                                                         |
-| Mauve  | `VISUAL`, `V-LINE`: selecting text; `SELECT`, `JUMP`: picking where to start, after `v` or `s` |
-| Green  | `INSERT`: filling in a field of a form                                                    |
-| Peach  | `COMMAND`, `SEARCH`, `PASSWORD`: typing at the bottom line; `CONFIRM`: answering it        |
-| Yellow | `FOLLOW`, `PICK`: labels on links, fields and markings, after `f` or `gh`                 |
-| Teal   | `CONTENTS`, `MARKINGS`, `HELP`, `RECENT`, `TABS`, `INFO`: a list or panel over the pages   |
+| Color  | Modes                                                                                 |
+| ------ | ------------------------------------------------------------------------------------- |
+| Blue   | `NORMAL`: reading                                                                     |
+| Mauve  | `VISUAL`, `V-LINE`, `SELECT`, `JUMP`: selecting text                                  |
+| Green  | `INSERT`: filling in a form field                                                     |
+| Peach  | `COMMAND`, `SEARCH`, `PASSWORD`, `CONFIRM`: typing or answering at the bottom         |
+| Yellow | `FOLLOW`, `PICK`: labels on links, fields, markings and figures                       |
+| Teal   | `CONTENTS`, `OVERVIEW`, `MARKINGS`, `HELP`, `RECENT`, `TABS`, `INFO`: a list or panel |
 
 ## Commands
 
-| Command                                | Action                                                               |
-| -------------------------------------- | -------------------------------------------------------------------- |
-| `:{n}`                                 | Go to page _n_                                                       |
-| `:goto {label}`                        | Go to the page with that number printed on it, as `xii` or `A-3`     |
-| `:o[pen] {file}`                       | Open a document in a new tab (`~` expands to your home directory)    |
-| `:rec[ent]`                            | Show recent documents                                                |
-| `:h[elp]`                              | Show every action and the keys bound to it                           |
-| `:h[elp] {topic}`                      | The same, scrolled to a mode, a heading or an action: `:help visual` |
-| `:apr[opos] {word}`                    | Show only the actions and keys that mention the word: `:apropos zoom` |
-| `:marks`                               | List the marks of the document in view, and `A`–`Z`                  |
-| `:delm[arks] {letters}` or `!`         | Take marks away: those letters, or with `!` all of this document's   |
-| `:ve[rsion]`                           | Show pdvim's version and where to find it on GitHub                  |
-| `:info`, `:f[ile]`                     | Show the document's title, author, dates, pages, format, encryption  |
-| `:note {text}`                         | Put a note with that text in the margin at the top of the window     |
-| `:noh[lsearch]`                        | Hide search highlights                                               |
-| `:!{command}`                          | Run a shell command; `%` is the document's file                      |
-| `:export[!] {file}`                    | Save the page in view as a `.png` image or `.svg` drawing            |
-| `:set recolor [true\|false\|auto]`     | Turn recoloring on or off, or follow the system's theme (default)    |
-| `:set trim [true\|false]`              | Turn margin trimming on or off                                       |
-| `:set recolor-lightcolor #rrggbb`      | Set the color white paper becomes when recolored (default: theme's)  |
-| `:set recolor-darkcolor #rrggbb`       | Set the color black ink becomes when recolored (default: theme's)    |
-| `:theme {name}\|auto`                  | Set the theme, or follow the system's (default); or `:colo[rscheme]` |
-| `:theme`                               | Show the theme in force                                              |
-| `:set theme {name}\|auto`              | The same as `:theme`                                                 |
-| `:set theme-dark {name}`               | Set the theme followed while the system is dark                      |
-| `:set theme-light {name}`              | Set the theme followed while the system is light                     |
-| `:set scroll-step {pixels}`            | Set how far one `j` or `k` scrolls                                   |
-| `:set fontsize {points}`               | Set the type size books (EPUB, FB2) are laid out in (default 12)     |
-| `:set columns {n}`                     | Show _n_ pages side by side in this tab, 1 to 4; `zc` switches 1 and 2 |
-| `:set hintchars {letters}`             | Set the letters labels are made of (default `asdfghjkl`)             |
-| `:set incsearch [true\|false]`         | Highlight the matches in view while a search is typed (default on)   |
-| `:set tabbar [true\|false]`            | Show the tab bar when more than one tab is open (default on)         |
-| `:set statusbar [true\|false]`         | Show the status bar while reading (default on)                       |
-| `:set confirm-quit [true\|false]`      | Ask before quitting (default on)                                     |
-| `:set confirm-tab-close [true\|false]` | Ask before closing a tab while others are open (default on)          |
-| `:set highlight-color #rrggbb`         | Set the color `H` in visual mode highlights in (default `#ffff00`)   |
-| `:set underline-color #rrggbb`         | Set the color of `U`'s underline (default `#1e88e5`)                 |
-| `:set strikeout-color #rrggbb`         | Set the color of `S`'s line through the text (default `#e53935`)     |
-| `:set squiggly-color #rrggbb`          | Set the color of `W`'s squiggly underline (default `#fb8c00`)        |
-| `:set note-color #rrggbb`              | Set the color of a note's icon (default `#fdd835`)                   |
-| `:map [mode] {keys} {action}`          | Bind keys to an action (see [Keys](#keys-1))                         |
-| `:map {keys} :{command}`               | Bind keys to a command line; `;` separates several commands          |
-| `:unmap [mode] {keys}`                 | Remove a key binding                                                 |
-| `:mapclear [mode]`                     | Remove every key binding of a mode                                   |
-| `:so[urce] [file]`                     | Read the configuration file again, or another file like it           |
-| `:tabe[dit] {file}`, `:tabnew [file]`  | Open a document in a new tab, or open an empty tab                   |
-| `:tabn[ext] [n]`                       | Go to the next tab, or to tab _n_                                    |
-| `:tabp[revious]`                       | Go to the previous tab                                               |
-| `:tabc[lose]`                          | Close the tab, unless it is the last                                 |
-| `:tabo[nly]`, `:tabonly!`              | Close every other tab; `!` even those with highlights not saved      |
-| `:tabm[ove] [n\|+n\|-n]`               | Move the tab to place _n_ (0 is first), _n_ places on or back, or last |
-| `:q[uit]`                              | Close the tab, and quit after the last one                           |
-| `:qa[ll]`                              | Quit                                                                 |
-| `:q!`, `:qa!`                          | Close the tab, or quit, throwing away highlights not saved           |
-| `:w[rite]`                             | Save the highlights into the file                                    |
-| `:w {file}`, `:w! {file}`              | Save a copy with the highlights; `!` overwrites a file that exists   |
-| `:wq`, `:x`                            | Save, then close the tab                                             |
-| `:wa[ll]`                              | Save every document with highlights not saved                        |
-| `:wqa[ll]`, `:xa[ll]`                  | Save every document, then quit                                       |
+| Command                                | Action                                                       |
+| -------------------------------------- | ------------------------------------------------------------ |
+| `:{n}`, `:goto {label}`                | Go to page _n_, or to the page numbered `xii` or `A-3`       |
+| `:o[pen] {file}`, `:tabe[dit] {file}`  | Open a document in a new tab                                 |
+| `:rec[ent]`                            | Show the documents you read recently                         |
+| `:w[rite]`, `:w {file}`                | Save the markings, or save a copy with them                  |
+| `:q[uit]`, `:qa[ll]`, `:wq`, `:q!`     | Close the tab or quit, saving first or throwing changes away |
+| `:tabn[ext]`, `:tabp[revious]`         | Go to the next or previous tab                               |
+| `:tabc[lose]`, `:tabo[nly]`            | Close this tab, or every other one                           |
+| `:tabm[ove] [n\|+n\|-n]`               | Move the tab                                                 |
+| `:note {text}`                         | Put a note in the margin at the top of the window            |
+| `:marks`, `:delm[arks] {letters}`      | List marks, or take them away                                |
+| `:info`                                | Show the title, author, dates, pages and encryption          |
+| `:export[!] {file}`                    | Save the page in view as a `.png` image or an `.svg` drawing |
+| `:!{command}`                          | Run a shell command; `%` stands for the document's file      |
+| `:set {setting} {value}`               | Change a [setting](#settings)                                |
+| `:theme {name}`                        | Change the theme, or show it without a name                  |
+| `:map`, `:unmap`, `:mapclear`          | Change the [key bindings](#key-bindings)                     |
+| `:so[urce] [file]`                     | Read the configuration file again                            |
+| `:h[elp] [topic]`, `:apr[opos] {word}` | Show the keys: all of them, or those about a topic or word   |
+| `:ve[rsion]`                           | Show pdvim's version                                         |
 
-If you name a boolean setting without a value, it is turned on.
+Any action can also be run by name, such as `:next-tab` or `:zoom-to 150`. Separate several commands with `;`. For example, `:!xdg-open %` opens the document in your default program, and `:!cp % ~/papers/` copies it.
 
-`:export page.png` saves the page in view as an image the size it is shown at, and `:export page.svg` as a drawing, each turned as it is shown, with its markings and in its own colours, recolored or not. A file that is there already is kept, unless you write `:export!`. To copy the page's text, press `yp`.
+## Books, comics and images
 
-`:!` runs the rest of the line in the shell (`sh -c`, or `cmd /C` on Windows), `;` and all, with each `%` standing for the file of the document in view, quoted so that any path works; `\%` is a `%` itself. `:!xdg-open %` opens the document in your default program for it, and `:!cp % ~/papers/` copies it. pdvim goes on while the command runs, and shows the last line it printed in the status bar once it finishes, or its exit status and error if it fails.
+Besides PDF, pdvim opens EPUB and FB2 books, CBZ and CBT comics, XPS documents, SVG drawings, and PNG, JPEG, GIF, TIFF, BMP and other images.
 
-`:help` shows a cheat sheet of every action in every mode, the keys bound to it, and what it does. It shows your own bindings, including changes from the configuration file and `:map`. Scroll it with `j` / `k`, `Ctrl-d` / `Ctrl-u`, and `g` / `G`, and close it with `q` or `Esc`. To open it with a key, bind the `help` action, as in `"ctrl+h" = "help"`. `:help {topic}` opens it at a topic: a mode's name, such as `visual`, `hints` or `prompt`; a word from a heading, such as `zoom` or `tabs`; or an action's name, such as `rotate`. `:apropos {word}` shows only the actions whose name or description mentions the word, and those bound to it as a key, under their headings: `:apropos mark` lists everything about marks and markings.
+A book has no pages of its own, so pdvim lays it out on pages the size of the window, in the type size `fontsize` sets. In a book, the zoom keys make the type bigger or smaller. When the window changes, the book is laid out again, and you stay at the same passage.
 
-You can also run any [action](#actions) by name, as in `:scroll-down` or `:next-tab`. A number after it works like a count typed before a key: `:zoom-to 150` zooms to 150%, and `:first-page 12` goes to page 12.
-
-Press `Tab` in the command prompt to complete what you're typing: command and action names, setting names and their values, mode and action names after `:map`, and file paths after `:open`, `:tabedit`, and `:tabnew`. Paths offer folders and PDF files. If more than one completion fits, `Tab` fills in as much as they share and lists them above the prompt. Press `Tab` again to go through the list, and `Shift-Tab` to go back. While the list is open, it narrows as you type, and it closes when nothing fits.
-
-While you type a search after `/` or `?`, the matches on the pages in view are highlighted as you go, before you press `Enter`. `Enter` then searches the whole document and goes to the nearest match, and `Esc` leaves things as they were. `:set incsearch false` turns this off.
-
-`.` runs the last command line again, whether you typed it after `:` or pressed keys bound to it, all of its commands in turn; `3.` runs it three times. Only command lines count: `.` doesn't repeat keys such as `j` or `]h`.
-
-Press `Up` or `Ctrl-p` at `:`, `/` or `?` to bring back an earlier command or search, and again to go further back; `Down` or `Ctrl-n` comes forward again, back to what you were typing. Whatever you have typed already narrows them to the lines that start the same way, so `:zo` then `Up` finds your last `:zoom`. Commands and searches are kept apart, `/` and `?` share theirs, and the last 500 of each are kept in the reading history, so they last after pdvim closes. Passwords are never kept.
-
-## Recent documents
-
-`o` or `:recent` lists up to 20 documents you read before, the most recent first. The open document and files that no longer exist are left out. Type to narrow the list: it keeps the documents whose path holds every word you type, ignoring case, so `rust book` finds `~/books/the-rust-programming-language-book.pdf`.
-
-| Key                                         | Action                                  |
-| ------------------------------------------- | --------------------------------------- |
-| Letters, digits, `Space`                    | Narrow the list                         |
-| `Down`, `Ctrl-n`, `Ctrl-j`, `Tab`           | Select the next entry                   |
-| `Up`, `Ctrl-p`, `Ctrl-k`, `Shift-Tab`       | Select the previous entry               |
-| `Home` / `End`                              | Select the first / last entry           |
-| `Enter`                                     | Open the selected document in a new tab |
-| `Backspace` / `Ctrl-u`                      | Rub out a character / all that's typed  |
-| `Esc`, `Ctrl-c`, or `Backspace` with nothing typed | Close the list                   |
-
-`b` lists the open tabs the same way, each with its number, name and file, the tab in view selected. Type to narrow it, by name, file or number, and press `Enter` to go to the tab selected.
+Search, copying, links, the table of contents and visual mode work in every format that has text. Highlights, notes, forms and `:w` work in PDFs only.
 
 ## Configuration
 
-pdvim reads `$XDG_CONFIG_HOME/pdvim/config.toml` when it starts. If `XDG_CONFIG_HOME` is not set, it reads `~/.config/pdvim/config.toml`. You don't need the file. After editing it, `:source` reads it again without a restart: the key bindings start again from the defaults and the file, so a binding taken out of the file goes, and bindings made with `:map` go too. `recolor` and `trim` then only change how documents opened afterwards start, not the ones open. `:source {file}` reads another file written the same way.
+pdvim reads `~/.config/pdvim/config.toml` when it starts, or the same path under `$XDG_CONFIG_HOME` when that is set. You don't need the file. After you edit it, `:source` reads it again.
 
-pdvim's own defaults are a configuration file too: [`defaults.toml`](defaults.toml), built into pdvim and read before yours. It lists every setting and every key binding of every mode. To start from it, copy it into place and change what you like:
+[`defaults.toml`](defaults.toml) lists every setting and every key binding of every mode, with comments. pdvim reads it before your file. Copy it to start from:
 
 ```sh
 mkdir -p ~/.config/pdvim
 cp defaults.toml ~/.config/pdvim/config.toml
 ```
 
-A shorter file works too, since anything you leave out keeps its default:
+A short file works too, since anything you leave out keeps its default:
 
 ```toml
 [settings]
-# Recolor and trim documents that have not been opened before.
 recolor = true
-trim = true
-scroll-step = 60
-confirm-quit = true
-# Always Catppuccin Macchiato, whatever the system's theme.
 theme = "catppuccin-macchiato"
+scroll-step = 60
 
 [keys.normal]
-# Move between tabs with Ctrl-n and Ctrl-p.
 "ctrl+n" = "next-tab"
 "ctrl+p" = "previous-tab"
-# Quit with Q instead of q.
-"q" = "none"
-"shift+q" = "quit"
+"ctrl+t" = ":theme catppuccin-latte"
 
 [keys.visual]
-# Copy with Y as well as y.
 "Y" = "yank"
 ```
 
-`[settings]` takes the same names and values as `:set`. With `confirm-quit` on, as it is by default, pdvim asks `quit pdvim? (y/n)` before quitting: when you close the last tab, use `:qa`, or close the window. Press `y` or `Enter` to quit, or `Esc` or any other key to stay. If the window is closed again while pdvim is asking, for example by a window manager that insists, it quits without asking. With `confirm-tab-close` on, also the default, pdvim asks `close tab {name}? (y/n)` before closing a tab with `q`, `:q`, or `:tabclose` while other tabs are open. Closing the last tab quits pdvim, so `confirm-quit` decides whether that asks. Whatever these say, pdvim asks before closing a document with highlights not saved, unless `autosave` is on. `recolor` is `"auto"` by default: pdvim recolors every document while the system prefers a dark theme, shows them as printed while it prefers a light one, and changes as soon as the system does. pdvim reads the preference from the desktop's color-scheme setting (`org.freedesktop.appearance` through the desktop portal on Linux). `R` still turns recoloring on or off for the document in view, until the system's theme changes again. With `recolor` set to `true` or `false`, it and `trim` decide how a document starts the first time you open it. After that, the document is restored the way you left it.
+If an entry has a mistake, pdvim skips it and shows the mistake in the status bar.
 
-`theme` sets the colors of the tab bar, the status bar and the box naming the mode in it, the lists and the backdrop behind the pages, and the colors pages are recolored in unless `recolor-lightcolor` and `recolor-darkcolor` set their own. The themes are `catppuccin-latte` (light), `catppuccin-frappe`, `catppuccin-macchiato`, `catppuccin-mocha`, `pdvim-dark` and `pdvim-light`. With `theme = "auto"`, the default, pdvim uses `theme-dark` (`catppuccin-mocha`) while the system prefers a dark theme and `theme-light` (`catppuccin-latte`) while it prefers a light one, whatever `recolor` is set to.
+### Settings
 
-`[[paths]]` tables give the documents under some paths settings of their own: whether they are recolored, whether their margins are trimmed, and how many pages sit side by side. Each has a pattern under `match`, and any of `recolor`, `trim` and `columns`:
+`:set` takes the same names and values while pdvim runs. A boolean setting named without a value is turned on.
+
+| Setting                                    | Default                                 | What it does                                                               |
+| ------------------------------------------ | --------------------------------------- | -------------------------------------------------------------------------- |
+| `recolor`                                  | `"auto"`                                | Recolor pages for a dark background: `true`, `false`, or follow the system |
+| `trim`                                     | `false`                                 | Hide the blank margins of pages                                            |
+| `theme`                                    | `"auto"`                                | The theme, or `"auto"` to follow the system                                |
+| `theme-dark` / `theme-light`               | `catppuccin-mocha` / `catppuccin-latte` | The themes `"auto"` uses                                                   |
+| `recolor-lightcolor` / `recolor-darkcolor` | `"theme"`                               | The colors paper and ink become when recolored, as `#rrggbb`               |
+| `scroll-step`                              | `40`                                    | How far `j` and `k` scroll, in pixels                                      |
+| `fontsize`                                 | `12`                                    | The type size of books, in points                                          |
+| `columns`                                  | `1`                                     | How many pages sit side by side, 1 to 4                                    |
+| `autosave`                                 | `false`                                 | Save each marking into the file as soon as it is made                      |
+| `confirm-quit` / `confirm-tab-close`       | `true`                                  | Ask before quitting / before closing a tab                                 |
+| `hintchars`                                | `"asdfghjkl"`                           | The letters labels are made of                                             |
+| `incsearch`                                | `true`                                  | Highlight matches while a search is typed                                  |
+| `tabbar` / `statusbar`                     | `true`                                  | Show the tab bar / the status bar                                          |
+| `highlight-color`, `underline-color`       | `#ffff00`, `#1e88e5`                    | The colors of highlights and underlines                                    |
+| `strikeout-color`, `squiggly-color`        | `#e53935`, `#fb8c00`                    | The colors of strike-outs and squiggly underlines                          |
+| `note-color`                               | `#fdd835`                               | The color of a note's icon                                                 |
+
+The themes are `catppuccin-latte`, `catppuccin-frappe`, `catppuccin-macchiato`, `catppuccin-mocha`, `pdvim-dark` and `pdvim-light`. On Linux, pdvim reads the system's light or dark preference from the desktop portal.
+
+### Settings by path
+
+`[[paths]]` tables give some documents settings of their own. Each one has a pattern under `match`, and any of `recolor`, `trim` and `columns`:
 
 ```toml
 # Scans stay as printed, and trimmed.
@@ -445,112 +313,37 @@ match = "*.cbz"
 columns = 2
 ```
 
-In a pattern, `*` stands for any characters but `/` and `?` for one, and `**` for any characters at all, so `~/scans/**` is everything under `~/scans`, however deep. A pattern ending in `/` is everything under that folder, and one without a `/` is matched against the file's name alone. A rule sets how a matching document looks every time it opens, whatever it was left like and whatever the system's theme; keys such as `R` and `t` still change it while it is open. Where several rules match, the last one wins. `recolor = "auto"` makes the documents a rule matches follow the system's theme even when `recolor` in `[settings]` is `true` or `false`.
+`*` matches any characters except `/`, `?` matches one character, and `**` matches anything, however deep. A pattern without a `/` is matched against the file's name alone. When several rules match, the last one wins.
 
-`[keys.<mode>]` binds keys to that mode's actions, on top of the default keys. Bind keys to `"none"` to remove a default. Keys put straight in `[keys]` are bound in normal mode, as before modes could be configured. The modes are:
+### Key bindings
 
-| Mode       | When                                                          |
-| ---------- | ------------------------------------------------------------- |
-| `normal`   | Reading: the [actions](#actions) below                        |
-| `visual`   | Selecting text after `v` or `V`                               |
-| `hints`    | Labels on links or lines; letters not bound type a label      |
-| `outline`  | The table of contents                                         |
-| `markings` | The list of highlights and other markings                     |
-| `recent`   | The recent-documents list; digits not bound open that entry   |
-| `help`     | The cheat sheet                                               |
-| `prompt`   | Typing after `:`, `/` or `?`; keys not bound type themselves  |
-| `confirm`  | Questions such as `quit pdvim? (y/n)`; keys not bound mean no |
+Each `[keys.<mode>]` table binds keys to that mode's actions, on top of the defaults. Bind keys to `"none"` to remove a default.
 
-`defaults.toml` and `:help` list every mode's actions.
+- **Keys** are written as a character (`j`, `G`, `?`) or a name (`space`, `tab`, `escape`, `enter`, `pageup`, `f1`, and so on), with `ctrl+` or `shift+` in front for modifiers: `ctrl+d`, `shift+tab`.
+- **Sequences** are keys separated by spaces, as in `"g g"`.
+- **Command lines**, written after a `:`, can be bound to keys in normal mode, as in `":set recolor false; zoom-to 150"`.
 
-If an entry has a mistake, pdvim skips it, shows the first mistake in the status bar, and prints every mistake to standard error. If the file is not valid TOML, pdvim ignores all of it.
+The modes are `normal`, `visual`, `hints`, `overview`, `outline`, `markings`, `recent`, `help`, `prompt` and `confirm`. `defaults.toml` and `:help` list the actions of each. While pdvim runs, `:map visual Y yank`, `:unmap outline q` and `:mapclear prompt` do the same.
 
-### Keys
+## Files
 
-Write a key as a single character, such as `j`, `G`, or `?`, or by name: `space`, `tab`, `escape`, `enter`, `backspace`, `up`, `down`, `left`, `right`, `pageup`, `pagedown`, `home`, `end`, or `f1` to `f12`. Put `ctrl+` or `shift+` in front for a key with modifiers: `ctrl+d`, `shift+space`, `shift+tab`, `ctrl+tab`, `ctrl+shift+tab`. `shift+q` is the same as `Q`.
+| What            | Linux                                 | macOS                  | Windows                |
+| --------------- | ------------------------------------- | ---------------------- | ---------------------- |
+| Configuration   | `~/.config/pdvim/config.toml`         | `~/.config/pdvim`      | `%APPDATA%\pdvim`      |
+| Reading history | `~/.local/share/pdvim/history.sqlite` | `~/.local/share/pdvim` | `%LOCALAPPDATA%\pdvim` |
 
-Separate the keys of a sequence with spaces, as in `"g g"` or `"z i"`. A count typed before the keys is passed to the action, as with the built-in keys. If one binding is the start of a longer one, the shorter one wins: binding `g` hides `g g`.
+The reading history keeps each document's page, zoom, marks and other state, and your command history. On Linux, `$XDG_CONFIG_HOME` and `$XDG_DATA_HOME` move these files when they are set.
 
-The `:map`, `:unmap`, and `:mapclear` commands change the bindings while pdvim runs. They write keys the same way, with the mode first for any mode but normal: `:map ctrl+n next-tab`, `:map visual Y yank`, `:unmap outline q`, `:mapclear prompt`.
-
-In normal mode, keys can also run commands: write the command line after a `:`, as you would type it. Separate several commands with `;`, and they run one after another, stopping at the first mistake:
-
-```toml
-[keys.normal]
-"ctrl+t" = ":theme catppuccin-latte"
-"g x" = ":set recolor false; zoom-to 150"
-```
-
-`:map ctrl+t :theme catppuccin-latte` does the same while pdvim runs. `:help` lists these bindings under "Commands bound to keys". `;` separates commands typed at `:` too, as in `:w; tabclose`; write `;;` for a `;` that doesn't, as in a file name. `:map` and `:note` take the rest of the line, `;` and all.
-
-Two things are typed rather than bound: the character after `f`, `F`, `t` or `T` in visual mode, and the letters of a label.
-
-### Actions
-
-The actions of normal mode, and their default keys:
-
-| Action                                | Default keys                                |
-| ------------------------------------- | ------------------------------------------- |
-| `scroll-down` / `scroll-up`           | `j`, `down` / `k`, `up`                     |
-| `scroll-left` / `scroll-right`        | `h`, `left` / `l`, `right`                  |
-| `scroll-half-down` / `scroll-half-up` | `ctrl+d` / `ctrl+u`                         |
-| `scroll-full-down` / `scroll-full-up` | `ctrl+f`, `space` / `ctrl+b`, `shift+space` |
-| `next-page` / `previous-page`         | `J`, `pagedown` / `K`, `pageup`             |
-| `first-page` / `last-page`            | `g g`, `home` / `G`, `end`                  |
-| `page-top` / `page-bottom`            | `H` / `L`                                   |
-| `zoom-in` / `zoom-out`                | `+`, `z i`, `z I` / `-`, `z o`, `z O`       |
-| `zoom-to`                             | `=`, `z z`, `z Z`                           |
-| `zoom-reset`                          | `z 0`                                       |
-| `fit-width` / `fit-page`              | `z w` / `z p`                               |
-| `rotate`                              | `r`                                         |
-| `toggle-recolor`                      | `R`                                         |
-| `toggle-trim`                         | `t`                                         |
-| `toggle-bars`                         | `z b`                                       |
-| `toggle-columns`                      | `z c`                                       |
-| `toggle-fullscreen`                   | `f11`                                       |
-| `search-forward` / `search-backward`  | `/` / `?`                                   |
-| `search-next` / `search-previous`     | `n` / `N`                                   |
-| `command-prompt`                      | `:`                                         |
-| `repeat`                              | `.`                                         |
-| `recent`                              | `o`                                         |
-| `next-tab` / `previous-tab`           | `g t`, `ctrl+tab` / `g T`, `ctrl+shift+tab` |
-| `tabs` / `reopen-tab`                 | `b` / `U`                                   |
-| `abort`                               | `escape`, `ctrl+c`, `ctrl+[`                |
-| `info`                                | `ctrl+g`                                    |
-| `quit`                                | `q`                                         |
-| `help`                                | none                                        |
-| `follow-link`                         | `f`                                         |
-| `follow-link-tab` / `yank-link`       | `F` / `; y`                                 |
-| `visual` / `visual-line`              | `v` / `V`                                   |
-| `flash`                               | `s`                                         |
-| `undo` / `redo`                       | `u` / `ctrl+r`                              |
-| `write`                               | `ctrl+s`                                    |
-| `next-marking` / `previous-marking`   | `] h` / `[ h`                               |
-| `delete-marking`                      | `d h`                                       |
-| `markings`                            | `shift+tab`                                 |
-| `outline`                             | `tab`                                       |
-| `next-chapter` / `previous-chapter`   | `] ]` / `[ [`                               |
-| `set-mark` / `go-to-mark`             | `m` / `` ` ``, `'`                          |
-| `jump-back` / `jump-forward`          | `ctrl+o` / `ctrl+i`                         |
-| `yank-path` / `yank-title`            | `y y` / `y t`                               |
-| `yank-page` / `yank-marking`          | `y p` / `y h`                               |
-
-With a count, `first-page` and `last-page` go to that page, `zoom-to` zooms to that percentage, and `next-tab` goes to that tab.
-
-## Reading history
-
-pdvim saves where you left each document in `$XDG_DATA_HOME/pdvim/history.sqlite`. If `XDG_DATA_HOME` is not set, it uses `~/.local/share/pdvim/history.sqlite`. Entries are keyed by file path.
+The Flatpak reads the same configuration, but keeps its history in `~/.var/app/io.github.djmbritt.pdvim`. It can open files in your home folder, `/media`, `/run/media` and `/mnt`.
 
 ## Fuzzing
 
-`fuzz/` holds [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) targets for the parts of pdvim that read input it does not control: PDF files and the other formats MuPDF opens, the configuration file, `:` commands, key names and key presses. See [fuzz/README.md](fuzz/README.md).
+`fuzz/` holds [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) targets for every part of pdvim that reads input from outside: documents, the configuration file, commands and keys. GitHub Actions fuzzes each target after every push to `main`, and for longer once a week. See [fuzz/README.md](fuzz/README.md) for how to run them and the coverage they reach.
 
 ```sh
 cargo install cargo-fuzz
 fuzz/run.sh pdf 600     # fuzz PDF loading for ten minutes
 ```
-
-The targets reach about 28% of pdvim's lines in all. They cover the parts that read outside input well: 95% of the reader, 93% of visual mode, 96% of the labels and 68–83% of command, key and configuration parsing. The window and event loop in `src/app/` aren't fuzzed. [fuzz/README.md](fuzz/README.md#coverage) has the table for every file, and `fuzz/coverage.sh` measures it again. GitHub Actions fuzzes every target for three minutes after each push to `main`, and for half an hour each week.
 
 ## License
 

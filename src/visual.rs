@@ -117,15 +117,24 @@ pub enum Outcome {
     Flash,
 }
 
+/// Where across the page `j` and `k` take the cursor.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Goal {
+    /// The character that covers this far across, or the nearest.
+    Across(f32),
+    /// The end of each line, after `$`, as in vim.
+    End,
+}
+
 /// The selection: where it started, where the cursor is, and how.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Visual {
     pub kind: Kind,
     anchor: Spot,
     cursor: Spot,
-    /// How far across the page `j` and `k` aim for, kept from one to the
+    /// Where across the page `j` and `k` aim for, kept from one to the
     /// next so that short lines do not pull the cursor left for good.
-    goal: Option<f32>,
+    goal: Option<Goal>,
     /// The count and keys typed so far.
     pending: Pending<Binding>,
     /// A search whose character is still to be typed, and its count.
@@ -150,6 +159,15 @@ impl Visual {
 
     pub const fn cursor(&self) -> Spot {
         self.cursor
+    }
+
+    /// Puts the cursor at the end of its line, and keeps it at the end of
+    /// each line `j` and `k` go to, as `V` starts.
+    pub fn stick_to_line_end(&mut self, text: &Text) {
+        if let Some(current) = line(text, self.cursor.page, self.cursor.line) {
+            self.cursor.index = current.chars.len().saturating_sub(1);
+        }
+        self.goal = Some(Goal::End);
     }
 
     /// Puts the cursor at a spot; the selection runs from where it started
@@ -280,7 +298,7 @@ impl Visual {
                     }
                     self.cursor = moved;
                 }
-                self.goal = None;
+                self.goal = matches!(binding, Binding::LineEnd).then_some(Goal::End);
             }
         }
         Outcome::Stay
@@ -354,10 +372,15 @@ impl Visual {
     }
 
     /// Moves the cursor a number of lines down, or up, to the character
-    /// nearest the goal across the page.
+    /// under the goal across the page: the one that covers a point a
+    /// quarter of the way into the cursor's character, so that the cursor
+    /// goes straight down from where the character starts, rather than
+    /// being pulled right by a wide one; or the nearest to it; or the last.
     fn vertical(&mut self, text: &Text, times: u32, down: bool) {
         let goal = *self.goal.get_or_insert_with(|| {
-            character(text, self.cursor).map_or(0.0, |area| f32::midpoint(area.left, area.right))
+            Goal::Across(character(text, self.cursor).map_or(0.0, |area| {
+                (area.right - area.left).mul_add(0.25, area.left)
+            }))
         });
         let mut at = (self.cursor.page, self.cursor.line);
         for _ in 0..times {
@@ -375,13 +398,21 @@ impl Visual {
         let Some(target) = line(text, page, line_index) else {
             return;
         };
-        let distance = |area: &Rect| (f32::midpoint(area.left, area.right) - goal).abs();
-        let index = target
-            .chars
-            .iter()
-            .enumerate()
-            .min_by(|(_, one), (_, other)| distance(&one.area).total_cmp(&distance(&other.area)))
-            .map_or(0, |(index, _)| index);
+        let index = match goal {
+            Goal::End => target.chars.len().saturating_sub(1),
+            Goal::Across(goal) => {
+                // Nothing for a character that covers the goal.
+                let distance = |area: &Rect| (area.left - goal).max(goal - area.right).max(0.0);
+                target
+                    .chars
+                    .iter()
+                    .enumerate()
+                    .min_by(|(_, one), (_, other)| {
+                        distance(&one.area).total_cmp(&distance(&other.area))
+                    })
+                    .map_or(0, |(index, _)| index)
+            }
+        };
         self.cursor = Spot {
             page,
             line: line_index,
@@ -855,6 +886,33 @@ mod tests {
         assert_eq!(visual.cursor(), spot(2, 1, 8));
         keys(&mut visual, &text, "3k");
         assert_eq!(visual.cursor(), spot(0, 0, 8));
+    }
+
+    #[test]
+    fn after_a_dollar_lines_are_gone_through_at_their_ends() {
+        let text = text();
+        let mut visual = Visual::new(Kind::Characters, spot(0, 0, 0));
+        keys(&mut visual, &text, "$");
+        let first = line(&text, 0, 0).unwrap().chars.len();
+        assert_eq!(visual.cursor(), spot(0, 0, first - 1));
+        keys(&mut visual, &text, "j");
+        let second = line(&text, 0, 1).unwrap().chars.len();
+        assert_eq!(visual.cursor(), spot(0, 1, second - 1));
+        // A motion across the line ends it.
+        keys(&mut visual, &text, "0j");
+        assert_eq!(visual.cursor(), spot(2, 0, 0));
+    }
+
+    #[test]
+    fn a_selection_of_lines_starts_at_the_end_of_its_line() {
+        let text = text();
+        let mut visual = Visual::new(Kind::Lines, spot(0, 0, 0));
+        visual.stick_to_line_end(&text);
+        let first = line(&text, 0, 0).unwrap().chars.len();
+        assert_eq!(visual.cursor(), spot(0, 0, first - 1));
+        keys(&mut visual, &text, "j");
+        let second = line(&text, 0, 1).unwrap().chars.len();
+        assert_eq!(visual.cursor(), spot(0, 1, second - 1));
     }
 
     #[test]

@@ -1121,7 +1121,15 @@ impl App {
             }
             Outcome::Picked(hint) => {
                 self.line_hints = None;
-                self.visual = Some(Visual::new(kind, hint.item));
+                let mut visual = Visual::new(kind, hint.item);
+                // A selection of lines starts with the cursor at the end of
+                // the line, where it stays as it goes up and down.
+                if kind == Kind::Lines
+                    && let Some(document) = self.document()
+                {
+                    visual.stick_to_line_end(&document.text);
+                }
+                self.visual = Some(visual);
                 // Known, so that the bottom line can show the note at the
                 // cursor.
                 let markings = self.with_markings(Wanted::Refresh);

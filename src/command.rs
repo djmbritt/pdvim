@@ -94,6 +94,8 @@ pub enum Command {
     WriteAll,
     /// Save the changes of every document, then close the program.
     WriteQuitAll,
+    /// Run a command in the shell, `%` standing for the document's file.
+    Shell(String),
 }
 
 /// Where `:tabmove` moves the tab in view to.
@@ -289,6 +291,14 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
     if let Ok(page) = line.parse::<u32>() {
         return Ok(Some(Command::Goto(page)));
     }
+    // As in vim, the rest of the line after `!` is the shell's.
+    if let Some(shell) = line.strip_prefix('!') {
+        let shell = shell.trim();
+        if shell.is_empty() {
+            return Err(Error::MissingArgument("!"));
+        }
+        return Ok(Some(Command::Shell(shell.to_owned())));
+    }
     let (name, argument) = line
         .split_once(char::is_whitespace)
         .map_or((line, ""), |(name, rest)| (name, rest.trim()));
@@ -453,18 +463,19 @@ fn command_start(argument: &str) -> Option<usize> {
 }
 
 /// Splits a command line into the commands in it, at each `;`; `;;` is a
-/// `;` that does not split. After `map` and `note`, the rest of the line is
-/// theirs, `;` and all, so that a line can be bound to keys and a note can
-/// say anything.
+/// `;` that does not split. After `map`, `note` and `!`, the rest of the
+/// line is theirs, `;` and all, so that a line can be bound to keys, a note
+/// can say anything, and a shell command can run several.
 pub fn split(line: &str) -> Vec<String> {
     let mut commands = Vec::new();
     let mut current = String::new();
     let mut characters = line.chars().peekable();
     while let Some(character) = characters.next() {
-        let whole = matches!(
-            current.split_whitespace().next().and_then(canonical),
-            Some("map" | "note")
-        );
+        let whole = current.trim_start().starts_with('!')
+            || matches!(
+                current.split_whitespace().next().and_then(canonical),
+                Some("map" | "note")
+            );
         match character {
             ';' if characters.peek() == Some(&';') && !whole => {
                 characters.next();
@@ -1089,5 +1100,21 @@ mod tests {
                 .any(|line| line.split([' ', '"', ',']).any(|word| word == name));
             assert!(named, "docs/man/pdvim.5 does not describe {name}");
         }
+    }
+
+    #[test]
+    fn bang_runs_the_rest_of_the_line_in_the_shell() {
+        assert_eq!(
+            parse("!xdg-open %"),
+            Ok(Some(Command::Shell("xdg-open %".to_owned())))
+        );
+        assert_eq!(
+            parse("  ! cp % ~/papers/ "),
+            Ok(Some(Command::Shell("cp % ~/papers/".to_owned())))
+        );
+        assert_eq!(parse("!"), Err(Error::MissingArgument("!")));
+        // Its `;` are the shell's, after another command too.
+        assert_eq!(split("!make; ls"), ["!make; ls"]);
+        assert_eq!(split("w; !cp % /tmp; ls"), ["w", "!cp % /tmp; ls"]);
     }
 }

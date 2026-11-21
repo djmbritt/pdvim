@@ -4,7 +4,7 @@
 use iced::Task;
 
 use super::{App, Message, Notice};
-use crate::command;
+use crate::{command, shell};
 
 impl App {
     /// Runs each command in a line in turn, stopping at the first that
@@ -26,6 +26,35 @@ impl App {
             .map(|_| self.run_commands(&line))
             .collect();
         Task::batch(tasks)
+    }
+
+    /// Runs a command in the shell, `%` standing for the file of the
+    /// document in view, and says how it went once it finishes.
+    pub(super) fn shell(&mut self, line: String) -> Task<Message> {
+        let file = self.document().map(|document| document.path.clone());
+        match shell::expand(&line, file.as_deref()) {
+            Ok(expanded) => {
+                self.notice = Notice::Info(format!("!{line}"));
+                Task::perform(shell::run(expanded), move |result| {
+                    Message::ShellRan(line, result)
+                })
+            }
+            Err(error) => {
+                self.notice = Notice::Error(error.to_string());
+                Task::none()
+            }
+        }
+    }
+
+    /// Says how a command run with `:!` went.
+    pub(super) fn on_shell(&mut self, line: &str, result: Result<shell::Ran, shell::Error>) {
+        self.notice = match result {
+            Ok(ran) => match shell::report(line, &ran) {
+                (said, false) => Notice::Info(said),
+                (said, true) => Notice::Error(said),
+            },
+            Err(error) => Notice::Error(error.to_string()),
+        };
     }
 
     /// Runs each command in a line in turn, stopping at the first that

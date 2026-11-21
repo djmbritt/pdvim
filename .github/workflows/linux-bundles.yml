@@ -62,8 +62,17 @@ jobs:
     # The freedesktop SDK, flatpak and flatpak-builder, as Flathub builds.
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
-      options: --privileged
+      # The runner's own Android SDK and .NET, mounted to be cleared: the
+      # SDK, LLVM and the build of MuPDF otherwise fill its disk.
+      options: >-
+        --privileged
+        -v /usr/local/lib/android:/runner/android
+        -v /usr/share/dotnet:/runner/dotnet
     steps:
+      - name: Make room
+        run: |
+          rm -rf /runner/android/* /runner/dotnet/*
+          df -h /
       - uses: actions/checkout@v4
 
       - name: Version

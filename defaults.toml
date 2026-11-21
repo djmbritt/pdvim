@@ -306,6 +306,8 @@ note-color = "#fdd835"
 "T" = "till-backward"
 ";" = "repeat-find"
 "," = "repeat-find-reversed"
+"i p" = "inner-paragraph"
+"a p" = "around-paragraph"
 
 [keys.hints]
 

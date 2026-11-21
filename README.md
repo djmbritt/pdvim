@@ -196,6 +196,7 @@ After `v` or `V`, each line of text in view gets a label of two letters, and so 
 | `;` / `,`                 | Repeat the last `f`, `F`, `t`, or `T` / the other way      |
 | `s`                       | Jump the cursor to text you type, by its label             |
 | `o`                       | Move the cursor to the other end of the selection          |
+| `ip`, `ap`                | Select the paragraph; `ap` copies a blank line after it    |
 | `v` / `V`                 | Switch to selecting characters / lines, or leave           |
 | `y`                       | Copy the selection to the clipboard, and leave             |
 | `H`                       | Highlight the selection in the PDF file, and leave         |
@@ -212,6 +213,8 @@ After `v` or `V`, each line of text in view gets a label of two letters, and so 
 `n` opens the prompt as `:note `; type the note and press `Enter`. The note is a sticky-note annotation, which shows as an icon over the first letter of the cursor's sentence, and which other PDF readers open to show its text. The icon lets the text under it show through, and stays inside the text, so trimming the margins with `t` keeps it in view; notes and highlights never change how much `t` trims. `:note {text}` in normal mode puts one in the margin at the top of the window. Notes count as markings: `]h` / `[h` go to them and show their text, the markings sidebar lists them, `d` takes one away, `u` takes one back, and `:w` saves them. To change a note, go to it with `]h` or `[h`, or pick it with `gh`, and press `c`, or press `c` on it in the sidebar: the prompt opens with the note as it is, to change and `Enter`. `u` changes it back. In visual mode, a band over the bottom of the pages shows the note on the marking at the cursor, or on a note beside its line, and `c` changes it. `c` on a highlight or another marking sets the comment on it, which other PDF readers show with it.
 
 Press `u` to take back the last marking, or the last taking away of one, and `Ctrl-r` to put back what `u` took back. Taking back everything since the last save leaves nothing to save. pdvim remembers what to undo for each open document until you close it.
+
+`ip` selects the whole paragraph the cursor is in, and `ap` the same but copies it with a blank line after, as vim's do. Press `ip` again, or put a count before it as in `3ip`, to take in the paragraphs after it. A PDF has no blank lines between paragraphs, so pdvim finds where they end from the page: a line that stops short of the right edge the full lines share, a gap bigger than the usual one between lines, a first line indented past the lines around it, or the top of a new column. A paragraph ends at the bottom of its page.
 
 A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t`, and `T` look along the cursor's line only, and the cursor stays put if the character isn't there. These are the default keys; the `[keys.visual]` table of the [configuration](#configuration) changes them.
 

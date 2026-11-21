@@ -49,6 +49,11 @@ bindable! {
         TillBackward = "till-backward", "Go to just after the previous x on the line";
         RepeatFind = "repeat-find", "Repeat the last find";
         RepeatFindReversed = "repeat-find-reversed", "Repeat the last find the other way";
+        /// As vim's `ip`; again, or with a count, takes in the next ones.
+        InnerParagraph = "inner-paragraph", "Select the paragraph, or the next too";
+        /// As vim's `ap`. A PDF has no blank lines after paragraphs, so the
+        /// text copied ends with one instead.
+        AroundParagraph = "around-paragraph", "Select the paragraph and the gap after it";
     }
 }
 
@@ -141,6 +146,9 @@ pub struct Visual {
     finding: Option<(bool, bool, u32)>,
     /// The last search for a character, for `;` and `,` to repeat.
     last_find: Option<Find>,
+    /// Whether `ap` selected the paragraphs, so that the text copied ends
+    /// with a blank line.
+    around: bool,
 }
 
 impl Visual {
@@ -154,6 +162,7 @@ impl Visual {
             pending: Pending::new(),
             finding: None,
             last_find: None,
+            around: false,
         }
     }
 
@@ -227,10 +236,24 @@ impl Visual {
     /// Does what a binding says, a number of times where that means
     /// anything.
     fn act(&mut self, binding: Binding, times: u32, text: &Text) -> Outcome {
+        // Anything but copying, or taking in more paragraphs, makes the
+        // selection something other than whole paragraphs and their gaps.
+        let around = std::mem::take(&mut self.around);
         match binding {
             Binding::Leave => return Outcome::Leave,
             Binding::Flash => return Outcome::Flash,
-            Binding::Yank => return Outcome::Copy(self.text(text)),
+            Binding::Yank => {
+                let mut copied = self.text(text);
+                if around {
+                    copied.push_str("\n\n");
+                }
+                return Outcome::Copy(copied);
+            }
+            Binding::InnerParagraph | Binding::AroundParagraph => {
+                self.paragraphs(text, times);
+                self.around = binding == Binding::AroundParagraph
+                    || (around && self.anchor != self.cursor);
+            }
             Binding::Highlight => return Outcome::Mark(MarkupKind::Highlight, self.areas(text)),
             Binding::Underline => return Outcome::Mark(MarkupKind::Underline, self.areas(text)),
             Binding::StrikeOut => return Outcome::Mark(MarkupKind::StrikeOut, self.areas(text)),
@@ -302,6 +325,40 @@ impl Visual {
             }
         }
         Outcome::Stay
+    }
+
+    /// Selects whole paragraphs, as vim's `ip` and `ap` do: the one the
+    /// cursor is in and those after it, `times` in all, from the start of
+    /// the first to the end of the last. With more than a character
+    /// selected already, the selection goes on to the ends of the next
+    /// paragraphs instead, the cursor's own first if it is partway along.
+    fn paragraphs(&mut self, text: &Text, times: u32) {
+        let at = (self.cursor.page, self.cursor.line);
+        let Some(mut end) = paragraph_end(text, at) else {
+            return;
+        };
+        let mut left = times.saturating_sub(1);
+        if self.anchor == self.cursor {
+            let (page, line) = paragraph_start(text, at);
+            self.anchor = Spot::line_start(page, line);
+        } else if end == at && self.kind == Kind::Lines {
+            // The cursor ends a paragraph already: the next one counts.
+            left = times;
+        }
+        for _ in 0..left {
+            let Some(further) = next_line(text, end).and_then(|next| paragraph_end(text, next))
+            else {
+                break;
+            };
+            end = further;
+        }
+        self.kind = Kind::Lines;
+        self.goal = None;
+        self.cursor = Spot {
+            page: end.0,
+            line: end.1,
+            index: line(text, end.0, end.1).map_or(0, |line| line.chars.len().saturating_sub(1)),
+        };
     }
 
     /// Where a motion along the text takes the cursor, if anywhere.
@@ -615,6 +672,149 @@ fn every_sentence_start(lines: &[TextLine]) -> Vec<(usize, usize)> {
         word.clear();
     }
     starts
+}
+
+/// The lines that start paragraphs on a page, the first among them. PDF
+/// text has no blank lines between paragraphs, so a row of text starts one
+/// when the row before it stops short of a right edge that full rows
+/// share, as in justified text; when it is further below that row than
+/// rows usually are; when it is indented past the rows on either side; or
+/// when it is above the row before, as at the top of a column. Lines side
+/// by side, such as a listing's line numbers and its code, make one row.
+pub fn paragraph_starts(lines: &[TextLine]) -> Vec<usize> {
+    let rows = rows(lines);
+    // The usual distance from one row's top to the next one's.
+    let mut steps: Vec<f32> = rows
+        .windows(2)
+        .filter_map(|pair| match pair {
+            [(_, Some(above)), (_, Some(below))] => Some(below.top - above.top),
+            _ => None,
+        })
+        .filter(|step| *step > 0.0)
+        .collect();
+    steps.sort_by(f32::total_cmp);
+    let usual = steps.get(steps.len() / 2).copied();
+    // Whether a right edge is one that several rows end at.
+    let shared = |right: f32| {
+        rows.iter()
+            .filter_map(|(_, shape)| *shape)
+            .filter(|shape| (shape.right - right).abs() <= EDGE)
+            .count()
+            >= 3
+    };
+    let shape = |row: Option<usize>| rows.get(row?).and_then(|(_, shape)| *shape);
+    let mut starts = Vec::new();
+    for (row, (first, here)) in rows.iter().enumerate() {
+        let (Some(here), Some(above)) = (*here, shape(row.checked_sub(1))) else {
+            starts.push(*first);
+            continue;
+        };
+        let before = shape(row.checked_sub(2));
+        let below = shape(row.checked_add(1));
+        // The row above stops 15% of its column's width short of the
+        // right edge the row before it ends at, which other rows share.
+        let short = before.is_some_and(|before| {
+            let width = before.right - before.left;
+            shared(before.right) && above.right < width.mul_add(-0.15, before.right)
+        });
+        let far = usual.is_some_and(|usual| here.top - above.top > usual * 1.5);
+        let indent = above.bottom - above.top;
+        let indented = here.left > above.left + indent
+            && below.is_none_or(|below| here.left > below.left + indent);
+        let higher = here.bottom <= above.top;
+        if short || far || indented || higher {
+            starts.push(*first);
+        }
+    }
+    starts
+}
+
+/// How near, in points, right edges are to count as one.
+const EDGE: f32 = 1.5;
+
+/// The rows of text on a page: each with the first of its lines, and
+/// where they lie together. A line that sits beside the one before it,
+/// overlapping it from top to bottom by more than half, is in its row.
+fn rows(lines: &[TextLine]) -> Vec<(usize, Option<Shape>)> {
+    let mut rows: Vec<(usize, Option<Shape>)> = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        let shape = Shape::of(line);
+        if let (Some((_, Some(row))), Some(shape)) = (rows.last_mut(), shape) {
+            let overlap = row.bottom.min(shape.bottom) - row.top.max(shape.top);
+            let height = (row.bottom - row.top).min(shape.bottom - shape.top);
+            if overlap > height * 0.5 {
+                *row = Shape {
+                    left: row.left.min(shape.left),
+                    right: row.right.max(shape.right),
+                    top: row.top.min(shape.top),
+                    bottom: row.bottom.max(shape.bottom),
+                };
+                continue;
+            }
+        }
+        rows.push((index, shape));
+    }
+    rows
+}
+
+/// Where a line of text lies on its page: the edges of its characters,
+/// its left one at the first that is not a space.
+#[derive(Debug, Clone, Copy)]
+struct Shape {
+    left: f32,
+    right: f32,
+    top: f32,
+    bottom: f32,
+}
+
+impl Shape {
+    fn of(line: &TextLine) -> Option<Self> {
+        let first = line
+            .chars
+            .iter()
+            .find(|character| !character.character.is_whitespace())?;
+        let last = line
+            .chars
+            .iter()
+            .rfind(|character| !character.character.is_whitespace())?;
+        let (top, bottom) = line
+            .chars
+            .iter()
+            .fold((f32::INFINITY, f32::NEG_INFINITY), |(top, bottom), character| {
+                (top.min(character.area.top), bottom.max(character.area.bottom))
+            });
+        Some(Self {
+            left: first.area.left,
+            right: last.area.right,
+            top,
+            bottom,
+        })
+    }
+}
+
+/// The first line of the paragraph a line is in. Paragraphs stop at the
+/// edges of pages.
+fn paragraph_start(text: &Text, (page, row): (u32, usize)) -> (u32, usize) {
+    let start = text.get(&page).map_or(row, |lines| {
+        paragraph_starts(lines)
+            .into_iter()
+            .take_while(|start| *start <= row)
+            .last()
+            .unwrap_or(row)
+    });
+    (page, start)
+}
+
+/// The last line of the paragraph a line is in, if the line is there.
+fn paragraph_end(text: &Text, (page, row): (u32, usize)) -> Option<(u32, usize)> {
+    let lines = text.get(&page)?;
+    lines.get(row)?;
+    let end = paragraph_starts(lines)
+        .into_iter()
+        .find(|start| *start > row)
+        .unwrap_or(lines.len())
+        .saturating_sub(1);
+    Some((page, end))
 }
 
 /// A line of a page.
@@ -1062,5 +1262,138 @@ mod tests {
         assert_eq!(visual.neighbours(3), [1]);
         let visual = Visual::new(Kind::Characters, spot(1, 0, 0));
         assert_eq!(visual.neighbours(3), [0, 2]);
+    }
+
+    /// The same lines, those from `row` on lowered by `by` points.
+    fn lowered(mut lines: Vec<TextLine>, row: usize, by: f32) -> Vec<TextLine> {
+        for line in lines.iter_mut().skip(row) {
+            for character in &mut line.chars {
+                character.area.top += by;
+                character.area.bottom += by;
+            }
+        }
+        lines
+    }
+
+    /// Three paragraphs of justified text, each full line 26 characters
+    /// long: one ended by a short line, one by an indented line after it,
+    /// and one by itself.
+    fn paragraphs() -> Vec<TextLine> {
+        page(&[
+            "The first paragraph runs o",
+            "to here.",
+            "The second one runs on and",
+            "on and fills its last line",
+            "    The third is indented,",
+            "goes on and on to the end ",
+            "here.",
+        ])
+    }
+
+    #[test]
+    fn paragraphs_start_after_short_lines_and_at_indents() {
+        assert_eq!(paragraph_starts(&paragraphs()), vec![0, 2, 4]);
+    }
+
+    #[test]
+    fn paragraphs_start_after_a_gap_and_at_the_top_of_a_column() {
+        let lines = page(&[
+            "A heading as wide as text",
+            "The text under it runs on",
+            "and on, and it carries on",
+            "to the foot of the column",
+            "and carries on up in the ",
+        ]);
+        // Further below the heading than lines usually are.
+        let lines = lowered(lines, 1, 15.0);
+        assert_eq!(paragraph_starts(&lines), vec![0, 1]);
+        // The last line moved up beside the first, as a second column.
+        let lines = lowered(lines, 4, -90.0);
+        assert_eq!(paragraph_starts(&lines), vec![0, 1, 4]);
+    }
+
+    #[test]
+    fn a_listing_is_one_paragraph_however_its_lines_end() {
+        // Each line number and its code are lines of their own, side by
+        // side, and the code's lines end where they end.
+        let mut lines = Vec::new();
+        for (row, code) in ["digraph G {", "  main -> parse;", "  main -> init;", "}"]
+            .iter()
+            .enumerate()
+        {
+            let mut number = page(&[&format!("{}:", row + 1)]);
+            let mut code = page(&[&format!("    {code}")]);
+            let lower = 20.0 * f32::from(u8::try_from(row).unwrap());
+            number = lowered(number, 0, lower);
+            code = lowered(code, 0, lower);
+            lines.extend(number);
+            lines.extend(code);
+        }
+        assert_eq!(paragraph_starts(&lines), vec![0]);
+    }
+
+    #[test]
+    fn i_p_selects_the_paragraph_the_cursor_is_in() {
+        let text = Text::from([(0, paragraphs())]);
+        let mut visual = Visual::new(Kind::Characters, spot(0, 3, 5));
+        keys(&mut visual, &text, "ip");
+        assert_eq!(visual.kind, Kind::Lines);
+        assert_eq!(visual.anchor, spot(0, 2, 0));
+        assert_eq!(visual.cursor, spot(0, 3, 25));
+        assert_eq!(
+            keys(&mut visual, &text, "y"),
+            Outcome::Copy("The second one runs on and\non and fills its last line".into())
+        );
+    }
+
+    #[test]
+    fn i_p_again_or_with_a_count_takes_in_the_next_paragraphs() {
+        let text = Text::from([(0, paragraphs())]);
+        let mut visual = Visual::new(Kind::Characters, spot(0, 0, 3));
+        keys(&mut visual, &text, "ipip");
+        assert_eq!((visual.anchor, visual.cursor.line), (spot(0, 0, 0), 3));
+        let mut counted = Visual::new(Kind::Characters, spot(0, 0, 3));
+        keys(&mut counted, &text, "3ip");
+        assert_eq!((counted.anchor, counted.cursor.line), (spot(0, 0, 0), 6));
+        // There is no fourth: the selection stays at the last.
+        keys(&mut counted, &text, "ip");
+        assert_eq!(counted.cursor.line, 6);
+    }
+
+    #[test]
+    fn a_selection_partway_along_goes_on_to_its_paragraph_end_first() {
+        let text = Text::from([(0, paragraphs())]);
+        let mut visual = Visual::new(Kind::Characters, spot(0, 2, 0));
+        keys(&mut visual, &text, "l");
+        keys(&mut visual, &text, "ip");
+        assert_eq!((visual.anchor, visual.cursor.line), (spot(0, 2, 0), 3));
+    }
+
+    #[test]
+    fn paragraphs_run_on_to_the_next_page_when_taken_in() {
+        let text = Text::from([
+            (0, page(&["Only paragraph of the page"])),
+            (1, Vec::new()),
+            (2, page(&["The next one, two pages on"])),
+        ]);
+        let mut visual = Visual::new(Kind::Characters, spot(0, 0, 2));
+        keys(&mut visual, &text, "2ip");
+        assert_eq!(visual.cursor, spot(2, 0, 25));
+    }
+
+    #[test]
+    fn a_p_copies_the_paragraph_with_a_blank_line_after_it() {
+        let text = Text::from([(0, paragraphs())]);
+        let mut visual = Visual::new(Kind::Characters, spot(0, 1, 2));
+        assert_eq!(
+            keys(&mut visual, &text, "apy"),
+            Outcome::Copy("The first paragraph runs o\nto here.\n\n".into())
+        );
+        // Moving afterwards makes it a selection like any other.
+        let mut moved = Visual::new(Kind::Characters, spot(0, 1, 2));
+        assert_eq!(
+            keys(&mut moved, &text, "apjy"),
+            Outcome::Copy("The first paragraph runs o\nto here.\nThe second one runs on and".into())
+        );
     }
 }

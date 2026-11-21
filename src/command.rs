@@ -145,6 +145,8 @@ pub enum Setting {
     Autosave(bool),
     /// Whether the tab bar shows when there is more than one tab.
     TabBar(bool),
+    /// Whether matches are highlighted while a search is typed.
+    Incsearch(bool),
     /// Whether the status bar shows while reading; off, it shows only
     /// while something is typed or said.
     StatusBar(bool),
@@ -234,11 +236,12 @@ pub fn canonical(name: &str) -> Option<&'static str> {
 }
 
 /// The names of the settings `:set` knows.
-pub const SETTINGS: [&str; 18] = [
+pub const SETTINGS: [&str; 19] = [
     "autosave",
     "confirm-quit",
     "confirm-tab-close",
     "highlight-color",
+    "incsearch",
     "note-color",
     "recolor",
     "recolor-darkcolor",
@@ -526,6 +529,7 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
         "autosave" => parse_switch(value).map(Setting::Autosave),
         "confirm-tab-close" => parse_switch(value).map(Setting::ConfirmTabClose),
         "tabbar" => parse_switch(value).map(Setting::TabBar),
+        "incsearch" => parse_switch(value).map(Setting::Incsearch),
         "statusbar" => parse_switch(value).map(Setting::StatusBar),
         "highlight-color" => Ok(Setting::HighlightColour(value.parse()?)),
         "underline-color" => Ok(Setting::UnderlineColour(value.parse()?)),

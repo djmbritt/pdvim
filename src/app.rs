@@ -39,6 +39,7 @@ mod copy;
 mod run;
 mod flash;
 mod forms;
+mod incsearch;
 mod info;
 mod markings;
 mod mode;
@@ -121,6 +122,9 @@ pub enum Message {
     Rendered(u64, u32, RenderKey, Result<image::Handle, backend::Error>),
     /// A search in the document with this number finished, or failed.
     Found(u64, Search, Result<Vec<Hit>, backend::Error>),
+    /// The pages in view of the document with this number were searched
+    /// for what was being typed, or could not be.
+    Previewed(u64, String, Result<Vec<Hit>, backend::Error>),
     /// The margins of every page of the document with this number were
     /// measured, or could not be.
     Measured(u64, Result<Vec<Rect>, backend::Error>),
@@ -507,6 +511,10 @@ pub struct App {
     fields_wanted: Option<(u64, forms::FieldGoal)>,
     /// Whether the next key is the letter of a mark to set, or to go to.
     awaiting_mark: Option<MarkVerb>,
+    /// Whether matches are highlighted while a search is typed.
+    incsearch: bool,
+    /// The matches in view for the search being typed.
+    preview: Option<incsearch::Preview>,
     /// The last command line run, typed or bound to keys, for `.`.
     last_line: Option<String>,
     /// The tabs closed, the last closed last: each one's place and its
@@ -595,6 +603,8 @@ impl App {
             sourcing: false,
             closed: Vec::new(),
             last_line: None,
+            incsearch: true,
+            preview: None,
             chapter_wanted: None,
             note_at: None,
             note_editing: None,
@@ -726,7 +736,7 @@ impl App {
             }
             Message::Pasted(text) => {
                 self.paste(text.as_deref().unwrap_or_default());
-                Task::none()
+                self.preview_search()
             }
             Message::Scaled(scale_factor) => {
                 if scale_factor.is_finite() && scale_factor > 0.0 {
@@ -787,6 +797,10 @@ impl App {
             }
             Message::Found(id, search, result) => {
                 self.on_found(id, search, result);
+                Task::none()
+            }
+            Message::Previewed(id, needle, result) => {
+                self.on_previewed(id, needle, result);
                 Task::none()
             }
         };
@@ -1821,7 +1835,7 @@ impl App {
                 };
                 self.recall = Some(recall);
                 self.prompt = Some((prompt, found.unwrap_or(line)));
-                return Task::none();
+                return self.preview_search();
             }
             Fed::Bound(
                 binding @ (PromptBinding::Complete | PromptBinding::CompletePrevious),
@@ -1833,6 +1847,7 @@ impl App {
                 return Task::none();
             }
             Fed::Bound(PromptBinding::Submit, _) => {
+                self.preview = None;
                 self.remember_typed(prompt, &line);
                 return self.submit(prompt, &line);
             }
@@ -1841,7 +1856,10 @@ impl App {
                 self.prompt = Some((prompt, line));
                 return iced::clipboard::read().map(Message::Pasted);
             }
-            Fed::Bound(PromptBinding::Cancel, _) => return self.left_prompt(prompt),
+            Fed::Bound(PromptBinding::Cancel, _) => {
+                self.preview = None;
+                return self.left_prompt(prompt);
+            }
             Fed::Bound(PromptBinding::RubOut, _) => {
                 // Rubbing out the sigil itself leaves the prompt, as in vi.
                 if line.pop().is_none() {
@@ -1874,12 +1892,16 @@ impl App {
             | Fed::Waiting => {}
         }
         // A list once shown follows what is typed, until nothing fits.
-        self.completing = if line == before {
-            completing
-        } else {
+        let changed = line != before;
+        self.completing = if changed {
             completing.and_then(|_| narrowed(&line))
+        } else {
+            completing
         };
         self.prompt = Some((prompt, line));
+        if changed {
+            return self.preview_search();
+        }
         Task::none()
     }
 
@@ -2091,6 +2113,7 @@ impl App {
             Setting::Autosave(autosave) => self.care.autosave = autosave,
             Setting::ConfirmTabClose(confirm) => self.care.confirm_tab_close = confirm,
             Setting::TabBar(shown) => self.bars.tabs = shown,
+            Setting::Incsearch(on) => self.incsearch = on,
             Setting::StatusBar(shown) => self.bars.status = shown,
         }
         Task::none()
@@ -3495,7 +3518,9 @@ impl canvas::Program<Message> for Marks<'_> {
             return vec![frame.into_geometry()];
         };
         let results = &document.results;
-        if results.shown {
+        if let Some(hits) = self.0.preview_for(document) {
+            incsearch::draw(&mut frame, document, hits);
+        } else if results.shown {
             let visible = document.reader.visible_pages();
             for (index, hit) in results.hits.iter().enumerate() {
                 if !visible.contains(&hit.page) {

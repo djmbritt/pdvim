@@ -57,6 +57,9 @@ confirm-tab-close = true
 # instead), and pdvim asks before closing a document with unsaved ones.
 autosave = false
 
+# Highlight the matches in view while a search is typed after / or ?.
+incsearch = true
+
 # Show the tab bar along the top when more than one tab is open.
 tabbar = true
 

@@ -286,6 +286,7 @@ The box at the left of the status bar always names the mode, which says what the
 | `:set theme-dark {name}`               | Set the theme followed while the system is dark                      |
 | `:set theme-light {name}`              | Set the theme followed while the system is light                     |
 | `:set scroll-step {pixels}`            | Set how far one `j` or `k` scrolls                                   |
+| `:set incsearch [true\|false]`         | Highlight the matches in view while a search is typed (default on)   |
 | `:set tabbar [true\|false]`            | Show the tab bar when more than one tab is open (default on)         |
 | `:set statusbar [true\|false]`         | Show the status bar while reading (default on)                       |
 | `:set confirm-quit [true\|false]`      | Ask before quitting (default on)                                     |
@@ -322,6 +323,8 @@ If you name a boolean setting without a value, it is turned on.
 You can also run any [action](#actions) by name, as in `:scroll-down` or `:next-tab`. A number after it works like a count typed before a key: `:zoom-to 150` zooms to 150%, and `:first-page 12` goes to page 12.
 
 Press `Tab` in the command prompt to complete what you're typing: command and action names, setting names and their values, mode and action names after `:map`, and file paths after `:open`, `:tabedit`, and `:tabnew`. Paths offer folders and PDF files. If more than one completion fits, `Tab` fills in as much as they share and lists them above the prompt. Press `Tab` again to go through the list, and `Shift-Tab` to go back. While the list is open, it narrows as you type, and it closes when nothing fits.
+
+While you type a search after `/` or `?`, the matches on the pages in view are highlighted as you go, before you press `Enter`. `Enter` then searches the whole document and goes to the nearest match, and `Esc` leaves things as they were. `:set incsearch false` turns this off.
 
 `.` runs the last command line again, whether you typed it after `:` or pressed keys bound to it, all of its commands in turn; `3.` runs it three times. Only command lines count: `.` doesn't repeat keys such as `j` or `]h`.
 

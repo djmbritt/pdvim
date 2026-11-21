@@ -321,7 +321,8 @@ pub struct Opened {
 /// A request to the worker, with the channel to answer on.
 enum Request {
     Render(RenderJob, oneshot::Sender<Result<Bitmap, Error>>),
-    Search(String, oneshot::Sender<Result<Vec<Hit>, Error>>),
+    /// Every page searched, or only these.
+    Search(String, Option<Vec<u32>>, oneshot::Sender<Result<Vec<Hit>, Error>>),
     Measure(oneshot::Sender<Result<Vec<Rect>, Error>>),
     Links(Vec<u32>, oneshot::Sender<Result<PageLinks, Error>>),
     Text(Vec<u32>, oneshot::Sender<Result<PageText, Error>>),
@@ -523,7 +524,21 @@ impl Backend {
     /// Finds every place the text occurs, ignoring case, in page order.
     pub fn search(&self, needle: String) -> impl Future<Output = Result<Vec<Hit>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.requests.send(Request::Search(needle, reply));
+        let _ = self.requests.send(Request::Search(needle, None, reply));
+        async move { answer.await.unwrap_or(Err(Error::Closed)) }
+    }
+
+    /// Finds every place the text occurs on some pages, ignoring case, in
+    /// page order.
+    pub fn search_pages(
+        &self,
+        needle: String,
+        pages: Vec<u32>,
+    ) -> impl Future<Output = Result<Vec<Hit>, Error>> + use<> {
+        let (reply, answer) = oneshot::channel();
+        let _ = self
+            .requests
+            .send(Request::Search(needle, Some(pages), reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -1658,9 +1673,9 @@ impl Worker {
             Request::Render(job, reply) => {
                 let _ = reply.send(self.render(job));
             }
-            Request::Search(needle, reply) => {
+            Request::Search(needle, pages, reply) => {
                 let _ = reply.send(
-                    self.search(&needle)
+                    self.search(&needle, pages)
                         .map_err(|error| Error::Search(error.to_string())),
                 );
             }
@@ -1775,14 +1790,15 @@ impl Worker {
             .collect()
     }
 
-    /// Searches every page in order.
-    fn search(&mut self, needle: &str) -> Result<Vec<Hit>, mupdf::Error> {
+    /// Searches every page in order, or only some.
+    fn search(&mut self, needle: &str, pages: Option<Vec<u32>>) -> Result<Vec<Hit>, mupdf::Error> {
         let mut hits = Vec::new();
         if needle.is_empty() {
             return Ok(hits);
         }
         let count = u32::try_from(self.document.page_count()?).unwrap_or(0);
-        for number in 0..count {
+        let pages = pages.unwrap_or_else(|| (0..count).collect());
+        for number in pages.into_iter().filter(|page| *page < count) {
             self.render_waiting();
             hits.extend(page_hits(&self.document, number, needle)?);
         }

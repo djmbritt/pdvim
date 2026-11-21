@@ -2531,9 +2531,16 @@ impl App {
         if let Some(help) = &self.help {
             layers = layers.push(cheat_sheet(help, &self.keymaps, chrome, self.help_rows()));
         }
-        match self.tab_bar() {
-            Some(tabs) => column![tabs, layers, self.bar()].into(),
-            None => column![layers, self.bar()].into(),
+        let window = match self.tab_bar() {
+            Some(tabs) => column![tabs, layers, self.bar(false)],
+            None => column![layers, self.bar(false)],
+        };
+        // A line being typed wraps, and grows up over the pages rather than
+        // pushing them up, so that all of it shows while the pages stay put.
+        if self.prompt.is_some() {
+            stack![window, container(self.bar(true)).align_bottom(Fill)].into()
+        } else {
+            window.into()
         }
     }
 
@@ -2587,7 +2594,7 @@ impl App {
 
     /// The line at the bottom: the prompt while typing, otherwise a notice
     /// or the file name on the left and the position on the right.
-    fn bar(&self) -> Element<'_, Message> {
+    fn bar(&self, wrap: bool) -> Element<'_, Message> {
         let chrome = self.chrome();
         let label = |content: String, colour: Color| {
             text(content)
@@ -2648,7 +2655,12 @@ impl App {
                 label(self.password_prompt(line), chrome.bar_text)
             }
             (Some((prompt, line)), _) => {
-                label(format!("{}{line}\u{2588}", prompt.sigil()), chrome.bar_text)
+                let typed = label(format!("{}{line}\u{2588}", prompt.sigil()), chrome.bar_text);
+                if wrap {
+                    typed.wrapping(text::Wrapping::WordOrGlyph)
+                } else {
+                    typed
+                }
             }
             (None, Notice::Error(message)) => label(message.clone(), chrome.bar_error),
             (None, Notice::Info(message)) => label(message.clone(), chrome.bar_text),

@@ -1,0 +1,39 @@
+# Checks every crate in Cargo.lock against the RustSec advisory database:
+# https://rustsec.org
+#
+# A crate with a known vulnerability fails the run. Crates that are only
+# unmaintained or unsound are reported as warnings and do not: on
+# 2026-11-21 there were six, all brought in by iced and the image crate
+# (lru, paste, ttf-parser, zbus_names, zvariant, zvariant_derive), with no
+# upgrade pdvim can make itself.
+#
+# It runs when the dependencies change, and every day, since advisories
+# are published about crates already in use. Run it locally with
+#   cargo install cargo-audit && cargo audit
+name: Audit
+
+on:
+  push:
+    branches: [main]
+    paths: [Cargo.lock, Cargo.toml, .github/workflows/audit.yml]
+  pull_request:
+    paths: [Cargo.lock, Cargo.toml, .github/workflows/audit.yml]
+  schedule:
+    # Every day at 04:00 UTC.
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: Audit
+        run: cargo audit

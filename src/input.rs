@@ -113,6 +113,8 @@ pub enum Action {
     ShowRecent,
     /// Show the key bindings.
     ShowHelp,
+    /// Show what the document says about itself.
+    ShowInfo,
     /// Label the links in view, to follow one.
     FollowLink,
     /// Label the lines in view, to start selecting text at one: whole lines
@@ -210,6 +212,8 @@ bindable! {
         GoToMark = "go-to-mark", "Go to the mark typed next; ` or ' for before the last jump";
         JumpBack = "jump-back", "Go back to where the last jump left from, or n jumps";
         JumpForward = "jump-forward", "Go forward again through the jumps";
+        /// Like `:info`.
+        Info = "info", "Show the document's title, author, dates and more";
         Abort = "abort", "Cancel a half-typed command, hide highlights";
         Quit = "quit", "Close the tab, and quit after the last one";
     }
@@ -267,6 +271,7 @@ impl Binding {
             Self::Abort => Action::Abort,
             Self::Quit => Action::Quit,
             Self::Help => Action::ShowHelp,
+            Self::Info => Action::ShowInfo,
             Self::FollowLink => Action::FollowLink,
             Self::Visual => Action::Visual { lines: false },
             Self::VisualLine => Action::Visual { lines: true },

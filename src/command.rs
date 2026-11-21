@@ -21,6 +21,8 @@ pub enum Command {
     ShowTheme,
     /// Say which version of pdvim this is, and where it comes from.
     Version,
+    /// Show what the document in view says about itself.
+    Info,
     /// Say which marks are set.
     Marks,
     /// Take marks away: these letters, or with none, all of the
@@ -148,9 +150,10 @@ pub enum Error {
 }
 
 /// Every command by its full name, and the shorter names it also goes by.
-const NAMES: [(&str, &[&str]); 23] = [
+const NAMES: [(&str, &[&str]); 24] = [
     ("delmarks", &["delm"]),
     ("help", &["h"]),
+    ("info", &["f", "file"]),
     ("map", &[]),
     ("mapclear", &[]),
     ("marks", &[]),
@@ -272,6 +275,7 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
         }
         "recent" => Command::Recent,
         "version" => Command::Version,
+        "info" => Command::Info,
         "marks" => Command::Marks,
         "delmarks" => delete_marks(argument)?,
         // As `:set theme`; with nothing after it, says which is in force.
@@ -635,6 +639,9 @@ mod tests {
     fn version_parses() {
         assert_eq!(parse("version"), Ok(Some(Command::Version)));
         assert_eq!(parse("ve"), Ok(Some(Command::Version)));
+        assert_eq!(parse("info"), Ok(Some(Command::Info)));
+        assert_eq!(parse("f"), Ok(Some(Command::Info)));
+        assert_eq!(parse("file"), Ok(Some(Command::Info)));
     }
 
     #[test]

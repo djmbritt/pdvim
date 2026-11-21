@@ -32,6 +32,7 @@ use crate::recolor::{Palette, Rgb};
 use crate::theme::{self, Colours};
 use crate::visual::{self, Kind, Spot, Visual};
 
+mod info;
 mod markings;
 
 use markings::{Edit, Step, Wanted};
@@ -189,6 +190,8 @@ struct Document {
     id: u64,
     path: PathBuf,
     backend: Backend,
+    /// What the document says about itself.
+    info: backend::Info,
     reader: Reader,
     recolor: bool,
     /// Whether the margins should be trimmed. The reader only trims them
@@ -250,13 +253,13 @@ struct Tab {
 }
 
 impl Tab {
-    /// The name of the tab: the file name of its document.
+    /// The name of the tab: what its document goes by, or the file name
+    /// of the one on its way.
     fn name(&self) -> String {
-        let path = self
-            .document
-            .as_ref()
-            .map(|document| &document.path)
-            .or_else(|| self.opening.as_ref().map(|(_, path)| path));
+        if let Some(document) = &self.document {
+            return document.name();
+        }
+        let path = self.opening.as_ref().map(|(_, path)| path);
         path.and_then(|path| path.file_name()).map_or_else(
             || "[empty]".to_owned(),
             |name| name.to_string_lossy().into_owned(),
@@ -403,6 +406,9 @@ pub struct App {
     picker: Option<Picker>,
     /// The cheat sheet, while it is shown.
     help: Option<Help>,
+    /// What the document in view says about itself, by name, while it is
+    /// shown.
+    info: Option<(String, Vec<(&'static str, String)>)>,
     /// The sidebar, while it is shown.
     sidebar: Option<Sidebar>,
     /// The labels on the links in view, while they are shown.
@@ -496,6 +502,7 @@ impl App {
             completing: None,
             picker: None,
             help: None,
+            info: None,
             sidebar: None,
             hints: None,
             hints_wanted: None,
@@ -582,15 +589,13 @@ impl App {
     }
 
     fn title(&self) -> String {
-        self.document()
-            .and_then(|document| {
+        self.document().map_or_else(
+            || "pdvim".to_owned(),
+            |document| {
                 let unsaved = if document.modified() { " [+]" } else { "" };
-                Some(format!(
-                    "{}{unsaved} - pdvim",
-                    document.path.file_name()?.to_string_lossy()
-                ))
-            })
-            .unwrap_or_else(|| "pdvim".to_owned())
+                format!("{}{unsaved} - pdvim", document.name())
+            },
+        )
     }
 
     fn subscription() -> Subscription<Message> {
@@ -712,6 +717,9 @@ impl App {
                         | Question::DiscardTab
                         | Question::DiscardAll => Task::none(),
                     }
+                } else if self.info.take().is_some() {
+                    // Any key puts it away.
+                    Task::none()
                 } else if self.visual.is_some() {
                     self.on_visual_key(key)
                 } else if let Some((kind, hints)) = &mut self.line_hints {
@@ -1523,6 +1531,17 @@ impl App {
         usize::try_from(rows).unwrap_or(1).max(1)
     }
 
+    /// Shows the list of recent documents, the cheat sheet, or what the
+    /// document says about itself.
+    fn show_panel(&mut self, action: Action) {
+        match action {
+            Action::ShowRecent => self.show_recent(),
+            Action::ShowHelp => self.show_help(),
+            Action::ShowInfo => self.show_info(),
+            _ => {}
+        }
+    }
+
     /// Shows the cheat sheet for the bindings in force.
     fn show_help(&mut self) {
         self.pending = Pending::new();
@@ -1653,6 +1672,7 @@ impl App {
             Command::Marks => self.list_marks(),
             Command::DeleteMarks(names) => self.delete_marks(names),
             Command::Version => self.notice = Notice::Info(crate::ABOUT.to_owned()),
+            Command::Info => self.show_info(),
             Command::ShowTheme => {
                 let theme = self.current_theme().name();
                 self.notice = Notice::Info(if self.theme.is_some() {
@@ -1760,8 +1780,8 @@ impl App {
                 self.prompt_pending = Pending::new();
                 return Task::none();
             }
-            Action::ShowRecent => {
-                self.show_recent();
+            Action::ShowRecent | Action::ShowHelp | Action::ShowInfo => {
+                self.show_panel(action);
                 return Task::none();
             }
             Action::FollowLink => return self.label_links(),
@@ -1779,10 +1799,6 @@ impl App {
             }
             Action::JumpBack(times) | Action::JumpForward(times) => {
                 self.step_jumps(matches!(action, Action::JumpBack(_)), times);
-                return Task::none();
-            }
-            Action::ShowHelp => {
-                self.show_help();
                 return Task::none();
             }
             Action::SearchNext => return self.step_search(true),
@@ -1822,6 +1838,7 @@ impl App {
             | Action::OpenPrompt(_)
             | Action::ShowRecent
             | Action::ShowHelp
+            | Action::ShowInfo
             | Action::ShowOutline
             | Action::Mark(_)
             | Action::JumpBack(_)
@@ -1960,6 +1977,7 @@ impl App {
             id,
             path,
             backend: opened.backend,
+            info: opened.info,
             reader,
             recolor,
             trim: false,
@@ -2454,6 +2472,9 @@ impl App {
             }
             None => {}
         }
+        if let Some((name, facts)) = &self.info {
+            layers = layers.push(info::panel(name, facts, chrome));
+        }
         if let Some(help) = &self.help {
             layers = layers.push(cheat_sheet(help, &self.keymaps, chrome, self.help_rows()));
         }
@@ -2476,7 +2497,11 @@ impl App {
             } else {
                 ""
             };
-            let name = format!("{} {}{unsaved}", index.saturating_add(1), tab.name());
+            let name = format!(
+                "{} {}{unsaved}",
+                index.saturating_add(1),
+                info::tab_name(&tab.name())
+            );
             let label = text(name)
                 .size(BAR_TEXT_SIZE)
                 .font(Font::MONOSPACE)

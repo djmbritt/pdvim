@@ -194,6 +194,8 @@ These go through every highlight, underline, strike-out and squiggly underline i
 | `gt`, `Ctrl-Tab` / `gT`, `Ctrl-Shift-Tab` | Go to the next / previous tab |
 | `{n}gt`, `{n}Ctrl-Tab`                    | Go to tab _n_                 |
 
+A tab, and the window while its tab is in view, goes by the document's title when the PDF gives one, and by the file name otherwise. Titles that are only the name of the file the PDF was made from, such as `Microsoft Word - report.docx` or `untitled`, are passed over.
+
 ### Search and prompt
 
 | Key                       | Action                                                 |
@@ -204,6 +206,7 @@ These go through every highlight, underline, strike-out and squiggly underline i
 | `o`                       | Show recent documents                                  |
 | `Esc`, `Ctrl-c`, `Ctrl-[` | Cancel a half-typed command and hide search highlights |
 | `q`                       | Close the tab, and quit after the last one             |
+| `Ctrl-g`                  | Show the document's title, author, dates and more      |
 
 ## Commands
 
@@ -216,6 +219,7 @@ These go through every highlight, underline, strike-out and squiggly underline i
 | `:marks`                               | List the marks of the document in view, and `A`–`Z`                  |
 | `:delm[arks] {letters}` or `!`         | Take marks away: those letters, or with `!` all of this document's   |
 | `:ve[rsion]`                           | Show pdvim's version and where to find it on GitHub                  |
+| `:info`, `:f[ile]`                     | Show the document's title, author, dates, pages, format, encryption  |
 | `:noh[lsearch]`                        | Hide search highlights                                               |
 | `:set recolor [true\|false\|auto]`     | Turn recoloring on or off, or follow the system's theme (default)    |
 | `:set trim [true\|false]`              | Turn margin trimming on or off                                       |
@@ -363,6 +367,7 @@ The actions of normal mode, and their default keys:
 | `recent`                              | `o`                                         |
 | `next-tab` / `previous-tab`           | `g t`, `ctrl+tab` / `g T`, `ctrl+shift+tab` |
 | `abort`                               | `escape`, `ctrl+c`, `ctrl+[`                |
+| `info`                                | `ctrl+g`                                    |
 | `quit`                                | `q`                                         |
 | `help`                                | none                                        |
 | `follow-link`                         | `f`                                         |

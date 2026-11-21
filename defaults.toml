@@ -182,6 +182,9 @@ squiggly-color = "#fb8c00"
 "g T" = "previous-tab"
 "ctrl+shift+tab" = "previous-tab"
 
+# What the document says about itself: title, author, dates and more
+"ctrl+g" = "info"
+
 # Cancel a half-typed command and hide search highlights
 "escape" = "abort"
 "ctrl+c" = "abort"

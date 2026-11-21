@@ -143,12 +143,119 @@ pub type PageText = Vec<(u32, Vec<TextLine>)>;
 /// The links on some pages, each page, counted from 0, with its links.
 pub type PageLinks = Vec<(u32, Vec<Link>)>;
 
+/// What a document says about itself. Fields it leaves empty are none.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Info {
+    pub title: Option<String>,
+    pub author: Option<String>,
+    pub subject: Option<String>,
+    pub keywords: Option<String>,
+    /// The program the document was written in.
+    pub creator: Option<String>,
+    /// The program that made the PDF.
+    pub producer: Option<String>,
+    /// When it was made and last changed, as `2013-04-15 12:00 +01:00`.
+    pub created: Option<String>,
+    pub modified: Option<String>,
+    /// The kind of file, as `PDF 1.7`.
+    pub format: Option<String>,
+    /// How it is encrypted, or `None`.
+    pub encryption: Option<String>,
+}
+
+impl Info {
+    /// The title, if it is one worth naming the document by: not left
+    /// empty, and not just the name of the file it was made from, as in
+    /// `Microsoft Word - report.docx` or `untitled`.
+    pub fn name(&self) -> Option<&str> {
+        let title = self.title.as_deref()?;
+        let lower = title.to_lowercase();
+        let file_name = [
+            ".pdf", ".doc", ".docx", ".dvi", ".tex", ".ps", ".indd", ".odt", ".rtf", ".txt",
+            ".qxd", ".pages", ".ppt", ".pptx", ".xls", ".xlsx",
+        ]
+        .iter()
+        .any(|extension| lower.ends_with(extension));
+        let placeholder = matches!(lower.as_str(), "untitled" | "title" | "untitled document");
+        (!file_name && !placeholder && !lower.starts_with("microsoft ")).then_some(title)
+    }
+}
+
+/// Reads what a document says about itself.
+fn read_info(document: &Document) -> Info {
+    use mupdf::document::MetadataName;
+    let read = |name: MetadataName| {
+        document
+            .metadata(name)
+            .ok()
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+    };
+    let date = |name: MetadataName| read(name).map(|value| pdf_date(&value));
+    Info {
+        title: read(MetadataName::Title),
+        author: read(MetadataName::Author),
+        subject: read(MetadataName::Subject),
+        keywords: read(MetadataName::Keywords),
+        creator: read(MetadataName::Creator),
+        producer: read(MetadataName::Producer),
+        created: date(MetadataName::CreationDate),
+        modified: date(MetadataName::ModDate),
+        format: read(MetadataName::Format),
+        encryption: read(MetadataName::Encryption),
+    }
+}
+
+/// A date as a PDF writes it, `D:20130415120000+01'00'`, as people read
+/// it: `2013-04-15 12:00 +01:00`. A date not written that way is left as
+/// it is.
+fn pdf_date(written: &str) -> String {
+    let rest = written.strip_prefix("D:").unwrap_or(written);
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    let zone = rest.get(digits.len()..).unwrap_or_default();
+    let part = |from: usize, to: usize| digits.get(from..to);
+    let Some(year) = part(0, 4) else {
+        return written.to_owned();
+    };
+    let mut date = year.to_owned();
+    for (from, to, before) in [(4, 6, "-"), (6, 8, "-"), (8, 10, " "), (10, 12, ":")] {
+        match part(from, to) {
+            Some(value) => {
+                date.push_str(before);
+                date.push_str(value);
+            }
+            None => break,
+        }
+    }
+    // A time with hours but no minutes reads as on the hour.
+    if digits.len() == 10 {
+        date.push_str(":00");
+    }
+    let zone = zone.replace('\'', "");
+    match zone.as_bytes().first() {
+        Some(b'Z') => date.push_str(" UTC"),
+        Some(sign @ (b'+' | b'-')) => {
+            let numbers: String = zone.chars().skip(1).filter(char::is_ascii_digit).collect();
+            if let (Some(hours), minutes) = (numbers.get(0..2), numbers.get(2..4).unwrap_or("00")) {
+                date.push(' ');
+                date.push(char::from(*sign));
+                date.push_str(hours);
+                date.push(':');
+                date.push_str(minutes);
+            }
+        }
+        _ => {}
+    }
+    date
+}
+
 /// A document that has just been opened.
 #[derive(Debug, Clone)]
 pub struct Opened {
     pub backend: Backend,
     /// The unturned size of every page, in points.
     pub sizes: Vec<PageSize>,
+    pub info: Info,
 }
 
 /// A request to the worker, with the channel to answer on.
@@ -438,7 +545,15 @@ pub fn open(path: PathBuf) -> impl Future<Output = Result<Opened, Error>> {
             let document = match load(&path) {
                 Ok((document, sizes)) => {
                     let backend = Backend { requests };
-                    if reply.send(Ok(Opened { backend, sizes })).is_err() {
+                    let info = read_info(&document);
+                    if reply
+                        .send(Ok(Opened {
+                            backend,
+                            sizes,
+                            info,
+                        }))
+                        .is_err()
+                    {
                         return;
                     }
                     document
@@ -1574,6 +1689,58 @@ mod tests {
         let saved = Document::open(copy.0.to_str().unwrap()).unwrap();
         let page = mupdf::pdf::PdfPage::try_from(saved.load_page(0).unwrap()).unwrap();
         assert_eq!(page.annotations().count(), 1);
+    }
+
+    #[test]
+    fn dates_read_as_people_write_them() {
+        assert_eq!(
+            pdf_date("D:20130415120000+01'00'"),
+            "2013-04-15 12:00 +01:00"
+        );
+        assert_eq!(pdf_date("D:20130415120000Z"), "2013-04-15 12:00 UTC");
+        assert_eq!(pdf_date("D:199912311259-05'30"), "1999-12-31 12:59 -05:30");
+        assert_eq!(pdf_date("D:2013"), "2013");
+        assert_eq!(pdf_date("D:201304"), "2013-04");
+        assert_eq!(pdf_date("D:2013041509"), "2013-04-15 09:00");
+        assert_eq!(pdf_date("20130415"), "2013-04-15");
+        assert_eq!(pdf_date("last Tuesday"), "last Tuesday");
+        assert_eq!(pdf_date(""), "");
+    }
+
+    #[test]
+    fn only_a_real_title_names_a_document() {
+        let titled = |title: &str| Info {
+            title: Some(title.to_owned()),
+            ..Info::default()
+        };
+        assert_eq!(titled("A Complete Guide").name(), Some("A Complete Guide"));
+        assert_eq!(titled("report.docx").name(), None);
+        assert_eq!(titled("Microsoft Word - report").name(), None);
+        assert_eq!(titled("Untitled").name(), None);
+        assert_eq!(Info::default().name(), None);
+    }
+
+    #[test]
+    fn what_a_document_says_about_itself_is_read() {
+        // An /Info dictionary, the sixth object, given in the trailer.
+        let bytes = pdf(&[
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+            "<< >>",
+            "<< >>",
+            "<< /Title (Hello) /Author (Someone) /CreationDate (D:20130415120000Z) >>",
+        ]);
+        let text = String::from_utf8(bytes)
+            .unwrap()
+            .replace("/Root 1 0 R", "/Root 1 0 R /Info 6 0 R");
+        let document = Document::from_bytes(text.as_bytes(), "application/pdf").unwrap();
+        let info = read_info(&document);
+        assert_eq!(info.title.as_deref(), Some("Hello"));
+        assert_eq!(info.author.as_deref(), Some("Someone"));
+        assert_eq!(info.created.as_deref(), Some("2013-04-15 12:00 UTC"));
+        assert_eq!(info.subject, None);
+        assert!(info.format.is_some_and(|format| format.starts_with("PDF")));
     }
 
     #[test]

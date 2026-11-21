@@ -2941,7 +2941,7 @@ dependencies = [
 
 [[package]]
 name = "pdvim"
-version = "0.1.16"
+version = "0.1.17"
 dependencies = [
  "font-kit",
  "iced",

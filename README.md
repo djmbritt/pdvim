@@ -22,7 +22,7 @@ pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.r
 - Marks (`ma`, `` `a ``, and `A`–`Z` across documents) and a jump list (`Ctrl-o`, `Ctrl-i`), as in vim
 - Following links from the keyboard: `f` labels every link, highlight and note in view, and typing a label follows the link or picks the marking
 - A cheat sheet of the key bindings in force, with `:help`
-- `Tab` completion of commands, settings, and file paths in the command prompt
+- `Tab` completion of commands, settings, and file paths in the command prompt, and `Up` / `Down` to recall earlier commands and searches
 - Tabs, with vim's `gt` / `gT`, `Ctrl-Tab` / `Ctrl-Shift-Tab`, and `:tabedit`
 - Highlighting, underlining, striking out and squiggling text into the PDF, saved with `:w` or `Ctrl-s`, with undo
 - Going through the markings with `]h` / `[h`, and listing them in a sidebar
@@ -275,6 +275,8 @@ If you name a boolean setting without a value, it is turned on.
 You can also run any [action](#actions) by name, as in `:scroll-down` or `:next-tab`. A number after it works like a count typed before a key: `:zoom-to 150` zooms to 150%, and `:first-page 12` goes to page 12.
 
 Press `Tab` in the command prompt to complete what you're typing: command and action names, setting names and their values, mode and action names after `:map`, and file paths after `:open`, `:tabedit`, and `:tabnew`. Paths offer folders and PDF files. If more than one completion fits, `Tab` fills in as much as they share and lists them above the prompt. Press `Tab` again to go through the list, and `Shift-Tab` to go back. While the list is open, it narrows as you type, and it closes when nothing fits.
+
+Press `Up` or `Ctrl-p` at `:`, `/` or `?` to bring back an earlier command or search, and again to go further back; `Down` or `Ctrl-n` comes forward again, back to what you were typing. Whatever you have typed already narrows them to the lines that start the same way, so `:zo` then `Up` finds your last `:zoom`. Commands and searches are kept apart, `/` and `?` share theirs, and the last 500 of each are kept in the reading history, so they last after pdvim closes. Passwords are never kept.
 
 ## Recent documents
 

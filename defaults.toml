@@ -384,6 +384,11 @@ note-color = "#fdd835"
 "shift+tab" = "complete-previous"
 # ctrl+shift+v pastes too
 "ctrl+v" = "paste"
+# Earlier commands, or earlier searches; what is typed already narrows them.
+"up" = "older"
+"ctrl+p" = "older"
+"down" = "newer"
+"ctrl+n" = "newer"
 
 [keys.confirm]
 

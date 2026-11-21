@@ -36,6 +36,7 @@ mod markings;
 mod num;
 mod outline;
 mod reader;
+mod recall;
 mod recent;
 mod recolor;
 mod theme;

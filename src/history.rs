@@ -126,6 +126,16 @@ impl History {
                 PRIMARY KEY (path, name)
             ) STRICT",
         )?;
+        // Lines typed at the prompts, each once, numbered in the order
+        // they were last typed.
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS typed (
+                prompt TEXT NOT NULL,
+                line   TEXT NOT NULL,
+                seq    INTEGER NOT NULL,
+                PRIMARY KEY (prompt, line)
+            ) STRICT",
+        )?;
         Ok(Self { connection })
     }
 
@@ -282,6 +292,41 @@ impl History {
         Ok(())
     }
 
+    /// The lines typed at a prompt, the oldest first, as many as are kept.
+    pub fn typed(&self, prompt: &str) -> Result<Vec<String>, Error> {
+        let mut statement = self.connection.prepare(
+            "SELECT line FROM (
+                SELECT line, seq FROM typed WHERE prompt = ?1 ORDER BY seq DESC LIMIT ?2
+            ) ORDER BY seq",
+        )?;
+        let kept = i64::try_from(crate::recall::KEPT).unwrap_or(i64::MAX);
+        let lines = statement
+            .query_map(rusqlite::params![prompt, kept], |row| {
+                row.get::<_, String>(0)
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok(lines)
+    }
+
+    /// Remembers a line typed at a prompt as the newest, and forgets the
+    /// oldest beyond as many as are kept.
+    pub fn add_typed(&self, prompt: &str, line: &str) -> Result<(), Error> {
+        let kept = i64::try_from(crate::recall::KEPT).unwrap_or(i64::MAX);
+        self.connection.execute(
+            "INSERT INTO typed (prompt, line, seq)
+                VALUES (?1, ?2, (SELECT COALESCE(MAX(seq), 0) + 1 FROM typed))
+                ON CONFLICT (prompt, line) DO UPDATE SET seq = excluded.seq",
+            rusqlite::params![prompt, line],
+        )?;
+        self.connection.execute(
+            "DELETE FROM typed WHERE prompt = ?1 AND seq NOT IN (
+                SELECT seq FROM typed WHERE prompt = ?1 ORDER BY seq DESC LIMIT ?2
+            )",
+            rusqlite::params![prompt, kept],
+        )?;
+        Ok(())
+    }
+
     /// Every document in the history, the one left most recently first.
     pub fn recent(&self) -> Result<Vec<PathBuf>, Error> {
         let mut statement = self
@@ -342,6 +387,26 @@ mod tests {
         history.delete_marks(two, &['a', 'Q']).unwrap();
         assert_eq!(history.marks(two).unwrap(), []);
         assert_eq!(history.global_mark('Q').unwrap(), None);
+    }
+
+    #[test]
+    fn lines_typed_are_kept_by_prompt_newest_last() {
+        let history = memory();
+        history.add_typed("command", "zoom 150").unwrap();
+        history.add_typed("search", "needle").unwrap();
+        history.add_typed("command", "open a.pdf").unwrap();
+        history.add_typed("command", "zoom 150").unwrap();
+        assert_eq!(
+            history.typed("command").unwrap(),
+            ["open a.pdf", "zoom 150"]
+        );
+        assert_eq!(history.typed("search").unwrap(), ["needle"]);
+        for number in 0..crate::recall::KEPT {
+            history.add_typed("search", &number.to_string()).unwrap();
+        }
+        let searches = history.typed("search").unwrap();
+        assert_eq!(searches.len(), crate::recall::KEPT);
+        assert_eq!(searches.first().map(String::as_str), Some("0"));
     }
 
     fn memory() -> History {

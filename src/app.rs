@@ -27,6 +27,7 @@ use crate::layout::Rect;
 use crate::num;
 use crate::outline::{self, Outline};
 use crate::reader::{Place, Reader};
+use crate::recall::{Lines, Recall};
 use crate::recent::{self, Choice, Picker};
 use crate::recolor::{Palette, Rgb};
 use crate::theme::{self, Colours};
@@ -398,6 +399,12 @@ pub struct App {
     /// The last number given to a document or a request to open one.
     last_id: u64,
     history: Option<History>,
+    /// The commands typed at `:`, and the searches at `/` and `?`, the
+    /// oldest first.
+    typed_commands: Lines,
+    typed_searches: Lines,
+    /// The walk through them while going up and down at the prompt.
+    recall: Option<Recall>,
     /// The size of the area for pages, in logical pixels.
     area: Size,
     /// Physical pixels per logical pixel.
@@ -516,6 +523,9 @@ impl App {
             tabs: vec![Tab::default()],
             current: 0,
             last_id: 0,
+            typed_commands: Lines::default(),
+            typed_searches: Lines::default(),
+            recall: None,
             history,
             area: Size::ZERO,
             scale_factor: 1.0,
@@ -560,6 +570,7 @@ impl App {
             global_marks: HashMap::new(),
             arriving: None,
         };
+        app.load_typed();
         // Started without a document, it offers the ones read lately.
         if paths.is_empty() {
             app.picker = Picker::new(app.recent_documents());
@@ -1714,11 +1725,31 @@ impl App {
             return Task::none();
         };
         let completing = self.completing.take();
+        // Any key but up and down ends a walk through the earlier lines.
+        let recall = self.recall.take();
         let before = line.clone();
         match self
             .prompt_pending
             .feed(key, &self.keymaps.prompt, Counts::NotTaken)
         {
+            Fed::Bound(binding @ (PromptBinding::Older | PromptBinding::Newer), _)
+                if prompt != Prompt::Password =>
+            {
+                let lines = if prompt == Prompt::Command {
+                    &self.typed_commands
+                } else {
+                    &self.typed_searches
+                };
+                let mut recall = recall.unwrap_or_else(|| Recall::new(line.clone()));
+                let found = if binding == PromptBinding::Older {
+                    recall.older(lines)
+                } else {
+                    recall.newer(lines)
+                };
+                self.recall = Some(recall);
+                self.prompt = Some((prompt, found.unwrap_or(line)));
+                return Task::none();
+            }
             Fed::Bound(
                 binding @ (PromptBinding::Complete | PromptBinding::CompletePrevious),
                 _,
@@ -1728,7 +1759,10 @@ impl App {
                 self.prompt = Some((prompt, line));
                 return Task::none();
             }
-            Fed::Bound(PromptBinding::Submit, _) => return self.submit(prompt, &line),
+            Fed::Bound(PromptBinding::Submit, _) => {
+                self.remember_typed(prompt, &line);
+                return self.submit(prompt, &line);
+            }
             Fed::Bound(PromptBinding::Paste, _) => {
                 self.completing = completing;
                 self.prompt = Some((prompt, line));
@@ -1756,7 +1790,13 @@ impl App {
                     }
                 }
             }
-            Fed::Bound(PromptBinding::Complete | PromptBinding::CompletePrevious, _)
+            Fed::Bound(
+                PromptBinding::Complete
+                | PromptBinding::CompletePrevious
+                | PromptBinding::Older
+                | PromptBinding::Newer,
+                _,
+            )
             | Fed::Waiting => {}
         }
         // A list once shown follows what is typed, until nothing fits.
@@ -1814,6 +1854,41 @@ impl App {
     }
 
     /// Runs what was typed into a prompt.
+    /// Reads the lines typed at the prompts before, from the history.
+    fn load_typed(&mut self) {
+        let Some(history) = &self.history else {
+            return;
+        };
+        match (history.typed("command"), history.typed("search")) {
+            (Ok(commands), Ok(searches)) => {
+                self.typed_commands = Lines::new(commands);
+                self.typed_searches = Lines::new(searches);
+            }
+            (Err(error), _) | (_, Err(error)) => {
+                self.notice = Notice::Error(error.to_string());
+            }
+        }
+    }
+
+    /// Remembers a line typed at a prompt, for up to recall; never a
+    /// password.
+    fn remember_typed(&mut self, prompt: Prompt, line: &str) {
+        let (name, lines) = match prompt {
+            Prompt::Command => ("command", &mut self.typed_commands),
+            Prompt::SearchForward | Prompt::SearchBackward => ("search", &mut self.typed_searches),
+            Prompt::Password => return,
+        };
+        lines.add(line);
+        if line.trim().is_empty() {
+            return;
+        }
+        if let Some(history) = &self.history
+            && let Err(error) = history.add_typed(name, line)
+        {
+            self.notice = Notice::Error(error.to_string());
+        }
+    }
+
     fn submit(&mut self, prompt: Prompt, line: &str) -> Task<Message> {
         match prompt {
             Prompt::Command => match command::parse(line) {

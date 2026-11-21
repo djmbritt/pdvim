@@ -353,6 +353,8 @@ bindable! {
         Complete = "complete", "Complete a command, or go to the next candidate";
         CompletePrevious = "complete-previous", "Go to the previous candidate";
         Paste = "paste", "Paste the text on the clipboard";
+        Older = "older", "Recall an earlier line that starts as this one";
+        Newer = "newer", "Recall a later line, at last the one being typed";
     }
 }
 

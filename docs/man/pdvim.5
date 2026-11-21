@@ -189,6 +189,48 @@ Default
 .B #fb8c00
 and
 .BR #fdd835 .
+.SH PATHS
+Each
+.B [[paths]]
+table gives the documents whose paths match a pattern settings of their
+own: any of
+.BR recolor ,
+.B trim
+and
+.BR columns ,
+with the pattern under
+.BR match .
+They set how a matching document looks each time it opens, over how it
+was left and the system's theme; where several match, the last wins.
+.PP
+In a pattern,
+.B *
+is any characters but
+.BR / ,
+.B ?
+is one, and
+.B **
+is any characters at all.
+A pattern ending in
+.B /
+is everything under that folder, one without a
+.B /
+is matched against the file's name alone, and
+.B \(ti
+at the start is the home folder.
+.PP
+.nf
+.RS
+[[paths]]
+match = "\(ti/scans/**"
+recolor = false
+trim = true
+
+[[paths]]
+match = "*.cbz"
+columns = 2
+.RE
+.fi
 .SH KEYS
 Each
 .BI [keys. mode ]

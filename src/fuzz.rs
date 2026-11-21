@@ -137,6 +137,15 @@ pub fn config(data: &[u8]) {
                 keymaps.unbind(mode, &keys);
             }
             Command::MapClear(mode) => keymaps.clear(mode),
+            // Patterns of paths match, or not, without trouble.
+            Command::PathRule(rule) => {
+                for path in ["/a/b/c.pdf", "relative.cbz", "/", "", "/x/**/y"] {
+                    let _ = crate::paths::settings_for(
+                        std::slice::from_ref(&rule),
+                        std::path::Path::new(path),
+                    );
+                }
+            }
             _ => {}
         }
     }

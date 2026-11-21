@@ -424,6 +424,23 @@ theme = "catppuccin-macchiato"
 
 `theme` sets the colors of the tab bar, the status bar and the box naming the mode in it, the lists and the backdrop behind the pages, and the colors pages are recolored in unless `recolor-lightcolor` and `recolor-darkcolor` set their own. The themes are `catppuccin-latte` (light), `catppuccin-frappe`, `catppuccin-macchiato`, `catppuccin-mocha`, `pdvim-dark` and `pdvim-light`. With `theme = "auto"`, the default, pdvim uses `theme-dark` (`catppuccin-mocha`) while the system prefers a dark theme and `theme-light` (`catppuccin-latte`) while it prefers a light one, whatever `recolor` is set to.
 
+`[[paths]]` tables give the documents under some paths settings of their own: whether they are recolored, whether their margins are trimmed, and how many pages sit side by side. Each has a pattern under `match`, and any of `recolor`, `trim` and `columns`:
+
+```toml
+# Scans stay as printed, and trimmed.
+[[paths]]
+match = "~/scans/**"
+recolor = false
+trim = true
+
+# Comics two pages at a time, wherever they are.
+[[paths]]
+match = "*.cbz"
+columns = 2
+```
+
+In a pattern, `*` stands for any characters but `/` and `?` for one, and `**` for any characters at all, so `~/scans/**` is everything under `~/scans`, however deep. A pattern ending in `/` is everything under that folder, and one without a `/` is matched against the file's name alone. A rule sets how a matching document looks every time it opens, whatever it was left like and whatever the system's theme; keys such as `R` and `t` still change it while it is open. Where several rules match, the last one wins. `recolor = "auto"` makes the documents a rule matches follow the system's theme even when `recolor` in `[settings]` is `true` or `false`.
+
 `[keys.<mode>]` binds keys to that mode's actions, on top of the default keys. Bind keys to `"none"` to remove a default. Keys put straight in `[keys]` are bound in normal mode, as before modes could be configured. The modes are:
 
 | Mode       | When                                                          |

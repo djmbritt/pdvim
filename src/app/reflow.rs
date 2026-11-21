@@ -43,7 +43,10 @@ impl App {
             .history
             .as_ref()
             .and_then(|history| history.load(path).ok().flatten());
-        self.flow(left.map_or(self.fresh.columns, |view| view.columns))
+        let columns = crate::paths::settings_for(&self.path_rules, path)
+            .columns
+            .unwrap_or_else(|| left.map_or(self.fresh.columns, |view| view.columns));
+        self.flow(columns)
     }
 
     /// Sets how many pages sit side by side in the tab in view, laying a

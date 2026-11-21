@@ -545,6 +545,9 @@ pub struct App {
     /// Whether a configuration is being read, when settings for documents
     /// only set what new ones start with.
     sourcing: bool,
+    /// Settings for the documents whose paths match a pattern, from the
+    /// configuration's `[[paths]]` tables.
+    path_rules: Vec<crate::paths::Rule>,
     /// The marks A to Z: a document and a place in it. Kept in the history
     /// too, when there is one.
     global_marks: HashMap<char, (PathBuf, Place)>,
@@ -631,6 +634,7 @@ impl App {
             asking: None,
             awaiting_mark: None,
             sourcing: false,
+            path_rules: Vec::new(),
             closed: Vec::new(),
             last_line: None,
             incsearch: true,
@@ -664,11 +668,19 @@ impl App {
     /// Recolours every open document, or stops, to match the system's
     /// theme, when following it and the theme is known.
     fn follow_system(&mut self) {
-        let Some(dark) = self.system_dark.filter(|_| self.recolor_auto) else {
+        let Some(dark) = self.system_dark else {
             return;
         };
+        let rules = &self.path_rules;
         for document in self.tabs.iter_mut().filter_map(|tab| tab.document.as_mut()) {
-            document.recolor = dark;
+            // A rule for the document's path says whether it follows.
+            let follows = match crate::paths::settings_for(rules, &document.path).recolor {
+                Some(recolor) => recolor == Recolor::Auto,
+                None => self.recolor_auto,
+            };
+            if follows {
+                document.recolor = dark;
+            }
         }
     }
 
@@ -684,6 +696,7 @@ impl App {
     /// first problem; returns whether the file could be read.
     fn read_configuration(&mut self, named: Option<&Path>) -> bool {
         self.keymaps = Keymaps::empty();
+        self.path_rules.clear();
         self.sourcing = true;
         // The built-in configuration is tested to have no problems.
         let (defaults, _) = config::parse(bindings::DEFAULTS);
@@ -1970,6 +1983,7 @@ impl App {
             Command::Note(text) => return self.add_note(text),
             Command::Shell(line) => return self.shell(line),
             Command::Export { target, force } => return self.export(target, force),
+            Command::PathRule(rule) => self.path_rules.push(rule),
             Command::ShowTheme => {
                 let theme = self.current_theme().name();
                 self.notice = Notice::Info(if self.theme.is_some() {
@@ -2280,13 +2294,8 @@ impl App {
         let marks = self.load_marks(&path, &mut notice);
         // Opened to go to a mark: there, rather than where it was left.
         let arriving = self.arrive(&path, &mut reader, returning.is_some());
-        // Following the system, its theme wins over how the document was
-        // left.
-        if self.recolor_auto
-            && let Some(dark) = self.system_dark
-        {
-            recolor = dark;
-        }
+        self.starting_look(&path, &mut reader, &mut recolor, &mut trim);
+        returning = returning.filter(|_| trim);
         let Some(tab) = self.tabs.get_mut(index) else {
             return Task::none();
         };
@@ -2348,6 +2357,21 @@ impl App {
         };
         // The window may have changed size while it was laid out.
         Task::batch([trimming, self.reflow()])
+    }
+
+    /// Changes how a document opening looks, from how it was left: the
+    /// system's theme wins, when followed, and the settings for documents
+    /// under its path win over both.
+    fn starting_look(&self, path: &Path, reader: &mut Reader, recolor: &mut bool, trim: &mut bool) {
+        if self.recolor_auto
+            && let Some(dark) = self.system_dark
+        {
+            *recolor = dark;
+        }
+        let ruled = crate::paths::settings_for(&self.path_rules, path);
+        if let Some(columns) = ruled.apply(recolor, trim, self.system_dark) {
+            reader.set_columns(columns);
+        }
     }
 
     /// Hides or shows the blank margins of every page. The margins are

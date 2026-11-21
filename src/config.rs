@@ -17,6 +17,9 @@
 //! "Y" = "yank"
 //! ```
 //!
+//! `[[paths]]` tables give documents whose paths match a pattern settings
+//! of their own; see [`crate::paths`].
+//!
 //! Settings take the names and values of `:set`. Keys are bound in a mode,
 //! one table to a mode, as with `:map`: to an action by name, to `none` to
 //! unbind them, or in normal mode to a command line after `:`, such as
@@ -78,6 +81,19 @@ pub fn parse(text: &str) -> (Vec<Command>, Vec<Problem>) {
     };
     for (section, content) in &table {
         let entries = match (section.as_str(), content) {
+            ("paths", Value::Array(rules)) => {
+                for (index, rule) in rules.iter().enumerate() {
+                    match path_rule(rule) {
+                        Ok(rule) => commands.push(Command::PathRule(rule)),
+                        Err(message) => problems.push(Problem(format!("paths[{index}]: {message}"))),
+                    }
+                }
+                continue;
+            }
+            ("paths", _) => {
+                problems.push(Problem("paths is not a list of [[paths]] tables".to_owned()));
+                continue;
+            }
             ("settings" | "keys", Value::Table(entries)) => entries,
             ("settings" | "keys", _) => {
                 problems.push(Problem(format!("{section} is not a table")));
@@ -122,16 +138,40 @@ pub fn parse(text: &str) -> (Vec<Command>, Vec<Problem>) {
 
 /// The command for one entry of `[settings]`.
 fn settings(name: &str, value: &Value) -> Result<Command, String> {
-    let text = match value {
-        Value::String(text) => text.clone(),
-        Value::Boolean(flag) => flag.to_string(),
-        Value::Integer(number) => number.to_string(),
-        Value::Float(number) => number.to_string(),
-        _ => return Err("not a string, number or boolean".to_owned()),
-    };
-    command::setting(name, &text)
+    command::setting(name, &setting_text(value)?)
         .map(Command::Set)
         .map_err(|error| error.to_string())
+}
+
+/// A setting's value as `:set` takes it.
+fn setting_text(value: &Value) -> Result<String, String> {
+    match value {
+        Value::String(text) => Ok(text.clone()),
+        Value::Boolean(flag) => Ok(flag.to_string()),
+        Value::Integer(number) => Ok(number.to_string()),
+        Value::Float(number) => Ok(number.to_string()),
+        _ => Err("not a string, number or boolean".to_owned()),
+    }
+}
+
+/// One `[[paths]]` table: a pattern under `match`, and settings.
+fn path_rule(value: &Value) -> Result<crate::paths::Rule, String> {
+    let Value::Table(table) = value else {
+        return Err("not a table".to_owned());
+    };
+    let Some(Value::String(pattern)) = table.get("match") else {
+        return Err("no match = \"pattern\"".to_owned());
+    };
+    let settings = table
+        .iter()
+        .filter(|(name, _)| name.as_str() != "match")
+        .map(|(name, value)| {
+            setting_text(value)
+                .map(|text| (name.as_str(), text))
+                .map_err(|reason| format!("{name}: {reason}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    crate::paths::Rule::new(pattern, settings)
 }
 
 /// The command for one key binding, in a mode.
@@ -293,6 +333,49 @@ mod tests {
             problems[0].0.starts_with("not valid TOML: "),
             "{}",
             problems[0]
+        );
+    }
+
+    #[test]
+    fn paths_tables_give_documents_settings_of_their_own() {
+        let text = r#"
+            [[paths]]
+            match = "/scans/**"
+            recolor = false
+            trim = true
+
+            [[paths]]
+            match = "*.cbz"
+            columns = 2
+
+            [[paths]]
+            recolor = true
+
+            [[paths]]
+            match = "/x/"
+            theme = "pdvim-dark"
+        "#;
+        let (commands, problems) = parse(text);
+        let rules: Vec<_> = commands
+            .into_iter()
+            .filter_map(|command| match command {
+                Command::PathRule(rule) => Some(rule),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(rules.len(), 2);
+        let settings = crate::paths::settings_for(&rules, std::path::Path::new("/scans/a.pdf"));
+        assert_eq!(settings.trim, Some(true));
+        assert_eq!(settings.recolor, Some(crate::command::Recolor::Off));
+        let comic = crate::paths::settings_for(&rules, std::path::Path::new("/c/b.cbz"));
+        assert_eq!(comic.columns, Some(2));
+        let messages: Vec<_> = problems.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            messages,
+            [
+                "paths[2]: no match = \"pattern\"",
+                "paths[3]: theme: only recolor, trim, columns are set by path",
+            ]
         );
     }
 }

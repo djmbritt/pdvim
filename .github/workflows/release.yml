@@ -1,5 +1,6 @@
 # Builds pdvim for Linux, macOS and Windows, and attaches the packages to a
-# draft GitHub release.
+# draft GitHub release, with the AppImage and Flatpak bundle that
+# linux-bundles.yml builds.
 #
 # Push a tag to make a release: `git tag v0.1.0 && git push origin v0.1.0`.
 # The tag must match the version in Cargo.toml. Run it by hand from the
@@ -90,9 +91,13 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  # The AppImage and the Flatpak bundle.
+  bundles:
+    uses: ./.github/workflows/linux-bundles.yml
+
   release:
     name: Draft the release
-    needs: build
+    needs: [build, bundles]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:

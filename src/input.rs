@@ -591,4 +591,17 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn the_manual_names_every_action_of_normal_mode() {
+        use crate::keymap::Bindable;
+        // In roff a hyphen is written `\-`.
+        let manual = include_str!("../docs/man/pdvim.5").replace("\\-", "-");
+        for (_, name, _) in Binding::ALL {
+            assert!(
+                manual.contains(&format!(".B {name}\n")),
+                "docs/man/pdvim.5 does not describe {name}"
+            );
+        }
+    }
 }

@@ -1,0 +1,76 @@
+# Builds pdvim as a Flatpak, from the source checked out, without the
+# network: the crates it needs are listed in cargo-sources.json, which
+#
+#     flatpak-cargo-generator.py Cargo.lock -o packaging/flatpak/cargo-sources.json
+#
+# makes (see .github/workflows/linux-bundles.yml). Then, from the top of the
+# repository:
+#
+#     flatpak-builder --user --install --force-clean build-dir \
+#         packaging/flatpak/io.github.djmbritt.pdvim.yml
+#
+# https://github.com/flatpak/flatpak-builder-tools/tree/master/cargo
+id: io.github.djmbritt.pdvim
+runtime: org.freedesktop.Platform
+runtime-version: "26.08"
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  # MuPDF's bindings are made with bindgen, which needs libclang.
+  - org.freedesktop.Sdk.Extension.llvm22
+command: pdvim
+rename-desktop-file: pdvim.desktop
+rename-icon: pdvim
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  # Drawing with the GPU.
+  - --device=dri
+  # Documents are opened by their path, from the command line and the
+  # prompt, and highlights are saved into them, so pdvim reads and writes
+  # where documents are kept.
+  - --filesystem=home
+  - --filesystem=/media
+  - --filesystem=/run/media
+  - --filesystem=/mnt
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm22/bin
+  prepend-ld-library-path: /usr/lib/sdk/llvm22/lib
+  env:
+    CARGO_HOME: /run/build/pdvim/cargo
+    LIBCLANG_PATH: /usr/lib/sdk/llvm22/lib
+modules:
+  - name: pdvim
+    buildsystem: simple
+    build-commands:
+      - cargo --offline fetch --manifest-path Cargo.toml --verbose
+      - cargo --offline build --release --locked
+      - install -Dm755 target/release/pdvim /app/libexec/pdvim
+      - install -Dm755 pdvim.sh /app/bin/pdvim
+      - install -Dm644 packaging/pdvim.desktop /app/share/applications/pdvim.desktop
+      - install -Dm644 packaging/pdvim.svg /app/share/icons/hicolor/scalable/apps/pdvim.svg
+      - install -Dm644 packaging/io.github.djmbritt.pdvim.metainfo.xml
+        /app/share/metainfo/io.github.djmbritt.pdvim.metainfo.xml
+      - install -Dm644 -t /app/share/doc/pdvim README.md defaults.toml
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - .git
+          - target
+          - dist
+          - fuzz
+          - build-dir
+          - .flatpak-builder
+          - packaging/pkg
+          - packaging/src
+      - cargo-sources.json
+      # Flatpak keeps each app's configuration apart, in
+      # ~/.var/app/io.github.djmbritt.pdvim/config; pdvim reads the one in
+      # ~/.config/pdvim, as when installed any other way.
+      - type: script
+        dest-filename: pdvim.sh
+        commands:
+          - export XDG_CONFIG_HOME="${HOST_XDG_CONFIG_HOME:-$HOME/.config}"
+          - exec /app/libexec/pdvim "$@"

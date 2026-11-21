@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- What software centres show of pdvim, in the Flatpak and the AppImage. -->
+<component type="desktop-application">
+  <id>io.github.djmbritt.pdvim</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+  <name>pdvim</name>
+  <summary>Read documents from the keyboard, with vi keys</summary>
+  <developer id="io.github.djmbritt">
+    <name>David Britt</name>
+  </developer>
+  <description>
+    <p>
+      A minimal, keyboard-driven PDF reader with vi key bindings. It also
+      reads EPUB and FB2 books, CBZ comics, XPS documents, SVG drawings and
+      images.
+    </p>
+    <ul>
+      <li>vi-style movement with counts, search, marks and a jump list</li>
+      <li>Tabs, a table of contents, and following links from the keyboard</li>
+      <li>Selecting and copying text in a visual mode like vim's</li>
+      <li>Highlighting text into the PDF, and filling in forms</li>
+      <li>Recoloring for dark backgrounds, and themes</li>
+      <li>Books laid out to fit the window, in one or two columns</li>
+      <li>The page, zoom and columns of each document remembered</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.djmbritt.pdvim.desktop</launchable>
+  <provides>
+    <binary>pdvim</binary>
+  </provides>
+  <url type="homepage">https://github.com/djmbritt/pdvim</url>
+  <url type="bugtracker">https://github.com/djmbritt/pdvim/issues</url>
+  <url type="vcs-browser">https://github.com/djmbritt/pdvim</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Reading, with two tabs open</caption>
+      <image>https://raw.githubusercontent.com/djmbritt/pdvim/main/docs/screenshots/reading.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The table of contents, in the Catppuccin Mocha theme</caption>
+      <image>https://raw.githubusercontent.com/djmbritt/pdvim/main/docs/screenshots/contents.png</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <supports>
+    <control>keyboard</control>
+  </supports>
+  <categories>
+    <category>Office</category>
+    <category>Viewer</category>
+  </categories>
+</component>

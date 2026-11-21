@@ -1,0 +1,591 @@
+.\" The manual page for pdvim's configuration file. pdvim(1) is the program.
+.\" View it with: man docs/man/pdvim.5
+.TH PDVIM 5 2026-11-21 "pdvim" "File Formats"
+.SH NAME
+pdvim \- the configuration file of the pdvim document reader
+.SH SYNOPSIS
+.I $XDG_CONFIG_HOME/pdvim/config.toml
+.br
+.I ~/.config/pdvim/config.toml
+.SH DESCRIPTION
+.BR pdvim (1)
+reads its configuration from
+.I pdvim/config.toml
+under
+.BR $XDG_CONFIG_HOME ,
+or under
+.I ~/.config
+when that is not set, as it starts.
+The file is TOML.
+pdvim works without it, and anything left out of it keeps its default.
+.B :source
+reads it again while pdvim runs, and
+.BI ":source " file
+reads another file written the same way.
+.PP
+pdvim's own defaults are a file like it,
+.IR defaults.toml ,
+built into pdvim and read before the configuration.
+It lists every setting and every key binding of every mode, and makes a
+good start for one's own:
+installed, it is in
+.IR /usr/share/doc/pdvim/defaults.toml .
+.PP
+An entry with a mistake is skipped; the first mistake is shown in the
+status bar, and every one is printed to standard error.
+A file that is not valid TOML is ignored whole.
+.SH EXAMPLE
+.nf
+.RS
+[settings]
+recolor = true
+trim = true
+scroll\-step = 60
+theme = "catppuccin\-macchiato"
+
+[keys.normal]
+"ctrl+n" = "next\-tab"
+"ctrl+p" = "previous\-tab"
+"q" = "none"
+"shift+q" = "quit"
+"ctrl+t" = ":theme catppuccin\-latte"
+"g x" = ":set recolor false; zoom\-to 150"
+
+[keys.visual]
+"Y" = "yank"
+.RE
+.fi
+.SH SETTINGS
+The
+.B [settings]
+table takes the same names and values as
+.BR :set .
+Colors are written
+.BR #rrggbb .
+.TP
+.B recolor
+Recolor pages for a dark background:
+.BR true ,
+.BR false ,
+or
+.BR """auto""" ,
+the default, to follow the system's light or dark theme as the desktop's
+color-scheme setting says.
+With
+.B true
+or
+.BR false ,
+it and
+.B trim
+decide how a document starts the first time it is opened; after that it is
+restored as it was left.
+.TP
+.B trim
+Hide the blank margins of pages.
+Default
+.BR false .
+.TP
+.B theme
+The colors of the bars, the lists, the backdrop behind the pages, and those
+pages are recolored in:
+.BR pdvim\-dark ,
+.BR pdvim\-light ,
+.BR catppuccin\-latte ,
+.BR catppuccin\-frappe ,
+.BR catppuccin\-macchiato ,
+.BR catppuccin\-mocha ,
+or
+.BR auto ,
+the default, to use
+.B theme\-dark
+or
+.B theme\-light
+as the system's theme is dark or light.
+.TP
+.BR theme\-dark ", " theme\-light
+The themes followed while the system is dark, and light.
+Default
+.B catppuccin\-mocha
+and
+.BR catppuccin\-latte .
+.TP
+.BR recolor\-lightcolor ", " recolor\-darkcolor
+The colors white paper and black ink become when recolored, or
+.BR """theme""" ,
+the default, for the theme's background and text colors.
+.TP
+.B scroll\-step
+How far one
+.B j
+or
+.B k
+scrolls, in pixels.
+Default 40.
+.TP
+.B fontsize
+The size of type, in points from 4 to 72, that EPUB and FB2 books are laid
+out in.
+Default 12.
+.TP
+.B columns
+How many pages sit side by side in a document not opened before, from 1
+to 4.
+Default 1.
+.B :set columns
+and
+.B zc
+change only the tab in view, and each document remembers its own.
+.TP
+.B confirm\-quit
+Ask before quitting.
+Default
+.BR true .
+.TP
+.B confirm\-tab\-close
+Ask before closing a tab while others are open.
+Default
+.BR true .
+.TP
+.B autosave
+Save markings into the PDF as soon as they are made or taken back, rather
+than at
+.BR :w .
+Default
+.BR false .
+.TP
+.B hintchars
+The letters labels are made of, the first used most.
+Default
+.BR asdfghjkl .
+.TP
+.B incsearch
+Highlight the matches in view while a search is typed.
+Default
+.BR true .
+.TP
+.B tabbar
+Show the tab bar when more than one tab is open.
+Default
+.BR true .
+.TP
+.B statusbar
+Show the status bar while reading; off, it shows only while it has
+something to say.
+Default
+.BR true .
+.TP
+.BR highlight\-color ", " underline\-color ", " strikeout\-color ", " squiggly\-color ", " note\-color
+The colors visual mode's
+.BR H ,
+.BR U ,
+.B S
+and
+.B W
+mark text in, and of a note's icon.
+Default
+.BR #ffff00 ,
+.BR #1e88e5 ,
+.BR #e53935 ,
+.B #fb8c00
+and
+.BR #fdd835 .
+.SH KEYS
+Each
+.BI [keys. mode ]
+table binds keys to that mode's actions, on top of the default keys.
+Binding keys to
+.B """none"""
+removes a default.
+Keys put straight in
+.B [keys]
+are bound in normal mode.
+.B :map ,
+.B :unmap
+and
+.B :mapclear
+change bindings while pdvim runs, naming the mode first for any but
+normal:
+.BR ":map visual Y yank" .
+.PP
+A key is a single character, such as
+.BR j ,
+.B G
+or
+.BR ? ,
+or a name:
+.BR space ,
+.BR tab ,
+.BR escape ,
+.BR enter ,
+.BR backspace ,
+.BR up ,
+.BR down ,
+.BR left ,
+.BR right ,
+.BR pageup ,
+.BR pagedown ,
+.BR home ,
+.BR end ,
+or
+.B f1
+to
+.BR f12 .
+.B ctrl+
+and
+.B shift+
+in front add modifiers:
+.BR ctrl+d ,
+.BR shift+tab ,
+.BR ctrl+shift+tab .
+.B shift+q
+is the same as
+.BR Q .
+The keys of a sequence are separated by spaces, as in
+.BR """g g""" .
+If one binding starts a longer one, the shorter wins.
+A count typed before the keys is passed to the action.
+.PP
+In normal mode, keys can run a command line instead, written after a
+.BR : ;
+.B ;
+separates several commands, which run in turn and stop at the first
+mistake.
+.SS Modes
+.TP 12
+.B normal
+Reading: the actions below.
+.TP
+.B visual
+Selecting text, after
+.B v
+or
+.BR V .
+.TP
+.B hints
+Labels on links or lines; letters not bound type a label.
+.TP
+.B outline
+The table of contents.
+.TP
+.B markings
+The list of highlights and other markings.
+.TP
+.B recent
+The list of documents read recently; digits not bound open that entry.
+.TP
+.B help
+The list of keys.
+.TP
+.B prompt
+Typing after
+.BR : ,
+.B /
+or
+.BR ? ;
+keys not bound type themselves.
+.TP
+.B confirm
+Questions such as
+.BR "quit pdvim? (y/n)" ;
+keys not bound mean no.
+.PP
+.I defaults.toml
+and
+.B :help
+list the actions of every mode.
+.SS Normal mode actions
+Every one also runs as a command,
+.BI : action\fR,
+with a number after it for a count.
+.TP
+.B scroll\-down
+Scroll down.
+Default: \fBj\fP, \fBdown\fP.
+.TP
+.B scroll\-up
+Scroll up.
+Default: \fBk\fP, \fBup\fP.
+.TP
+.B scroll\-left
+Scroll left.
+Default: \fBh\fP, \fBleft\fP.
+.TP
+.B scroll\-right
+Scroll right.
+Default: \fBl\fP, \fBright\fP.
+.TP
+.B scroll\-half\-down
+Scroll half a screen down.
+Default: \fBctrl+d\fP.
+.TP
+.B scroll\-half\-up
+Scroll half a screen up.
+Default: \fBctrl+u\fP.
+.TP
+.B scroll\-full\-down
+Scroll a screen down.
+Default: \fBctrl+f\fP, \fBspace\fP.
+.TP
+.B scroll\-full\-up
+Scroll a screen up.
+Default: \fBctrl+b\fP, \fBshift+space\fP.
+.TP
+.B next\-page
+Go to the next page.
+Default: \fBJ\fP, \fBpagedown\fP.
+.TP
+.B previous\-page
+Go to the previous page.
+Default: \fBK\fP, \fBpageup\fP.
+.TP
+.B first\-page
+Go to the first page, or page n.
+Default: \fBg g\fP, \fBhome\fP.
+.TP
+.B last\-page
+Go to the last page, or page n.
+Default: \fBG\fP, \fBend\fP.
+.TP
+.B page\-top
+Go to the top of the page.
+Default: \fBH\fP.
+.TP
+.B page\-bottom
+Go to the bottom of the page.
+Default: \fBL\fP.
+.TP
+.B next\-chapter
+Go to the next chapter or section.
+Default: \fB] ]\fP.
+.TP
+.B previous\-chapter
+Go to the previous chapter or section.
+Default: \fB[ [\fP.
+.TP
+.B outline
+Show the table of contents, to go to a chapter.
+Default: \fBtab\fP.
+.TP
+.B zoom\-in
+Zoom in.
+Default: \fB+\fP, \fBz i\fP, \fBz I\fP.
+.TP
+.B zoom\-out
+Zoom out.
+Default: \fB\-\fP, \fBz o\fP, \fBz O\fP.
+.TP
+.B zoom\-to
+Zoom to 100%, or to n%.
+Default: \fB=\fP, \fBz z\fP, \fBz Z\fP.
+.TP
+.B zoom\-reset
+Zoom to 100%.
+Default: \fBz 0\fP.
+.TP
+.B fit\-width
+Fit the page width to the window.
+Default: \fBz w\fP.
+.TP
+.B fit\-page
+Fit the whole page in the window.
+Default: \fBz p\fP.
+.TP
+.B rotate
+Rotate.
+Default: \fBr\fP.
+.TP
+.B toggle\-recolor
+Turn recoloring on or off.
+Default: \fBR\fP.
+.TP
+.B toggle\-trim
+Turn margin trimming on or off.
+Default: \fBt\fP.
+.TP
+.B toggle\-bars
+Hide the tab bar and status bar, or show them.
+Default: \fBz b\fP.
+.TP
+.B toggle\-columns
+Show two pages side by side, or one.
+Default: \fBz c\fP.
+.TP
+.B toggle\-fullscreen
+Fill the screen, or stop.
+Default: \fBf11\fP.
+.TP
+.B search\-forward
+Search forwards.
+Default: \fB/\fP.
+.TP
+.B search\-backward
+Search backwards.
+Default: \fB?\fP.
+.TP
+.B search\-next
+Go to the next match.
+Default: \fBn\fP.
+.TP
+.B search\-previous
+Go to the previous match.
+Default: \fBN\fP.
+.TP
+.B command\-prompt
+Open the command prompt.
+Default: \fB:\fP.
+.TP
+.B repeat
+Run the last command again; with a count, n times.
+Default: \fB.\fP.
+.TP
+.B recent
+Show recent documents.
+Default: \fBo\fP.
+.TP
+.B help
+Show every action of every mode, and the keys bound to it.
+Default: none.
+.TP
+.B follow\-link
+Label the links and markings in view; type a label to follow or pick one.
+Default: \fBf\fP.
+.TP
+.B follow\-link\-tab
+Label the links in view; type a label to open its place in a new tab.
+Default: \fBF\fP.
+.TP
+.B yank\-link
+Label the links in view; type a label to copy where it goes.
+Default: \fB; y\fP.
+.TP
+.B visual
+Select text from a line picked by label.
+Default: \fBv\fP.
+.TP
+.B visual\-line
+Select whole lines from a line picked by label.
+Default: \fBV\fP.
+.TP
+.B flash
+Type text in view, then its label, to start selecting there.
+Default: \fBs\fP.
+.TP
+.B first\-field
+Fill in the first field of a form in view; tab goes to the next.
+Default: \fBg i\fP.
+.TP
+.B last\-field
+Fill in the last field of a form in view.
+Default: \fBg I\fP.
+.TP
+.B field\-again
+Go back to the field of a form last gone to.
+Default: \fBg ;\fP.
+.TP
+.B next\-marking
+Go to the next highlight or other marking.
+Default: \fB] h\fP.
+.TP
+.B previous\-marking
+Go to the previous highlight or other marking.
+Default: \fB[ h\fP.
+.TP
+.B delete\-marking
+Take away the marking last gone to.
+Default: \fBd\fP.
+.TP
+.B change\-note
+Change the note on the marking gone to.
+Default: \fBc\fP.
+.TP
+.B yank\-marking
+Copy the text of the marking gone to.
+Default: \fBy h\fP.
+.TP
+.B label\-markings
+Label the markings in view; type a label to pick one.
+Default: \fBg h\fP.
+.TP
+.B markings
+List the highlights and other markings, to go to one.
+Default: \fBshift+tab\fP.
+.TP
+.B undo
+Take back the last marking, or taking one away.
+Default: \fBu\fP.
+.TP
+.B redo
+Put back what undo took back.
+Default: \fBctrl+r\fP.
+.TP
+.B next\-tab
+Go to the next tab, or tab n.
+Default: \fBg t\fP, \fBctrl+tab\fP.
+.TP
+.B previous\-tab
+Go to the previous tab.
+Default: \fBg T\fP, \fBctrl+shift+tab\fP.
+.TP
+.B tabs
+List the open tabs; type to narrow, enter to go to one.
+Default: \fBb\fP.
+.TP
+.B reopen\-tab
+Open the tab closed last again, where it was.
+Default: \fBU\fP.
+.TP
+.B set\-mark
+Mark this place with the letter typed next.
+Default: \fBm\fP.
+.TP
+.B go\-to\-mark
+Go to the mark typed next; \(ga or \(aq for before the last jump.
+Default: \fB\(ga\fP, \fB\(aq\fP.
+.TP
+.B jump\-back
+Go back to where the last jump left from, or n jumps.
+Default: \fBctrl+o\fP.
+.TP
+.B jump\-forward
+Go forward again through the jumps.
+Default: \fBctrl+i\fP.
+.TP
+.B write
+Save the highlights and other changes into the file.
+Default: \fBctrl+s\fP.
+.TP
+.B yank\-path
+Copy the path of the document\(aqs file.
+Default: \fBy y\fP.
+.TP
+.B yank\-title
+Copy the document\(aqs title, or its file\(aqs name.
+Default: \fBy t\fP.
+.TP
+.B yank\-page
+Copy the text of the page in view.
+Default: \fBy p\fP.
+.TP
+.B info
+Show the document\(aqs title, author, dates and more.
+Default: \fBctrl+g\fP.
+.TP
+.B abort
+Cancel a half\-typed command, hide highlights.
+Default: \fBescape\fP, \fBctrl+c\fP, \fBctrl+[\fP.
+.TP
+.B quit
+Close the tab, and quit after the last one.
+Default: \fBq\fP.
+.SH FILES
+.TP
+.I $XDG_CONFIG_HOME/pdvim/config.toml
+The configuration; by default
+.IR ~/.config/pdvim/config.toml .
+.TP
+.I /usr/share/doc/pdvim/defaults.toml
+pdvim's defaults, as a configuration file, where packages install it.
+.SH SEE ALSO
+.BR pdvim (1)
+.PP
+https://toml.io

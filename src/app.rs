@@ -1739,7 +1739,10 @@ impl App {
             .feed(key, &self.keymaps.prompt, Counts::NotTaken)
         {
             Fed::Bound(binding @ (PromptBinding::Older | PromptBinding::Newer), _)
-                if prompt != Prompt::Password =>
+                if matches!(
+                    prompt,
+                    Prompt::Command | Prompt::SearchForward | Prompt::SearchBackward
+                ) =>
             {
                 let lines = if prompt == Prompt::Command {
                     &self.typed_commands
@@ -1889,12 +1892,13 @@ impl App {
     }
 
     /// Remembers a line typed at a prompt, for up to recall; never a
-    /// password.
+    /// password, or what is typed into a form.
     fn remember_typed(&mut self, prompt: Prompt, line: &str) {
         let (name, lines) = match prompt {
             Prompt::Command => ("command", &mut self.typed_commands),
             Prompt::SearchForward | Prompt::SearchBackward => ("search", &mut self.typed_searches),
-            Prompt::Password => return,
+            // What is typed into a form stays in the form.
+            Prompt::Password | Prompt::Field => return,
         };
         lines.add(line);
         if line.trim().is_empty() {

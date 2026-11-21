@@ -34,6 +34,7 @@ use crate::theme::{self, Colours};
 use crate::visual::{self, Kind, Spot, Visual};
 
 mod chapters;
+mod copy;
 mod flash;
 mod forms;
 mod info;
@@ -722,10 +723,7 @@ impl App {
                 self.on_rendered(id, page, key, result);
                 Task::none()
             }
-            Message::TextFound(id, pages, result) => {
-                self.on_text(id, &pages, result);
-                Task::none()
-            }
+            Message::TextFound(id, pages, result) => self.on_text(id, &pages, result),
             Message::Edited(id, edit, step, result) => self.on_edited(id, edit, step, result),
             Message::MarkingsFound(id, edition, wanted, result) => {
                 self.on_markings(id, edition, wanted, result)
@@ -1021,9 +1019,9 @@ impl App {
         id: u64,
         pages: &[u32],
         result: Result<backend::PageText, backend::Error>,
-    ) {
+    ) -> Task<Message> {
         let Some(document) = document_by_id(&mut self.tabs, id) else {
-            return;
+            return Task::none();
         };
         for page in pages {
             document.reading.remove(page);
@@ -1032,24 +1030,30 @@ impl App {
             Ok(text) => document.text.extend(text),
             Err(error) => {
                 self.notice = Notice::Error(error.to_string());
-                return;
+                return Task::none();
             }
         }
         if let Some((wanted, then)) = self.lines_wanted
             && wanted == id
             && self.document().is_some_and(|document| document.id == id)
             && let Some(document) = self.document()
-            && document
-                .reader
-                .visible_pages()
-                .all(|page| document.text.contains_key(&page))
         {
+            let read = |page: u32| document.text.contains_key(&page);
+            let ready = match then {
+                TextFor::Copy(page) => read(page),
+                TextFor::Lines(_) | TextFor::Flash => document.reader.visible_pages().all(read),
+            };
+            if !ready {
+                return Task::none();
+            }
             self.lines_wanted = None;
             match then {
                 TextFor::Lines(kind) => self.show_line_hints(kind),
                 TextFor::Flash => self.flash = Some(crate::flash::Flash::new()),
+                TextFor::Copy(page) => return self.copy_page(page),
             }
         }
+        Task::none()
     }
 
     /// Labels the lines that show in the window, and the sentences that
@@ -2075,6 +2079,7 @@ impl App {
             Action::Visual { lines } => return self.start_visual(lines),
             Action::Flash => return self.start_flash(),
             Action::Field(pick) => return self.go_to_field(pick.into()),
+            Action::Copy(what) => return self.copy(what),
             Action::ShowOutline => return self.show_outline(),
             Action::Mark(verb) => {
                 self.awaiting_mark = Some(verb);
@@ -2132,6 +2137,7 @@ impl App {
             | Action::Visual { .. }
             | Action::Flash
             | Action::Field(_)
+            | Action::Copy(_)
             | Action::Undo
             | Action::Redo
             | Action::Marking(_)
@@ -2977,6 +2983,8 @@ enum TextFor {
     Lines(Kind),
     /// Ask for text to jump to.
     Flash,
+    /// Copy the text of this page.
+    Copy(u32),
 }
 
 /// What `f` labels: a link to follow, or a marking to pick.

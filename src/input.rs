@@ -70,6 +70,17 @@ pub enum FieldPick {
     Again,
 }
 
+/// What to copy about the document in view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CopyWhat {
+    /// The path of its file.
+    Path,
+    /// Its title, or its file's name.
+    Title,
+    /// The text of the page in view.
+    Page,
+}
+
 /// What to do with the mark whose letter is typed next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MarkVerb {
@@ -154,6 +165,8 @@ pub enum Action {
     Flash,
     /// Go to a field of a form, to fill it in.
     Field(FieldPick),
+    /// Copy something about the document in view.
+    Copy(CopyWhat),
     /// Show the table of contents in a sidebar.
     ShowOutline,
     /// Wait for a letter, then put a mark there, or go to it.
@@ -261,6 +274,10 @@ bindable! {
         JumpForward = "jump-forward", "Go forward again through the jumps";
         /// Like `:w`.
         Write = "write", "Save the highlights and other changes into the file";
+        /// As Tridactyl's `yy`.
+        YankPath = "yank-path", "Copy the path of the document's file";
+        YankTitle = "yank-title", "Copy the document's title, or its file's name";
+        YankPage = "yank-page", "Copy the text of the page in view";
         /// Like `:info`.
         Info = "info", "Show the document's title, author, dates and more";
         Abort = "abort", "Cancel a half-typed command, hide highlights";
@@ -349,6 +366,9 @@ impl Binding {
             Self::Markings => Action::Marking(MarkingAction::List),
             Self::ChangeNote => Action::Marking(MarkingAction::ChangeNote),
             Self::YankMarking => Action::Marking(MarkingAction::Yank),
+            Self::YankPath => Action::Copy(CopyWhat::Path),
+            Self::YankTitle => Action::Copy(CopyWhat::Title),
+            Self::YankPage => Action::Copy(CopyWhat::Page),
             Self::LabelMarkings => Action::Marking(MarkingAction::Label),
             Self::Undo => Action::Undo,
             Self::Redo => Action::Redo,

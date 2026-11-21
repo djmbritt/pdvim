@@ -174,7 +174,7 @@ note-color = "#fdd835"
 "g h" = "label-markings"
 "d" = "delete-marking"
 "c" = "change-note"
-"y" = "yank-marking"
+"y h" = "yank-marking"
 "shift+tab" = "markings"
 "u" = "undo"
 "ctrl+r" = "redo"
@@ -197,6 +197,12 @@ note-color = "#fdd835"
 "ctrl+tab" = "next-tab"
 "g T" = "previous-tab"
 "ctrl+shift+tab" = "previous-tab"
+
+# Copy the path of the document's file, its title, or the text of the page
+# in view
+"y y" = "yank-path"
+"y t" = "yank-title"
+"y p" = "yank-page"
 
 # What the document says about itself: title, author, dates and more
 "ctrl+g" = "info"

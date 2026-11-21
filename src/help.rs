@@ -102,7 +102,17 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
             ],
         ),
         ("Tabs", &[B::NextTab, B::PreviousTab]),
-        ("Other", &[B::Info, B::Abort, B::Quit]),
+        (
+            "Other",
+            &[
+                B::Info,
+                B::YankPath,
+                B::YankTitle,
+                B::YankPage,
+                B::Abort,
+                B::Quit,
+            ],
+        ),
     ]
 };
 

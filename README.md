@@ -196,13 +196,13 @@ A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t
 | `gh`        | Label the markings in view; type a label to pick one       |
 | `d`         | Take away the marking `]h`, `[h` or `gh` picked            |
 | `c`         | Change the note on the marking `]h`, `[h` or `gh` picked   |
-| `y`         | Copy the picked marking's text, or a note's text           |
+| `yh`        | Copy the picked marking's text, or a note's text           |
 | `Shift-Tab` | List the markings in a sidebar, with their text and page   |
 | `u`         | Take back the last marking, or the last taking away of one |
 | `Ctrl-r`    | Put back what `u` took back                                |
 | `Ctrl-s`    | Save the markings into the file, like `:w`                 |
 
-These go through every highlight, underline, strike-out, squiggly underline and note in the document, whether pdvim or another program made it. `]h` starts from the marking it last went to while that is in view, and from the top of the view otherwise; the marking it goes to gets a frame, which `Esc` hides. `gh` puts a label of two letters beside each marking in view, as `f` does for links; typing a label picks that marking, so that `d`, `c` and `y` work on it. In the sidebar, `j` and `k` move, `Enter` goes to the marking selected, `d` takes it away, `c` changes its note, and `q`, `Esc` or `Shift-Tab` close the list. In visual mode, `d` takes away the markings under the selection. Taking a marking away is a change like any other: `:w` saves it, and `u` puts the marking back.
+These go through every highlight, underline, strike-out, squiggly underline and note in the document, whether pdvim or another program made it. `]h` starts from the marking it last went to while that is in view, and from the top of the view otherwise; the marking it goes to gets a frame, which `Esc` hides. `gh` puts a label of two letters beside each marking in view, as `f` does for links; typing a label picks that marking, so that `d`, `c` and `yh` work on it. In the sidebar, `j` and `k` move, `Enter` goes to the marking selected, `d` takes it away, `c` changes its note, and `q`, `Esc` or `Shift-Tab` close the list. In visual mode, `d` takes away the markings under the selection. Taking a marking away is a change like any other: `:w` saves it, and `u` puts the marking back.
 
 ### Tabs
 
@@ -228,6 +228,17 @@ A tab, and the window while its tab is in view, goes by the document's title whe
 | `Esc`, `Ctrl-c`, `Ctrl-[` | Cancel a half-typed command and hide search highlights |
 | `q`                       | Close the tab, and quit after the last one             |
 | `Ctrl-g`                  | Show the document's title, author, dates and more      |
+
+### Copying
+
+| Key  | Action                                                  |
+| ---- | ------------------------------------------------------- |
+| `yy` | Copy the path of the document's file                    |
+| `yt` | Copy the document's title, or its file name without one |
+| `yp` | Copy the text of the page in view                       |
+| `yh` | Copy the text of the marking `]h`, `[h` or `gh` picked  |
+
+To copy part of a page, select it in [visual mode](#selecting-text) and press `y`.
 
 ### The mode
 
@@ -421,6 +432,8 @@ The actions of normal mode, and their default keys:
 | `next-chapter` / `previous-chapter`   | `] ]` / `[ [`                               |
 | `set-mark` / `go-to-mark`             | `m` / `` ` ``, `'`                          |
 | `jump-back` / `jump-forward`          | `ctrl+o` / `ctrl+i`                         |
+| `yank-path` / `yank-title`            | `y y` / `y t`                               |
+| `yank-page` / `yank-marking`          | `y p` / `y h`                               |
 
 With a count, `first-page` and `last-page` go to that page, `zoom-to` zooms to that percentage, and `next-tab` goes to that tab.
 

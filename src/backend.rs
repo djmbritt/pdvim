@@ -692,16 +692,14 @@ fn unhighlight_in(document: &Document, annotations: &[Annotation]) -> Result<(),
     Ok(())
 }
 
-/// The document as a PDF that can be changed and saved incrementally. A
-/// file MuPDF had to repair to open cannot be saved that way, and is left
-/// alone, as is any file that is not a PDF.
+/// The document as a PDF that can be changed. A file MuPDF had to repair
+/// is read through first, so that a repair it does later cannot forget the
+/// changes; saving such a file rewrites it whole.
 fn editable(document: &Document) -> Result<mupdf::pdf::PdfDocument, Error> {
     let pdf = mupdf::pdf::PdfDocument::try_from(document.clone())
-        .map_err(|_| Error::Markup("only PDF files can be highlighted".to_owned()))?;
+        .map_err(|_| Error::Markup("only PDF files can be marked".to_owned()))?;
     if !pdf.can_be_saved_incrementally() {
-        return Err(Error::Markup(
-            "the file is damaged, so it cannot be saved safely".to_owned(),
-        ));
+        settle(&pdf);
     }
     Ok(pdf)
 }
@@ -709,29 +707,56 @@ fn editable(document: &Document) -> Result<mupdf::pdf::PdfDocument, Error> {
 /// Saves the changes to a PDF. Into its own file, the save is incremental:
 /// what was in the file when it was opened is left as it was, and every
 /// change since is written after it. MuPDF rewrites that tail on each
-/// save, so the file can shrink when a change is taken back. To a target,
-/// the whole document is written as a new file.
+/// save, so the file can shrink when a change is taken back. A file MuPDF
+/// had to repair cannot be added to that way, so it is written whole to a
+/// file beside it, which then takes its place: the file is never left half
+/// written. To a target, the whole document is written as a new file.
 fn save_to(document: &Document, path: &Path, target: Option<&Path>) -> Result<(), Error> {
     let failed = |error: mupdf::Error| Error::Save(error.to_string());
     let pdf = mupdf::pdf::PdfDocument::try_from(document.clone())
         .map_err(|_| Error::Save("only PDF files can be saved".to_owned()))?;
-    let into = target.unwrap_or(path);
-    let Some(name) = into.to_str() else {
-        return Err(Error::Save(format!(
-            "{} is not a path MuPDF can write to",
-            into.display()
-        )));
-    };
-    let mut options = mupdf::pdf::PdfWriteOptions::default();
-    if target.is_none() {
-        if !pdf.can_be_saved_incrementally() {
-            return Err(Error::Save(
-                "the file is damaged, so it cannot be saved into safely".to_owned(),
-            ));
-        }
-        options.set_incremental(true);
+    if let Some(target) = target {
+        return pdf
+            .save_with_options(writable(target)?, mupdf::pdf::PdfWriteOptions::default())
+            .map_err(failed);
     }
-    pdf.save_with_options(name, options).map_err(failed)
+    if pdf.can_be_saved_incrementally() {
+        let mut options = mupdf::pdf::PdfWriteOptions::default();
+        options.set_incremental(true);
+        return pdf
+            .save_with_options(writable(path)?, options)
+            .map_err(failed);
+    }
+    let beside = rewrite_path(path);
+    if let Err(error) =
+        pdf.save_with_options(writable(&beside)?, mupdf::pdf::PdfWriteOptions::default())
+    {
+        let _ = std::fs::remove_file(&beside);
+        return Err(failed(error));
+    }
+    std::fs::rename(&beside, path).map_err(|error| {
+        let _ = std::fs::remove_file(&beside);
+        Error::Save(error.to_string())
+    })
+}
+
+/// A path as MuPDF takes it, to write to.
+fn writable(path: &Path) -> Result<&str, Error> {
+    path.to_str().ok_or_else(|| {
+        Error::Save(format!(
+            "{} is not a path MuPDF can write to",
+            path.display()
+        ))
+    })
+}
+
+/// Where a file being rewritten whole is written first: beside it, hidden,
+/// so that putting it in place is a rename on the same disk.
+fn rewrite_path(path: &Path) -> PathBuf {
+    let mut name = std::ffi::OsString::from(".");
+    name.push(path.file_name().unwrap_or_default());
+    name.push(".pdvim-save");
+    path.with_file_name(name)
 }
 
 /// The box around a quad, measured from the corner of the page.
@@ -1269,6 +1294,44 @@ mod tests {
         assert_eq!(std::fs::read(&file.0).unwrap(), original);
 
         let saved = Document::open(copy.0.to_str().unwrap()).unwrap();
+        let page = mupdf::pdf::PdfPage::try_from(saved.load_page(0).unwrap()).unwrap();
+        assert_eq!(page.annotations().count(), 1);
+    }
+
+    #[test]
+    fn a_damaged_file_is_marked_and_saved_whole() {
+        // A file whose cross-reference table is not where it says, as in
+        // many downloaded books, so that MuPDF repairs it on opening.
+        let mut damaged = text_pdf();
+        let at = damaged
+            .windows(9)
+            .rposition(|bytes| bytes == b"startxref")
+            .unwrap();
+        damaged.truncate(at);
+        damaged.extend_from_slice(b"startxref\n9\n%%EOF\n");
+        let file = Scratch::new("damaged", &damaged);
+        let document = Document::open(file.0.to_str().unwrap()).unwrap();
+        let pdf = mupdf::pdf::PdfDocument::try_from(document.clone()).unwrap();
+        assert!(!pdf.can_be_saved_incrementally());
+        let markup = Markup {
+            kind: MarkupKind::Underline,
+            pages: vec![(
+                0,
+                vec![Rect {
+                    left: 10.0,
+                    top: 10.0,
+                    right: 100.0,
+                    bottom: 30.0,
+                }],
+            )],
+            colour: Rgb(0x1e, 0x88, 0xe5),
+        };
+        highlight_in(&document, &markup).unwrap();
+        save_to(&document, &file.0, None).unwrap();
+        assert!(!rewrite_path(&file.0).exists());
+
+        let saved = mupdf::pdf::PdfDocument::open(file.0.to_str().unwrap()).unwrap();
+        assert!(saved.can_be_saved_incrementally());
         let page = mupdf::pdf::PdfPage::try_from(saved.load_page(0).unwrap()).unwrap();
         assert_eq!(page.annotations().count(), 1);
     }

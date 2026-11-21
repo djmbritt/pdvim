@@ -63,6 +63,8 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
                 B::Rotate,
                 B::ToggleRecolor,
                 B::ToggleTrim,
+                B::ToggleBars,
+                B::ToggleFullscreen,
             ],
         ),
         (

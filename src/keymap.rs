@@ -155,7 +155,10 @@ fn parse_key(written: &str) -> Result<Key, Error> {
             "pagedown" => Key::PageDown,
             "home" => Key::Home,
             "end" => Key::End,
-            _ => return Err(unknown()),
+            function => match function.strip_prefix('f').map(str::parse::<u8>) {
+                Some(Ok(number @ 1..=12)) => Key::Function(number),
+                _ => return Err(unknown()),
+            },
         },
         _ => return Err(unknown()),
     };
@@ -396,6 +399,8 @@ mod tests {
         );
         assert_eq!(parse_keys("ctrl+["), Ok(vec![Key::Ctrl('[')]));
         assert_eq!(parse_keys("é"), Ok(vec![Key::Char('é')]));
+        assert_eq!(parse_keys("F11 f1"), Ok(vec![Key::Function(11), Key::Function(1)]));
+        assert_eq!(parse_keys("f13"), Err(Error::UnknownKey("f13".into())));
     }
 
     #[test]

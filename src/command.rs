@@ -140,6 +140,11 @@ pub enum Setting {
     /// Whether highlights are saved into the file as soon as they are
     /// made or taken back, rather than with `:w`.
     Autosave(bool),
+    /// Whether the tab bar shows when there is more than one tab.
+    TabBar(bool),
+    /// Whether the status bar shows while reading; off, it shows only
+    /// while something is typed or said.
+    StatusBar(bool),
 }
 
 /// Whether pages are recoloured for a dark background.
@@ -224,7 +229,7 @@ pub fn canonical(name: &str) -> Option<&'static str> {
 }
 
 /// The names of the settings `:set` knows.
-pub const SETTINGS: [&str; 16] = [
+pub const SETTINGS: [&str; 18] = [
     "autosave",
     "confirm-quit",
     "confirm-tab-close",
@@ -235,7 +240,9 @@ pub const SETTINGS: [&str; 16] = [
     "recolor-lightcolor",
     "scroll-step",
     "squiggly-color",
+    "statusbar",
     "strikeout-color",
+    "tabbar",
     "theme",
     "theme-dark",
     "theme-light",
@@ -454,6 +461,8 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
         "confirm-quit" => parse_switch(value).map(Setting::ConfirmQuit),
         "autosave" => parse_switch(value).map(Setting::Autosave),
         "confirm-tab-close" => parse_switch(value).map(Setting::ConfirmTabClose),
+        "tabbar" => parse_switch(value).map(Setting::TabBar),
+        "statusbar" => parse_switch(value).map(Setting::StatusBar),
         "highlight-color" => Ok(Setting::HighlightColour(value.parse()?)),
         "underline-color" => Ok(Setting::UnderlineColour(value.parse()?)),
         "strikeout-color" => Ok(Setting::StrikeOutColour(value.parse()?)),

@@ -33,6 +33,7 @@ use crate::recolor::{Palette, Rgb};
 use crate::theme::{self, Colours};
 use crate::visual::{self, Kind, Spot, Visual};
 
+mod bars;
 mod chapters;
 mod copy;
 mod flash;
@@ -479,6 +480,8 @@ pub struct App {
     fresh: Fresh,
     /// When to ask, and when to save.
     care: Care,
+    /// Which bars show, and whether the window fills the screen.
+    bars: bars::Bars,
     /// How many saves are still to finish before quitting, after `:wqa`.
     quitting_after: Option<usize>,
     /// Whether documents are recoloured to match the system's theme.
@@ -580,6 +583,7 @@ impl App {
             scroll_step: 40.0,
             fresh: Fresh::default(),
             care: Care::default(),
+            bars: bars::Bars::default(),
             quitting_after: None,
             recolor_auto: false,
             system_dark: None,
@@ -2086,6 +2090,8 @@ impl App {
             Setting::ConfirmQuit(confirm) => self.care.confirm_quit = confirm,
             Setting::Autosave(autosave) => self.care.autosave = autosave,
             Setting::ConfirmTabClose(confirm) => self.care.confirm_tab_close = confirm,
+            Setting::TabBar(shown) => self.bars.tabs = shown,
+            Setting::StatusBar(shown) => self.bars.status = shown,
         }
         Task::none()
     }
@@ -2143,6 +2149,8 @@ impl App {
                 let trim = self.document().is_some_and(|document| !document.trim);
                 return self.set_trim(self.current, trim);
             }
+            Action::ToggleBars => self.bars.toggle(),
+            Action::ToggleFullscreen => return self.bars.toggle_fullscreen(),
             _ => {}
         }
         let step = self.scroll_step;
@@ -2195,7 +2203,9 @@ impl App {
             | Action::ReopenTab(_)
             | Action::SearchNext
             | Action::SearchPrevious
-            | Action::ToggleTrim => {}
+            | Action::ToggleTrim
+            | Action::ToggleBars
+            | Action::ToggleFullscreen => {}
         }
         Task::none()
     }
@@ -2827,14 +2837,22 @@ impl App {
         if let Some(help) = &self.help {
             layers = layers.push(cheat_sheet(help, &self.keymaps, chrome, self.help_rows()));
         }
-        let window = match self.tab_bar() {
-            Some(tabs) => column![tabs, layers, self.bar(false)],
-            None => column![layers, self.bar(false)],
-        };
+        let mut window = Column::new();
+        if let Some(tabs) = self.tab_bar() {
+            window = window.push(tabs);
+        }
+        window = window.push(layers);
+        if self.bars.status {
+            window = window.push(self.bar(false));
+        }
         // A line being typed wraps, and grows up over the pages rather than
         // pushing them up, so that all of it shows while the pages stay put.
+        // So does the status bar, when hidden while reading, while it has
+        // something to show.
         if self.prompt.is_some() {
             stack![window, container(self.bar(true)).align_bottom(Fill)].into()
+        } else if !self.bars.status && self.bar_wanted() {
+            stack![window, container(self.bar(false)).align_bottom(Fill)].into()
         } else {
             window.into()
         }
@@ -2843,7 +2861,7 @@ impl App {
     /// The line at the top naming each tab, when there is more than one.
     fn tab_bar(&self) -> Option<Element<'_, Message>> {
         let chrome = self.chrome();
-        if self.tabs.len() < 2 {
+        if self.tabs.len() < 2 || !self.bars.tabs {
             return None;
         }
         let tabs = self.tabs.iter().enumerate().map(|(index, tab)| {
@@ -3659,6 +3677,18 @@ fn translate(
             Named::Tab => Some(Key::Tab),
             Named::Space if modifiers.shift() => Some(Key::ShiftSpace),
             Named::Space => Some(Key::Char(' ')),
+            Named::F1 => Some(Key::Function(1)),
+            Named::F2 => Some(Key::Function(2)),
+            Named::F3 => Some(Key::Function(3)),
+            Named::F4 => Some(Key::Function(4)),
+            Named::F5 => Some(Key::Function(5)),
+            Named::F6 => Some(Key::Function(6)),
+            Named::F7 => Some(Key::Function(7)),
+            Named::F8 => Some(Key::Function(8)),
+            Named::F9 => Some(Key::Function(9)),
+            Named::F10 => Some(Key::Function(10)),
+            Named::F11 => Some(Key::Function(11)),
+            Named::F12 => Some(Key::Function(12)),
             _ => None,
         },
         keyboard::Key::Character(character) if modifiers.control() => character

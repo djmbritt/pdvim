@@ -57,6 +57,15 @@ confirm-tab-close = true
 # instead), and pdvim asks before closing a document with unsaved ones.
 autosave = false
 
+# Show the tab bar along the top when more than one tab is open.
+tabbar = true
+
+# Show the status bar along the bottom while reading. Off, it shows only
+# while there is something to say or type: a prompt, a message, a key
+# sequence half typed, or a mode other than NORMAL; it then lies over the
+# bottom of the pages, which stay put. z b hides or shows both bars.
+statusbar = true
+
 # The colors text is marked in from visual mode: H highlights, U
 # underlines, S strikes out, W underlines with a squiggle. Markings are
 # saved into the PDF file, so other readers show them too.
@@ -72,7 +81,8 @@ note-color = "#fdd835"
 # but normal: ":map visual Y yank".
 #
 # A key is a single character ("j", "G", "?") or a name: space, tab, escape,
-# enter, backspace, up, down, left, right, pageup, pagedown, home, end.
+# enter, backspace, up, down, left, right, pageup, pagedown, home, end,
+# f1 to f12.
 # Put ctrl+ or shift+ in front for modifiers: "ctrl+d", "shift+space",
 # "shift+tab", "ctrl+shift+tab". "shift+q" is the same as "Q".
 #
@@ -137,6 +147,9 @@ note-color = "#fdd835"
 "r" = "rotate"
 "R" = "toggle-recolor"
 "t" = "toggle-trim"
+# Hide the tab bar and status bar while reading, or show them again
+"z b" = "toggle-bars"
+"f11" = "toggle-fullscreen"
 
 # Search and prompts
 "/" = "search-forward"

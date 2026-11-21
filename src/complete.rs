@@ -77,7 +77,7 @@ pub fn complete(line: &str) -> Completion {
         }
         Some("set") if words_before == 0 => words(last_word, command::SETTINGS),
         Some("set") if words_before == 1 => match rest.split_whitespace().next() {
-            Some("confirm-quit" | "confirm-tab-close" | "trim") => {
+            Some("autosave" | "confirm-quit" | "confirm-tab-close" | "statusbar" | "tabbar" | "trim") => {
                 words(last_word, ["true", "false"])
             }
             Some("recolor") => words(last_word, ["true", "false", "auto"]),

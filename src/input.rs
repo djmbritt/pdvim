@@ -32,6 +32,8 @@ pub enum Key {
     PageDown,
     Home,
     End,
+    /// A function key: 1 for F1, up to 12.
+    Function(u8),
 }
 
 /// What the bottom line is asking for.
@@ -137,6 +139,10 @@ pub enum Action {
     ToggleRecolor,
     /// Hide or show the blank margins of every page.
     ToggleTrim,
+    /// Hide the tab bar and status bar, or show them.
+    ToggleBars,
+    /// Fill the screen with the window, or stop.
+    ToggleFullscreen,
     SearchNext,
     SearchPrevious,
     OpenPrompt(Prompt),
@@ -229,6 +235,8 @@ bindable! {
         Rotate = "rotate", "Rotate";
         ToggleRecolor = "toggle-recolor", "Turn recoloring on or off";
         ToggleTrim = "toggle-trim", "Turn margin trimming on or off";
+        ToggleBars = "toggle-bars", "Hide the tab bar and status bar, or show them";
+        ToggleFullscreen = "toggle-fullscreen", "Fill the screen, or stop";
         SearchForward = "search-forward", "Search forwards";
         SearchBackward = "search-backward", "Search backwards";
         SearchNext = "search-next", "Go to the next match";
@@ -330,6 +338,8 @@ impl Binding {
             Self::Rotate => Action::Rotate,
             Self::ToggleRecolor => Action::ToggleRecolor,
             Self::ToggleTrim => Action::ToggleTrim,
+            Self::ToggleBars => Action::ToggleBars,
+            Self::ToggleFullscreen => Action::ToggleFullscreen,
             Self::SearchNext => Action::SearchNext,
             Self::SearchPrevious => Action::SearchPrevious,
             Self::SearchForward => Action::OpenPrompt(Prompt::SearchForward),
@@ -435,6 +445,7 @@ impl std::fmt::Display for Key {
             Self::PageDown => formatter.write_str("pagedown"),
             Self::Home => formatter.write_str("home"),
             Self::End => formatter.write_str("end"),
+            Self::Function(number) => write!(formatter, "f{number}"),
         }
     }
 }

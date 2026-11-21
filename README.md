@@ -118,6 +118,10 @@ The mouse wheel also scrolls.
 | `r`                   | Rotate                           |
 | `R`                   | Turn recoloring on or off        |
 | `t`                   | Turn margin trimming on or off   |
+| `zb`                  | Hide the tab and status bars, or show them |
+| `F11`                 | Fill the screen, or stop         |
+
+With the status bar hidden, by `zb` or `:set statusbar false`, it still comes back while it has something to show: a prompt, a message, a key sequence half typed, or a mode other than `NORMAL`. It then lies over the bottom of the pages, so they don't move. `:set tabbar false` hides the tab bar for good, and `zb` hides both until you press it again.
 
 ### Links
 
@@ -281,6 +285,8 @@ The box at the left of the status bar always names the mode, which says what the
 | `:set theme-dark {name}`               | Set the theme followed while the system is dark                      |
 | `:set theme-light {name}`              | Set the theme followed while the system is light                     |
 | `:set scroll-step {pixels}`            | Set how far one `j` or `k` scrolls                                   |
+| `:set tabbar [true\|false]`            | Show the tab bar when more than one tab is open (default on)         |
+| `:set statusbar [true\|false]`         | Show the status bar while reading (default on)                       |
 | `:set confirm-quit [true\|false]`      | Ask before quitting (default on)                                     |
 | `:set confirm-tab-close [true\|false]` | Ask before closing a tab while others are open (default on)          |
 | `:set highlight-color #rrggbb`         | Set the color `H` in visual mode highlights in (default `#ffff00`)   |
@@ -389,7 +395,7 @@ If an entry has a mistake, pdvim skips it, shows the first mistake in the status
 
 ### Keys
 
-Write a key as a single character, such as `j`, `G`, or `?`, or by name: `space`, `tab`, `escape`, `enter`, `backspace`, `up`, `down`, `left`, `right`, `pageup`, `pagedown`, `home`, or `end`. Put `ctrl+` or `shift+` in front for a key with modifiers: `ctrl+d`, `shift+space`, `shift+tab`, `ctrl+tab`, `ctrl+shift+tab`. `shift+q` is the same as `Q`.
+Write a key as a single character, such as `j`, `G`, or `?`, or by name: `space`, `tab`, `escape`, `enter`, `backspace`, `up`, `down`, `left`, `right`, `pageup`, `pagedown`, `home`, `end`, or `f1` to `f12`. Put `ctrl+` or `shift+` in front for a key with modifiers: `ctrl+d`, `shift+space`, `shift+tab`, `ctrl+tab`, `ctrl+shift+tab`. `shift+q` is the same as `Q`.
 
 Separate the keys of a sequence with spaces, as in `"g g"` or `"z i"`. A count typed before the keys is passed to the action, as with the built-in keys. If one binding is the start of a longer one, the shorter one wins: binding `g` hides `g g`.
 
@@ -417,6 +423,8 @@ The actions of normal mode, and their default keys:
 | `rotate`                              | `r`                                         |
 | `toggle-recolor`                      | `R`                                         |
 | `toggle-trim`                         | `t`                                         |
+| `toggle-bars`                         | `z b`                                       |
+| `toggle-fullscreen`                   | `f11`                                       |
 | `search-forward` / `search-backward`  | `/` / `?`                                   |
 | `search-next` / `search-previous`     | `n` / `N`                                   |
 | `command-prompt`                      | `:`                                         |

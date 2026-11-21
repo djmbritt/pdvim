@@ -197,6 +197,8 @@ note-color = "#fdd835"
 "ctrl+tab" = "next-tab"
 "g T" = "previous-tab"
 "ctrl+shift+tab" = "previous-tab"
+# Open the tab closed last again, in its place; with a count, that many
+"U" = "reopen-tab"
 
 # Copy the path of the document's file, its title, or the text of the page
 # in view

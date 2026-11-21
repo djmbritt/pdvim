@@ -101,7 +101,7 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
                 B::Write,
             ],
         ),
-        ("Tabs", &[B::NextTab, B::PreviousTab]),
+        ("Tabs", &[B::NextTab, B::PreviousTab, B::ReopenTab]),
         (
             "Other",
             &[

@@ -226,7 +226,15 @@ mod tests {
         assert_eq!(completion.start, 0);
         assert_eq!(
             texts(&completion),
-            ["tabclose", "tabedit", "tabnew", "tabnext", "tabprevious"]
+            [
+                "tabclose",
+                "tabedit",
+                "tabmove",
+                "tabnew",
+                "tabnext",
+                "tabonly",
+                "tabprevious"
+            ]
         );
         // Actions are offered too, once each when a command shares a name.
         assert_eq!(
@@ -243,7 +251,7 @@ mod tests {
             ]
         );
         assert_eq!(texts(&complete("qu")), ["quit"]);
-        assert_eq!(texts(&complete("r")), ["recent", "redo", "rotate"]);
+        assert_eq!(texts(&complete("r")), ["recent", "redo", "reopen-tab", "rotate"]);
         assert_eq!(texts(&complete("  rec")), ["recent"]);
         assert_eq!(complete("  rec").start, 2);
         assert_eq!(texts(&complete("map")), ["map", "mapclear"]);

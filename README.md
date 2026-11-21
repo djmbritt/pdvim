@@ -210,6 +210,9 @@ These go through every highlight, underline, strike-out, squiggly underline and 
 | ----------------------------------------- | ----------------------------- |
 | `gt`, `Ctrl-Tab` / `gT`, `Ctrl-Shift-Tab` | Go to the next / previous tab |
 | `{n}gt`, `{n}Ctrl-Tab`                    | Go to tab _n_                 |
+| `U`                                       | Open the tab closed last again |
+
+`U` brings back the tab closed last, in the place it had, and the document where you left it; press it again for the one closed before. pdvim keeps the last 20 tabs closed with `q`, `:q`, `:tabclose` or `:tabonly`, until it quits.
 
 A password-protected PDF asks for its password in the status bar when it opens, showing a dot for each character typed. A wrong password asks again; `Esc` gives up and closes its tab. pdvim keeps the password only while the document is open, and a locked PDF stays locked with the same password when you save markings into it or save a copy with `:w copy.pdf`.
 
@@ -293,6 +296,8 @@ The box at the left of the status bar always names the mode, which says what the
 | `:tabn[ext] [n]`                       | Go to the next tab, or to tab _n_                                    |
 | `:tabp[revious]`                       | Go to the previous tab                                               |
 | `:tabc[lose]`                          | Close the tab, unless it is the last                                 |
+| `:tabo[nly]`, `:tabonly!`              | Close every other tab; `!` even those with highlights not saved      |
+| `:tabm[ove] [n\|+n\|-n]`               | Move the tab to place _n_ (0 is first), _n_ places on or back, or last |
 | `:q[uit]`                              | Close the tab, and quit after the last one                           |
 | `:qa[ll]`                              | Quit                                                                 |
 | `:q!`, `:qa!`                          | Close the tab, or quit, throwing away highlights not saved           |
@@ -417,6 +422,7 @@ The actions of normal mode, and their default keys:
 | `command-prompt`                      | `:`                                         |
 | `recent`                              | `o`                                         |
 | `next-tab` / `previous-tab`           | `g t`, `ctrl+tab` / `g T`, `ctrl+shift+tab` |
+| `reopen-tab`                          | `U`                                         |
 | `abort`                               | `escape`, `ctrl+c`, `ctrl+[`                |
 | `info`                                | `ctrl+g`                                    |
 | `quit`                                | `q`                                         |

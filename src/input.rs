@@ -187,6 +187,8 @@ pub enum Action {
     PreviousTab(u32),
     /// Go to a tab, counted from 1.
     GotoTab(u32),
+    /// Open again the tab closed last, a number of times over.
+    ReopenTab(u32),
     /// Drop whatever is half-typed and hide search highlights.
     Abort,
     /// Close the tab in view, and the program with its last tab.
@@ -266,6 +268,8 @@ bindable! {
         /// The next tab, or the tab given by a count.
         NextTab = "next-tab", "Go to the next tab, or tab n";
         PreviousTab = "previous-tab", "Go to the previous tab";
+        /// As Tridactyl's `u`, which here takes back markings.
+        ReopenTab = "reopen-tab", "Open the tab closed last again, where it was";
         /// The letter is the next key: a to z for this document, A to Z
         /// for any.
         SetMark = "set-mark", "Mark this place with the letter typed next";
@@ -334,6 +338,7 @@ impl Binding {
             Self::Recent => Action::ShowRecent,
             Self::NextTab => count.map_or(Action::NextTab, Action::GotoTab),
             Self::PreviousTab => Action::PreviousTab(count.unwrap_or(1)),
+            Self::ReopenTab => Action::ReopenTab(count.unwrap_or(1)),
             Self::Abort => Action::Abort,
             Self::Quit => Action::Quit,
             Self::Help => Action::ShowHelp,

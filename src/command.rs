@@ -39,6 +39,11 @@ pub enum Command {
     TabNext(Option<u32>),
     /// Go to the previous tab.
     TabPrevious,
+    /// Close every tab but the one in view; forced, even those with
+    /// changes not saved.
+    TabOnly { force: bool },
+    /// Move the tab in view.
+    TabMove(TabPlace),
     /// Go to a page, counted from 1.
     Goto(u32),
     /// Go to the page with this number printed on it, as `xii`, or else
@@ -82,6 +87,18 @@ pub enum Command {
     WriteAll,
     /// Save the changes of every document, then close the program.
     WriteQuitAll,
+}
+
+/// Where `:tabmove` moves the tab in view to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TabPlace {
+    /// To this place, counted from 0, as vim's `:tabmove 0` makes it the
+    /// first.
+    At(usize),
+    /// This many places on, or back when negative.
+    By(i64),
+    /// To the end.
+    Last,
 }
 
 /// A setting and its new value.
@@ -161,7 +178,7 @@ pub enum Error {
 }
 
 /// Every command by its full name, and the shorter names it also goes by.
-const NAMES: [(&str, &[&str]); 27] = [
+const NAMES: [(&str, &[&str]); 29] = [
     ("delmarks", &["delm"]),
     ("goto", &[]),
     ("help", &["h"]),
@@ -179,8 +196,10 @@ const NAMES: [(&str, &[&str]); 27] = [
     ("source", &["so"]),
     ("tabclose", &["tabc"]),
     ("tabedit", &["tabe"]),
+    ("tabmove", &["tabm"]),
     ("tabnew", &[]),
     ("tabnext", &["tabn"]),
+    ("tabonly", &["tabo"]),
     ("tabprevious", &["tabp", "tabN", "tabNext"]),
     ("theme", &["colo", "colorscheme"]),
     ("unmap", &[]),
@@ -267,7 +286,7 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
         "wall" => Command::WriteAll,
         "wqall" => Command::WriteQuitAll,
         "qall" => Command::QuitAll,
-        "tabedit" | "tabnew" | "tabclose" | "tabnext" | "tabprevious" => {
+        "tabedit" | "tabnew" | "tabclose" | "tabnext" | "tabprevious" | "tabonly" | "tabmove" => {
             tab_command(canonical, argument)?
         }
         "open" => {
@@ -303,6 +322,8 @@ fn tab_command(name: &str, argument: &str) -> Result<Command, Error> {
     Ok(match name {
         "tabclose" => Command::TabClose,
         "tabprevious" => Command::TabPrevious,
+        "tabonly" => Command::TabOnly { force: false },
+        "tabmove" => Command::TabMove(tab_place(argument)?),
         "tabnext" if argument.is_empty() => Command::TabNext(None),
         "tabnext" => match argument.parse::<u32>() {
             Ok(tab) if tab > 0 => Command::TabNext(Some(tab)),
@@ -310,6 +331,25 @@ fn tab_command(name: &str, argument: &str) -> Result<Command, Error> {
         },
         _ => Command::TabOpen((!argument.is_empty()).then(|| expand_home(argument))),
     })
+}
+
+/// Parses where `:tabmove` moves to: nothing or `$` for the end, `+n` or
+/// `-n` for n places on or back, and `n` for place n counted from 0.
+fn tab_place(argument: &str) -> Result<TabPlace, Error> {
+    let bad = || Error::NotPositive(argument.to_owned());
+    match argument {
+        "" | "$" => Ok(TabPlace::Last),
+        _ if let Some(by) = argument.strip_prefix('+') => {
+            by.parse::<i64>().map(TabPlace::By).map_err(|_| bad())
+        }
+        _ if argument.starts_with('-') => {
+            argument.parse::<i64>().map(TabPlace::By).map_err(|_| bad())
+        }
+        _ => argument
+            .parse::<usize>()
+            .map(TabPlace::At)
+            .map_err(|_| bad()),
+    }
 }
 
 /// Parses `:map`, `:unmap` or `:mapclear`, given by its full name.
@@ -359,6 +399,7 @@ fn forced_command(name: &str, argument: &str) -> Option<Command> {
     match name {
         "quit" => Some(Command::ForceQuit),
         "qall" => Some(Command::ForceQuitAll),
+        "tabonly" => Some(Command::TabOnly { force: true }),
         "write" => Some(Command::Write {
             target: (!argument.is_empty()).then(|| expand_home(argument)),
             force: true,
@@ -788,7 +829,9 @@ mod tests {
         assert_eq!(parse("source"), Ok(Some(Command::Source(None))));
         assert_eq!(
             parse("so /tmp/other.toml"),
-            Ok(Some(Command::Source(Some(PathBuf::from("/tmp/other.toml")))))
+            Ok(Some(Command::Source(Some(PathBuf::from(
+                "/tmp/other.toml"
+            )))))
         );
     }
 
@@ -804,5 +847,22 @@ mod tests {
         assert_eq!(parse("tabn 2"), Ok(Some(Command::TabNext(Some(2)))));
         assert_eq!(parse("tabn 0"), Err(Error::NotPositive("0".into())));
         assert_eq!(parse("tabp"), Ok(Some(Command::TabPrevious)));
+        assert_eq!(parse("tabo"), Ok(Some(Command::TabOnly { force: false })));
+        assert_eq!(
+            parse("tabonly!"),
+            Ok(Some(Command::TabOnly { force: true }))
+        );
+        assert_eq!(parse("tabm"), Ok(Some(Command::TabMove(TabPlace::Last))));
+        assert_eq!(parse("tabm $"), Ok(Some(Command::TabMove(TabPlace::Last))));
+        assert_eq!(parse("tabm 0"), Ok(Some(Command::TabMove(TabPlace::At(0)))));
+        assert_eq!(
+            parse("tabm +2"),
+            Ok(Some(Command::TabMove(TabPlace::By(2))))
+        );
+        assert_eq!(
+            parse("tabm -1"),
+            Ok(Some(Command::TabMove(TabPlace::By(-1))))
+        );
+        assert_eq!(parse("tabm x"), Err(Error::NotPositive("x".into())));
     }
 }

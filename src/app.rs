@@ -40,6 +40,7 @@ mod forms;
 mod info;
 mod markings;
 mod mode;
+mod tabs;
 mod unlock;
 
 use markings::{Edit, Step, Wanted};
@@ -502,6 +503,9 @@ pub struct App {
     fields_wanted: Option<(u64, forms::FieldGoal)>,
     /// Whether the next key is the letter of a mark to set, or to go to.
     awaiting_mark: Option<MarkVerb>,
+    /// The tabs closed, the last closed last: each one's place and its
+    /// document's file, to open again.
+    closed: Vec<(usize, PathBuf)>,
     /// Whether a configuration is being read, when settings for documents
     /// only set what new ones start with.
     sourcing: bool,
@@ -582,6 +586,7 @@ impl App {
             asking: None,
             awaiting_mark: None,
             sourcing: false,
+            closed: Vec::new(),
             chapter_wanted: None,
             note_at: None,
             note_editing: None,
@@ -668,8 +673,7 @@ impl App {
     /// Reads the configuration again, as `:source` asks, and says so.
     fn source(&mut self, named: Option<&Path>) {
         let path = named.map(Path::to_owned).or_else(config::path);
-        if self.read_configuration(named) && matches!(self.notice, Notice::None | Notice::Info(_))
-        {
+        if self.read_configuration(named) && matches!(self.notice, Notice::None | Notice::Info(_)) {
             self.notice = Notice::Info(path.map_or_else(
                 || "read the built-in configuration".to_owned(),
                 |path| format!("read {}", tilde(&path)),
@@ -1095,7 +1099,11 @@ impl App {
         let mut sentences: Option<(u32, Vec<(usize, usize)>)> = None;
         for (page, index) in self.lines_in_view() {
             if sentences.as_ref().is_none_or(|(known, _)| *known != page) {
-                let page_lines = document.text.get(&page).map(Vec::as_slice).unwrap_or_default();
+                let page_lines = document
+                    .text
+                    .get(&page)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default();
                 sentences = Some((page, visual::sentence_starts(page_lines)));
             }
             spots.push((page, Spot::line_start(page, index)));
@@ -2010,6 +2018,8 @@ impl App {
             Command::TabNext(Some(tab)) => self.go_to_tab(index(tab)),
             Command::TabNext(None) => self.step_tab(1),
             Command::TabPrevious => self.step_tab(-1),
+            Command::TabOnly { force } => self.only_tab(force),
+            Command::TabMove(place) => self.move_tab(place),
             Command::Goto(page) => {
                 if let Some(document) = self.document_mut() {
                     leap(document, page.saturating_sub(1));
@@ -2033,43 +2043,49 @@ impl App {
             }
             Command::MapClear(mode) => self.keymaps.clear(mode),
             Command::Run(binding, count) => return self.act(binding.action(count)),
-            // With no document in view, these set what documents not seen
-            // before start with.
-            Command::Set(setting) => match setting {
-                Setting::Recolor(Recolor::Auto) => {
-                    self.recolor_auto = true;
-                    self.follow_system();
+            Command::Set(setting) => return self.apply_setting(setting),
+        }
+        Task::none()
+    }
+
+    /// Changes a setting. With no document in view, or while a
+    /// configuration is read, settings for documents set what documents
+    /// not seen before start with.
+    fn apply_setting(&mut self, setting: Setting) -> Task<Message> {
+        match setting {
+            Setting::Recolor(Recolor::Auto) => {
+                self.recolor_auto = true;
+                self.follow_system();
+            }
+            Setting::Recolor(recolor) => {
+                self.recolor_auto = false;
+                let recolor = recolor == Recolor::On;
+                let sourcing = self.sourcing;
+                match self.document_mut().filter(|_| !sourcing) {
+                    Some(document) => document.recolor = recolor,
+                    None => self.fresh.recolor = recolor,
                 }
-                Setting::Recolor(recolor) => {
-                    self.recolor_auto = false;
-                    let recolor = recolor == Recolor::On;
-                    let sourcing = self.sourcing;
-                    match self.document_mut().filter(|_| !sourcing) {
-                        Some(document) => document.recolor = recolor,
-                        None => self.fresh.recolor = recolor,
-                    }
+            }
+            Setting::Trim(trim) => {
+                if self.document().is_some() && !self.sourcing {
+                    return self.set_trim(self.current, trim);
                 }
-                Setting::Trim(trim) => {
-                    if self.document().is_some() && !self.sourcing {
-                        return self.set_trim(self.current, trim);
-                    }
-                    self.fresh.trim = trim;
-                }
-                Setting::RecolorPaper(paper) => self.paper = paper,
-                Setting::RecolorInk(ink) => self.ink = ink,
-                Setting::Theme(theme) => self.theme = theme,
-                Setting::ThemeDark(theme) => self.theme_dark = theme,
-                Setting::ThemeLight(theme) => self.theme_light = theme,
-                Setting::HighlightColour(colour) => self.markup_colours.highlight = colour,
-                Setting::UnderlineColour(colour) => self.markup_colours.underline = colour,
-                Setting::StrikeOutColour(colour) => self.markup_colours.strike_out = colour,
-                Setting::SquigglyColour(colour) => self.markup_colours.squiggly = colour,
-                Setting::NoteColour(colour) => self.markup_colours.note = colour,
-                Setting::ScrollStep(step) => self.scroll_step = step,
-                Setting::ConfirmQuit(confirm) => self.care.confirm_quit = confirm,
-                Setting::Autosave(autosave) => self.care.autosave = autosave,
-                Setting::ConfirmTabClose(confirm) => self.care.confirm_tab_close = confirm,
-            },
+                self.fresh.trim = trim;
+            }
+            Setting::RecolorPaper(paper) => self.paper = paper,
+            Setting::RecolorInk(ink) => self.ink = ink,
+            Setting::Theme(theme) => self.theme = theme,
+            Setting::ThemeDark(theme) => self.theme_dark = theme,
+            Setting::ThemeLight(theme) => self.theme_light = theme,
+            Setting::HighlightColour(colour) => self.markup_colours.highlight = colour,
+            Setting::UnderlineColour(colour) => self.markup_colours.underline = colour,
+            Setting::StrikeOutColour(colour) => self.markup_colours.strike_out = colour,
+            Setting::SquigglyColour(colour) => self.markup_colours.squiggly = colour,
+            Setting::NoteColour(colour) => self.markup_colours.note = colour,
+            Setting::ScrollStep(step) => self.scroll_step = step,
+            Setting::ConfirmQuit(confirm) => self.care.confirm_quit = confirm,
+            Setting::Autosave(autosave) => self.care.autosave = autosave,
+            Setting::ConfirmTabClose(confirm) => self.care.confirm_tab_close = confirm,
         }
         Task::none()
     }
@@ -2092,6 +2108,7 @@ impl App {
                 self.switch_tab(action);
                 return Task::none();
             }
+            Action::ReopenTab(times) => return self.reopen_tabs(times),
             Action::OpenPrompt(prompt) => {
                 self.prompt = Some((prompt, String::new()));
                 self.prompt_pending = Pending::new();
@@ -2175,6 +2192,7 @@ impl App {
             | Action::NextTab
             | Action::PreviousTab(_)
             | Action::GotoTab(_)
+            | Action::ReopenTab(_)
             | Action::SearchNext
             | Action::SearchPrevious
             | Action::ToggleTrim => {}
@@ -2634,6 +2652,7 @@ impl App {
             .and_then(|tab| tab.document.take())
         {
             self.remember(&document);
+            self.closing(self.current, document.path);
         }
         self.remove_tab(self.current);
         Task::none()
@@ -2917,10 +2936,7 @@ impl App {
                 } else {
                     format!("{typed}    ")
                 };
-                label(
-                    format!("{typed}{}", self.visual_actions()),
-                    chrome.bar_text,
-                )
+                label(format!("{typed}{}", self.visual_actions()), chrome.bar_text)
             }
             _ if self.line_hints.is_some() => {
                 let typed = self
@@ -2929,10 +2945,7 @@ impl App {
                     .and_then(|(_, hints)| hints.typed())
                     .map(String::from)
                     .unwrap_or_default();
-                label(
-                    format!("select from: {typed}\u{2588}"),
-                    chrome.bar_text,
-                )
+                label(format!("select from: {typed}\u{2588}"), chrome.bar_text)
             }
             _ if self.hints.is_some() => {
                 let typed = self

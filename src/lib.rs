@@ -36,6 +36,7 @@ mod layout;
 mod markings;
 mod num;
 mod outline;
+mod paths;
 mod reader;
 mod shell;
 mod recall;

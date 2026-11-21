@@ -94,6 +94,22 @@ strikeout-color = "#e53935"
 squiggly-color = "#fb8c00"
 note-color = "#fdd835"
 
+# Settings for the documents under some paths only, a [[paths]] table
+# each: a pattern under match, and any of recolor, trim and columns. They
+# set how a matching document looks each time it opens; the last rule to
+# match wins. In a pattern, * is any characters but /, ? is one, ** is any
+# characters at all; one ending in / is everything under that folder, and
+# one without a / is matched against the file's name alone.
+#
+# [[paths]]
+# match = "~/scans/**"
+# recolor = false
+# trim = true
+#
+# [[paths]]
+# match = "*.cbz"
+# columns = 2
+
 # Key bindings come one table to a mode. Each binds keys to an action by
 # name, or to "none" to remove a default. The same can be done while
 # running with :map, :unmap and :mapclear, naming the mode first for any

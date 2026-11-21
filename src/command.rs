@@ -99,6 +99,9 @@ pub enum Command {
     /// Write the page in view to a file, as a PNG image or an SVG drawing;
     /// over one there already only if forced with `:export!`.
     Export { target: PathBuf, force: bool },
+    /// Give the documents a pattern matches settings of their own. Only
+    /// the configuration file makes these, from its `[[paths]]` tables.
+    PathRule(crate::paths::Rule),
 }
 
 /// Where `:tabmove` moves the tab in view to.
@@ -640,7 +643,7 @@ fn parse_switch(value: &str) -> Result<bool, Error> {
 }
 
 /// Replaces a leading `~` with the home directory, when there is one.
-fn expand_home(path: &str) -> PathBuf {
+pub fn expand_home(path: &str) -> PathBuf {
     // Windows names the home directory differently.
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))

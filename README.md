@@ -163,9 +163,12 @@ After `v` or `V`, each line of text in view gets a label of two letters. Type a 
 | `v` / `V`                 | Switch to selecting characters / lines, or leave           |
 | `y`                       | Copy the selection to the clipboard, and leave             |
 | `H`                       | Highlight the selection in the PDF file, and leave         |
+| `U`                       | Underline the selection, and leave                         |
+| `S`                       | Strike out the selection, and leave                        |
+| `W`                       | Underline the selection with a squiggle, and leave         |
 | `Esc`, `Ctrl-c`           | Leave without copying                                      |
 
-`H` adds the highlight to the document as a standard highlight annotation, which other PDF readers show too once it is saved. Nothing is written until you save with `:w`; until then the tab, the status bar and the window title show `[+]`, and closing the document asks first. `:w` saves into the file incrementally: everything that was in it when pdvim opened it stays byte for byte as it was, and the changes are written after it. `:w copy.pdf` writes the whole document with its highlights to a new file instead, and leaves the original alone. Set `autosave` to save every change into the file as it is made. pdvim can't highlight a PDF that MuPDF had to repair to open, and says so instead.
+`H`, `U`, `S` and `W` add the marking to the document as a standard PDF annotation (a highlight, underline, strike-out or squiggly underline), which other PDF readers show too once it is saved. Each has its color setting: `highlight-color`, `underline-color`, `strikeout-color` and `squiggly-color`. Nothing is written until you save with `:w`; until then the tab, the status bar and the window title show `[+]`, and closing the document asks first. `:w` saves into the file incrementally: everything that was in it when pdvim opened it stays byte for byte as it was, and the changes are written after it. `:w copy.pdf` writes the whole document with its highlights to a new file instead, and leaves the original alone. Set `autosave` to save every change into the file as it is made. pdvim can't highlight a PDF that MuPDF had to repair to open, and says so instead.
 
 Press `u` to take back the last highlight, and `Ctrl-r` to put back the last one taken back. Taking back everything since the last save leaves nothing to save. pdvim remembers what to undo for each open document until you close it.
 
@@ -214,6 +217,9 @@ A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t
 | `:set confirm-quit [true\|false]`      | Ask before quitting (default on)                                     |
 | `:set confirm-tab-close [true\|false]` | Ask before closing a tab while others are open (default on)          |
 | `:set highlight-color #rrggbb`         | Set the color `H` in visual mode highlights in (default `#ffff00`)   |
+| `:set underline-color #rrggbb`         | Set the color of `U`'s underline (default `#1e88e5`)                 |
+| `:set strikeout-color #rrggbb`         | Set the color of `S`'s line through the text (default `#e53935`)     |
+| `:set squiggly-color #rrggbb`          | Set the color of `W`'s squiggly underline (default `#fb8c00`)        |
 | `:map [mode] {keys} {action}`          | Bind keys to an action (see [Keys](#keys-1))                         |
 | `:unmap [mode] {keys}`                 | Remove a key binding                                                 |
 | `:mapclear [mode]`                     | Remove every key binding of a mode                                   |

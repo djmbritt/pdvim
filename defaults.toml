@@ -57,9 +57,13 @@ confirm-tab-close = true
 # instead), and pdvim asks before closing a document with unsaved ones.
 autosave = false
 
-# The color H in visual mode highlights text in. Highlights are saved into
-# the PDF file, so other readers show them too.
+# The colors text is marked in from visual mode: H highlights, U
+# underlines, S strikes out, W underlines with a squiggle. Markings are
+# saved into the PDF file, so other readers show them too.
 highlight-color = "#ffff00"
+underline-color = "#1e88e5"
+strikeout-color = "#e53935"
+squiggly-color = "#fb8c00"
 
 # Key bindings come one table to a mode. Each binds keys to an action by
 # name, or to "none" to remove a default. The same can be done while
@@ -186,6 +190,9 @@ highlight-color = "#ffff00"
 # times: 3w, 2fe.
 "y" = "yank"
 "H" = "highlight"
+"U" = "underline"
+"S" = "strike-out"
+"W" = "squiggly"
 "escape" = "leave"
 "ctrl+c" = "leave"
 "ctrl+[" = "leave"

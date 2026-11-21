@@ -10,7 +10,9 @@ use iced::{
     keyboard, mouse, window,
 };
 
-use crate::backend::{self, Annotation, Backend, Highlight, Hit, Link, Opened, RenderJob, Target};
+use crate::backend::{
+    self, Annotation, Backend, Hit, Link, Markup, MarkupKind, Opened, RenderJob, Target,
+};
 use crate::bindings::{self, Keymaps};
 use crate::command::{self, Command, Recolor, Setting};
 use crate::complete::{self, Candidate};
@@ -113,12 +115,7 @@ pub enum Message {
     OutlineFound(u64, Result<Vec<backend::Chapter>, backend::Error>),
     /// Text in the document with this number was highlighted and the file
     /// saved, or not; done afresh, or redone.
-    Highlighted(
-        u64,
-        Highlight,
-        Result<Vec<Annotation>, backend::Error>,
-        Redone,
-    ),
+    Highlighted(u64, Markup, Result<Vec<Annotation>, backend::Error>, Redone),
     /// A highlight in the document with this number was taken back and
     /// the file saved, or not.
     Unhighlighted(u64, Edit, Result<(), backend::Error>),
@@ -140,7 +137,7 @@ pub enum Message {
 /// A change made to a document's file, to take back and put back.
 #[derive(Debug, Clone)]
 pub struct Edit {
-    highlight: Highlight,
+    highlight: Markup,
     /// The annotations the highlight added.
     annotations: Vec<Annotation>,
 }
@@ -308,6 +305,38 @@ impl Document {
     }
 }
 
+/// The colours text is marked in. The built-in configuration sets them.
+#[derive(Debug, Clone, Copy)]
+struct MarkupColours {
+    highlight: Rgb,
+    underline: Rgb,
+    strike_out: Rgb,
+    squiggly: Rgb,
+}
+
+impl Default for MarkupColours {
+    fn default() -> Self {
+        let yellow = Rgb(0xff, 0xff, 0x00);
+        Self {
+            highlight: yellow,
+            underline: yellow,
+            strike_out: yellow,
+            squiggly: yellow,
+        }
+    }
+}
+
+impl MarkupColours {
+    const fn of(self, kind: MarkupKind) -> Rgb {
+        match kind {
+            MarkupKind::Highlight => self.highlight,
+            MarkupKind::Underline => self.underline,
+            MarkupKind::StrikeOut => self.strike_out,
+            MarkupKind::Squiggly => self.squiggly,
+        }
+    }
+}
+
 /// When to ask before closing, and whether to save changes at once.
 #[derive(Debug, Clone, Copy, Default)]
 struct Care {
@@ -398,7 +427,8 @@ pub struct App {
     theme_dark: theme::Theme,
     theme_light: theme::Theme,
     /// The colour text is highlighted in.
-    highlight_colour: Rgb,
+    /// The colours text is marked in, by kind of marking.
+    markup_colours: MarkupColours,
     /// How far one press of `j` scrolls, in logical pixels.
     scroll_step: f32,
     /// How a document with no view in the history starts.
@@ -476,7 +506,7 @@ impl App {
             theme: None,
             theme_dark: theme::Theme::PdvimDark,
             theme_light: theme::Theme::PdvimLight,
-            highlight_colour: Rgb(0xff, 0xff, 0x00),
+            markup_colours: MarkupColours::default(),
             scroll_step: 40.0,
             fresh: Fresh::default(),
             care: Care::default(),
@@ -991,9 +1021,9 @@ impl App {
                 self.visual = None;
                 Task::none()
             }
-            visual::Outcome::Highlight(areas) => {
+            visual::Outcome::Mark(kind, areas) => {
                 self.visual = None;
-                self.highlight(areas)
+                self.highlight(kind, areas)
             }
             visual::Outcome::Copy(text) => {
                 self.visual = None;
@@ -1009,8 +1039,8 @@ impl App {
 
     /// Highlights text in the file of the document in view, a line's area
     /// at a time.
-    fn highlight(&mut self, areas: Vec<(u32, Rect)>) -> Task<Message> {
-        let colour = self.highlight_colour;
+    fn highlight(&mut self, kind: MarkupKind, areas: Vec<(u32, Rect)>) -> Task<Message> {
+        let colour = self.markup_colours.of(kind);
         let Some(document) = self.document() else {
             return Task::none();
         };
@@ -1025,7 +1055,11 @@ impl App {
             return Task::none();
         }
         let id = document.id;
-        let highlight = Highlight { pages, colour };
+        let highlight = Markup {
+            kind,
+            pages,
+            colour,
+        };
         let saving = document.backend.highlight(highlight.clone());
         self.notice = Notice::Info("highlighting".to_owned());
         Task::perform(saving, move |result| {
@@ -1036,7 +1070,7 @@ impl App {
     fn on_highlighted(
         &mut self,
         id: u64,
-        highlight: Highlight,
+        highlight: Markup,
         result: Result<Vec<Annotation>, backend::Error>,
         redone: Redone,
     ) -> Task<Message> {
@@ -1045,6 +1079,7 @@ impl App {
         };
         match result {
             Ok(annotations) => {
+                let kind = highlight.kind;
                 // A state that was saved and then undone is gone for good
                 // once something new is done in its place.
                 if redone == Redone::No
@@ -1065,11 +1100,11 @@ impl App {
                 // Every page is rendered afresh to show the change.
                 document.edition = document.edition.saturating_add(1);
                 let done = if redone == Redone::Yes {
-                    "highlight put back"
+                    format!("{} put back", kind.noun())
                 } else {
-                    "highlighted"
+                    kind.done().to_owned()
                 };
-                return self.changed(id, done);
+                return self.changed(id, &done);
             }
             Err(error) => {
                 // What failed to be redone can be tried again.
@@ -1258,9 +1293,10 @@ impl App {
         };
         match result {
             Ok(()) => {
+                let taken = format!("{} taken back", edit.highlight.kind.noun());
                 document.redo.push(edit);
                 document.edition = document.edition.saturating_add(1);
-                self.changed(id, "highlight taken back")
+                self.changed(id, &taken)
             }
             Err(error) => {
                 // Still there, so still to undo.
@@ -1786,7 +1822,10 @@ impl App {
                 Setting::Theme(theme) => self.theme = theme,
                 Setting::ThemeDark(theme) => self.theme_dark = theme,
                 Setting::ThemeLight(theme) => self.theme_light = theme,
-                Setting::HighlightColour(colour) => self.highlight_colour = colour,
+                Setting::HighlightColour(colour) => self.markup_colours.highlight = colour,
+                Setting::UnderlineColour(colour) => self.markup_colours.underline = colour,
+                Setting::StrikeOutColour(colour) => self.markup_colours.strike_out = colour,
+                Setting::SquigglyColour(colour) => self.markup_colours.squiggly = colour,
                 Setting::ScrollStep(step) => self.scroll_step = step,
                 Setting::ConfirmQuit(confirm) => self.care.confirm_quit = confirm,
                 Setting::Autosave(autosave) => self.care.autosave = autosave,

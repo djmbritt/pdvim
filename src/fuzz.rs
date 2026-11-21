@@ -360,7 +360,7 @@ fn visual_key(selection: &mut Visual, keymaps: &Keymaps, key: Key, text: &Text) 
             assert_eq!(copied, selected);
             false
         }
-        visual::Outcome::Highlight(areas) => {
+        visual::Outcome::Mark(_, areas) => {
             assert!(!areas.is_empty(), "highlighted nothing");
             false
         }

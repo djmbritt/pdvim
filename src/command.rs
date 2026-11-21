@@ -101,6 +101,12 @@ pub enum Setting {
     ConfirmTabClose(bool),
     /// The colour text is highlighted in.
     HighlightColour(Rgb),
+    /// The colour text is underlined in.
+    UnderlineColour(Rgb),
+    /// The colour of the line through struck-out text.
+    StrikeOutColour(Rgb),
+    /// The colour of a squiggly underline.
+    SquigglyColour(Rgb),
     /// Whether highlights are saved into the file as soon as they are
     /// made or taken back, rather than with `:w`.
     Autosave(bool),
@@ -182,7 +188,7 @@ pub fn canonical(name: &str) -> Option<&'static str> {
 }
 
 /// The names of the settings `:set` knows.
-pub const SETTINGS: [&str; 12] = [
+pub const SETTINGS: [&str; 15] = [
     "autosave",
     "confirm-quit",
     "confirm-tab-close",
@@ -191,10 +197,13 @@ pub const SETTINGS: [&str; 12] = [
     "recolor-darkcolor",
     "recolor-lightcolor",
     "scroll-step",
+    "squiggly-color",
+    "strikeout-color",
     "theme",
     "theme-dark",
     "theme-light",
     "trim",
+    "underline-color",
 ];
 
 /// Parses the text typed after `:`. Blank input is no command at all.
@@ -371,6 +380,9 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
         "autosave" => parse_switch(value).map(Setting::Autosave),
         "confirm-tab-close" => parse_switch(value).map(Setting::ConfirmTabClose),
         "highlight-color" => Ok(Setting::HighlightColour(value.parse()?)),
+        "underline-color" => Ok(Setting::UnderlineColour(value.parse()?)),
+        "strikeout-color" => Ok(Setting::StrikeOutColour(value.parse()?)),
+        "squiggly-color" => Ok(Setting::SquigglyColour(value.parse()?)),
         "scroll-step" => match value.parse::<f32>() {
             Ok(step) if step.is_finite() && step > 0.0 => Ok(Setting::ScrollStep(step)),
             _ => Err(Error::NotPositive(value.to_owned())),

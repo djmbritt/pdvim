@@ -59,8 +59,8 @@ pub enum Error {
     Links(String),
     #[error("cannot read the text: {0}")]
     Text(String),
-    #[error("cannot highlight: {0}")]
-    Highlight(String),
+    #[error("cannot mark the text: {0}")]
+    Markup(String),
     #[error("cannot save: {0}")]
     Save(String),
     #[error("cannot read the table of contents: {0}")]
@@ -154,7 +154,7 @@ enum Request {
     Measure(oneshot::Sender<Result<Vec<Rect>, Error>>),
     Links(Vec<u32>, oneshot::Sender<Result<PageLinks, Error>>),
     Text(Vec<u32>, oneshot::Sender<Result<PageText, Error>>),
-    Highlight(Highlight, oneshot::Sender<Result<Vec<Annotation>, Error>>),
+    Markup(Markup, oneshot::Sender<Result<Vec<Annotation>, Error>>),
     Unhighlight(Vec<Annotation>, oneshot::Sender<Result<(), Error>>),
     Save(Option<PathBuf>, oneshot::Sender<Result<(), Error>>),
     Outline(oneshot::Sender<Result<Vec<Chapter>, Error>>),
@@ -176,9 +176,53 @@ pub struct Chapter {
 /// number of the annotation's object in the file.
 pub type Annotation = (u32, i32);
 
-/// Text to highlight in the file, and in what colour.
+/// The ways text can be marked, each a kind of text markup annotation in
+/// the PDF.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarkupKind {
+    Highlight,
+    Underline,
+    StrikeOut,
+    /// A wavy underline.
+    Squiggly,
+}
+
+impl MarkupKind {
+    /// The kind of annotation in the PDF.
+    const fn annotation(self) -> mupdf::pdf::PdfAnnotationType {
+        match self {
+            Self::Highlight => mupdf::pdf::PdfAnnotationType::Highlight,
+            Self::Underline => mupdf::pdf::PdfAnnotationType::Underline,
+            Self::StrikeOut => mupdf::pdf::PdfAnnotationType::StrikeOut,
+            Self::Squiggly => mupdf::pdf::PdfAnnotationType::Squiggly,
+        }
+    }
+
+    /// What a marking of this kind is called.
+    pub const fn noun(self) -> &'static str {
+        match self {
+            Self::Highlight => "highlight",
+            Self::Underline => "underline",
+            Self::StrikeOut => "strike-out",
+            Self::Squiggly => "squiggly underline",
+        }
+    }
+
+    /// What making one did, said of the text.
+    pub const fn done(self) -> &'static str {
+        match self {
+            Self::Highlight => "highlighted",
+            Self::Underline => "underlined",
+            Self::StrikeOut => "struck out",
+            Self::Squiggly => "underlined with a squiggle",
+        }
+    }
+}
+
+/// Text to mark in the file: how, and in what colour.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Highlight {
+pub struct Markup {
+    pub kind: MarkupKind,
     /// The pages, counted from 0, each with the areas to cover on it, one
     /// to a line of text, on the unturned page in points.
     pub pages: Vec<(u32, Vec<Rect>)>,
@@ -228,10 +272,10 @@ impl Backend {
     /// annotations added, to take away again on undo.
     pub fn highlight(
         &self,
-        highlight: Highlight,
+        highlight: Markup,
     ) -> impl Future<Output = Result<Vec<Annotation>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.requests.send(Request::Highlight(highlight, reply));
+        let _ = self.requests.send(Request::Markup(highlight, reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -586,8 +630,8 @@ fn page_links(document: &Document, number: u32) -> Result<Vec<Link>, mupdf::Erro
 /// Adds a highlight annotation to each page, over the areas given, and
 /// saves the file incrementally. Answers with the
 /// annotations added.
-fn highlight_in(document: &Document, highlight: &Highlight) -> Result<Vec<Annotation>, Error> {
-    let failed = |error: mupdf::Error| Error::Highlight(error.to_string());
+fn highlight_in(document: &Document, highlight: &Markup) -> Result<Vec<Annotation>, Error> {
+    let failed = |error: mupdf::Error| Error::Markup(error.to_string());
     let pdf = editable(document)?;
     let Rgb(red, green, blue) = highlight.colour;
     let colour = mupdf::color::AnnotationColor::Rgb {
@@ -612,7 +656,7 @@ fn highlight_in(document: &Document, highlight: &Highlight) -> Result<Vec<Annota
             })
             .collect();
         let mut annotation = page
-            .create_annotation(mupdf::pdf::PdfAnnotationType::Highlight)
+            .create_annotation(highlight.kind.annotation())
             .map_err(failed)?;
         annotation.set_color(colour).map_err(failed)?;
         annotation.set_quad_points(quads).map_err(failed)?;
@@ -625,7 +669,7 @@ fn highlight_in(document: &Document, highlight: &Highlight) -> Result<Vec<Annota
 /// Takes away annotations that highlighting added. Annotations no longer
 /// there are passed over.
 fn unhighlight_in(document: &Document, annotations: &[Annotation]) -> Result<(), Error> {
-    let failed = |error: mupdf::Error| Error::Highlight(error.to_string());
+    let failed = |error: mupdf::Error| Error::Markup(error.to_string());
     let pdf = editable(document)?;
     let mut pages: Vec<u32> = annotations.iter().map(|(page, _)| *page).collect();
     pages.sort_unstable();
@@ -653,9 +697,9 @@ fn unhighlight_in(document: &Document, annotations: &[Annotation]) -> Result<(),
 /// alone, as is any file that is not a PDF.
 fn editable(document: &Document) -> Result<mupdf::pdf::PdfDocument, Error> {
     let pdf = mupdf::pdf::PdfDocument::try_from(document.clone())
-        .map_err(|_| Error::Highlight("only PDF files can be highlighted".to_owned()))?;
+        .map_err(|_| Error::Markup("only PDF files can be highlighted".to_owned()))?;
     if !pdf.can_be_saved_incrementally() {
-        return Err(Error::Highlight(
+        return Err(Error::Markup(
             "the file is damaged, so it cannot be saved safely".to_owned(),
         ));
     }
@@ -814,7 +858,7 @@ impl Worker {
                 Request::Links(pages, reply) => {
                     let _ = reply.send(self.links(&pages));
                 }
-                Request::Highlight(highlight, reply) => {
+                Request::Markup(highlight, reply) => {
                     let _ = reply.send(highlight_in(&self.document, &highlight));
                 }
                 Request::Outline(reply) => {
@@ -1140,7 +1184,8 @@ mod tests {
                 bottom: area.bottom.max(other.bottom),
             })
             .unwrap();
-        let highlight = Highlight {
+        let highlight = Markup {
+            kind: MarkupKind::Highlight,
             pages: vec![(0, vec![line])],
             colour: Rgb(0xff, 0xff, 0x00),
         };
@@ -1206,7 +1251,8 @@ mod tests {
         let file = Scratch::new("save-as", &original);
         let copy = Scratch::new("save-as-copy", b"");
         let document = Document::open(file.0.to_str().unwrap()).unwrap();
-        let highlight = Highlight {
+        let highlight = Markup {
+            kind: MarkupKind::Highlight,
             pages: vec![(
                 0,
                 vec![Rect {
@@ -1225,6 +1271,49 @@ mod tests {
         let saved = Document::open(copy.0.to_str().unwrap()).unwrap();
         let page = mupdf::pdf::PdfPage::try_from(saved.load_page(0).unwrap()).unwrap();
         assert_eq!(page.annotations().count(), 1);
+    }
+
+    #[test]
+    fn each_kind_of_marking_is_its_own_kind_of_annotation() {
+        use mupdf::pdf::PdfAnnotationType as Type;
+        let file = Scratch::new("kinds", text_pdf());
+        let document = Document::open(file.0.to_str().unwrap()).unwrap();
+        let area = Rect {
+            left: 10.0,
+            top: 10.0,
+            right: 100.0,
+            bottom: 30.0,
+        };
+        for kind in [
+            MarkupKind::Highlight,
+            MarkupKind::Underline,
+            MarkupKind::StrikeOut,
+            MarkupKind::Squiggly,
+        ] {
+            let markup = Markup {
+                kind,
+                pages: vec![(0, vec![area])],
+                colour: Rgb(0x1e, 0x88, 0xe5),
+            };
+            highlight_in(&document, &markup).unwrap();
+        }
+        save_to(&document, &file.0, None).unwrap();
+
+        let saved = Document::open(file.0.to_str().unwrap()).unwrap();
+        let page = mupdf::pdf::PdfPage::try_from(saved.load_page(0).unwrap()).unwrap();
+        let kinds: Vec<_> = page
+            .annotations()
+            .map(|annotation| annotation.r#type().unwrap())
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                Type::Highlight,
+                Type::Underline,
+                Type::StrikeOut,
+                Type::Squiggly
+            ]
+        );
     }
 
     /// A PDF of three pages with a table of contents: Chapter 1 on the

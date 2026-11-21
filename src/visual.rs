@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use crate::backend::TextLine;
+use crate::backend::{MarkupKind, TextLine};
 use crate::input::Key;
 use crate::keymap::{Counts, Fed, Keymap, Pending, bindable};
 use crate::layout::Rect;
@@ -17,6 +17,9 @@ bindable! {
     pub enum Binding {
         Yank = "yank", "Copy the selection, and leave";
         Highlight = "highlight", "Highlight the selection in the PDF, and leave";
+        Underline = "underline", "Underline the selection in the PDF, and leave";
+        StrikeOut = "strike-out", "Strike out the selection in the PDF, and leave";
+        Squiggly = "squiggly", "Underline the selection with a squiggle, and leave";
         Leave = "leave", "Leave without copying";
         OtherEnd = "other-end", "Go to the other end of the selection";
         /// The kind in force leaves; the other kind switches to it.
@@ -90,8 +93,8 @@ pub enum Outcome {
     Stay,
     /// Copy this text, and leave.
     Copy(String),
-    /// Highlight these areas, each a line's on a page, and leave.
-    Highlight(Vec<(u32, Rect)>),
+    /// Mark these areas this way, each a line's on a page, and leave.
+    Mark(MarkupKind, Vec<(u32, Rect)>),
     /// Leave without copying.
     Leave,
 }
@@ -184,7 +187,10 @@ impl Visual {
         match binding {
             Binding::Leave => return Outcome::Leave,
             Binding::Yank => return Outcome::Copy(self.text(text)),
-            Binding::Highlight => return Outcome::Highlight(self.areas(text)),
+            Binding::Highlight => return Outcome::Mark(MarkupKind::Highlight, self.areas(text)),
+            Binding::Underline => return Outcome::Mark(MarkupKind::Underline, self.areas(text)),
+            Binding::StrikeOut => return Outcome::Mark(MarkupKind::StrikeOut, self.areas(text)),
+            Binding::Squiggly => return Outcome::Mark(MarkupKind::Squiggly, self.areas(text)),
             Binding::OtherEnd => std::mem::swap(&mut self.anchor, &mut self.cursor),
             Binding::Characters | Binding::Lines => {
                 let kind = if binding == Binding::Characters {
@@ -751,7 +757,21 @@ mod tests {
         let text = text();
         let mut visual = Visual::new(Kind::Characters, spot(0, 0, 4));
         let expected = visual.areas(&text);
-        assert_eq!(keys(&mut visual, &text, "H"), Outcome::Highlight(expected));
+        assert_eq!(
+            keys(&mut visual, &text, "H"),
+            Outcome::Mark(MarkupKind::Highlight, expected.clone())
+        );
+        for (key, kind) in [
+            ("U", MarkupKind::Underline),
+            ("S", MarkupKind::StrikeOut),
+            ("W", MarkupKind::Squiggly),
+        ] {
+            let mut visual = Visual::new(Kind::Characters, spot(0, 0, 4));
+            assert_eq!(
+                keys(&mut visual, &text, key),
+                Outcome::Mark(kind, expected.clone())
+            );
+        }
     }
 
     #[test]

@@ -62,6 +62,8 @@ impl App {
     /// Leaves a prompt without running it. Leaving the password prompt
     /// gives up opening that document.
     pub(super) fn left_prompt(&mut self, prompt: Prompt) -> Task<Message> {
+        // A note asked for from visual mode is given up with its prompt.
+        self.note_at = None;
         if prompt != Prompt::Password {
             return Task::none();
         }

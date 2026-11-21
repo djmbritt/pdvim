@@ -221,6 +221,11 @@ impl Reader {
         }
     }
 
+    /// The unturned size of a page, in points.
+    pub fn page_size(&self, page: u32) -> Option<PageSize> {
+        self.sizes.get(num::index(page)).copied()
+    }
+
     /// Where the top of the window is.
     pub fn place(&self) -> Place {
         let page = self.current_page();

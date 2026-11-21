@@ -7,10 +7,10 @@ use iced::widget::{Column, column, container, row, text};
 use iced::{Color, Element, Fill, Font, Task};
 
 use super::{
-    App, Document, HELP_ROW, LIST_TEXT_SIZE, Message, Notice, SIDEBAR_WIDTH, Sidebar, colour,
-    current_document, document_by_id, rectangle,
+    App, Document, HELP_ROW, LIST_TEXT_SIZE, Message, Notice, Prompt, SIDEBAR_WIDTH, Sidebar,
+    colour, current_document, document_by_id, rectangle,
 };
-use crate::backend::{self, Annotation, Marking, Markup};
+use crate::backend::{self, Annotation, Marking, Markup, MarkupKind};
 use crate::bindings::Keymaps;
 use crate::input::MarkingAction;
 use crate::keymap::Pending;
@@ -18,6 +18,13 @@ use crate::layout::Rect;
 use crate::markings::{self as found, Binding, List, Outcome};
 use crate::reader::Reader;
 use crate::theme::Colours;
+
+/// The size of a note's icon, in points.
+const NOTE_SIZE: f32 = 20.0;
+
+/// How far from the page's left edge a note goes, and how far below the
+/// top of the window when not beside visual mode's cursor, in points.
+const NOTE_MARGIN: f32 = 12.0;
 
 /// The colour of the frame around the marking last gone to.
 const CURRENT: Color = Color::from_rgba8(0xff, 0x70, 0x00, 0.9);
@@ -305,6 +312,71 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Opens the prompt for the text of a note to put at an area of a page
+    /// of the document in view.
+    pub(super) fn ask_for_note(&mut self, page: u32, area: Rect) {
+        let Some(document) = self.document() else {
+            return;
+        };
+        self.note_at = Some((document.id, page, area));
+        self.completing = None;
+        self.prompt_pending = Pending::new();
+        self.prompt = Some((Prompt::Command, "note ".to_owned()));
+    }
+
+    /// Puts a note with this text in the left margin: beside the line of
+    /// visual mode's cursor, or else at the top of the window.
+    pub(super) fn add_note(&mut self, text: String) -> Task<Message> {
+        let colour = self.markup_colours.of(MarkupKind::Note);
+        let wanted = self.note_at.take();
+        let Some(document) = self.document() else {
+            return Task::none();
+        };
+        let (page, left, top) = match wanted {
+            // In the margin beside the cursor's line, so as not to cover
+            // the text.
+            Some((id, page, area)) if id == document.id => {
+                let middle = f32::midpoint(area.top, area.bottom);
+                (page, NOTE_MARGIN, (middle - NOTE_SIZE / 2.0).max(0.0))
+            }
+            _ => {
+                let place = document.reader.place();
+                let height = document
+                    .reader
+                    .page_size(place.page)
+                    .map_or(0.0, |size| size.height);
+                (
+                    place.page,
+                    NOTE_MARGIN,
+                    place.down.mul_add(height, NOTE_MARGIN),
+                )
+            }
+        };
+        let markup = Markup {
+            kind: MarkupKind::Note,
+            pages: vec![(
+                page,
+                vec![Rect {
+                    left,
+                    top,
+                    right: left + NOTE_SIZE,
+                    bottom: top + NOTE_SIZE,
+                }],
+            )],
+            colour,
+            note: Some(text),
+        };
+        let id = document.id;
+        self.start_edit(
+            id,
+            Edit::Marked {
+                markup,
+                annotations: Vec::new(),
+            },
+            Step::Do,
+        )
     }
 
     /// Takes back the last change to the markings of the document in view.

@@ -313,6 +313,7 @@ struct MarkupColours {
     underline: Rgb,
     strike_out: Rgb,
     squiggly: Rgb,
+    note: Rgb,
 }
 
 impl Default for MarkupColours {
@@ -323,6 +324,7 @@ impl Default for MarkupColours {
             underline: yellow,
             strike_out: yellow,
             squiggly: yellow,
+            note: yellow,
         }
     }
 }
@@ -334,6 +336,7 @@ impl MarkupColours {
             MarkupKind::Underline => self.underline,
             MarkupKind::StrikeOut => self.strike_out,
             MarkupKind::Squiggly => self.squiggly,
+            MarkupKind::Note => self.note,
         }
     }
 }
@@ -463,6 +466,9 @@ pub struct App {
     /// A step through the chapters waiting for the table of contents to
     /// be read: forward or back, and how many.
     chapter_wanted: Option<(bool, u32)>,
+    /// Where a note is to go, from visual mode's cursor, until the prompt
+    /// for its text closes: the document, the page, and the area.
+    note_at: Option<(u64, u32, Rect)>,
     /// Whether the next key is the letter of a mark to set, or to go to.
     awaiting_mark: Option<MarkVerb>,
     /// The marks A to Z: a document and a place in it. Kept in the history
@@ -537,6 +543,7 @@ impl App {
             asking: None,
             awaiting_mark: None,
             chapter_wanted: None,
+            note_at: None,
             global_marks: HashMap::new(),
             arriving: None,
         };
@@ -1051,6 +1058,11 @@ impl App {
                 self.visual = None;
                 self.with_markings(Wanted::DeleteIn(areas))
             }
+            visual::Outcome::Note(page, area) => {
+                self.visual = None;
+                self.ask_for_note(page, area);
+                Task::none()
+            }
             visual::Outcome::Copy(text) => {
                 self.visual = None;
                 let count = text.chars().count();
@@ -1085,6 +1097,7 @@ impl App {
             kind,
             pages,
             colour,
+            note: None,
         };
         self.notice = Notice::Info("marking".to_owned());
         self.start_edit(
@@ -1661,7 +1674,11 @@ impl App {
     fn submit(&mut self, prompt: Prompt, line: &str) -> Task<Message> {
         match prompt {
             Prompt::Command => match command::parse(line) {
-                Ok(Some(command)) => self.run_command(command),
+                Ok(Some(command)) => {
+                    let task = self.run_command(command);
+                    self.note_at = None;
+                    task
+                }
                 Ok(None) => Task::none(),
                 Err(error) => {
                     self.notice = Notice::Error(error.to_string());
@@ -1690,6 +1707,7 @@ impl App {
             Command::DeleteMarks(names) => self.delete_marks(names),
             Command::Version => self.notice = Notice::Info(crate::ABOUT.to_owned()),
             Command::Info => self.show_info(),
+            Command::Note(text) => return self.add_note(text),
             Command::ShowTheme => {
                 let theme = self.current_theme().name();
                 self.notice = Notice::Info(if self.theme.is_some() {
@@ -1766,6 +1784,7 @@ impl App {
                 Setting::UnderlineColour(colour) => self.markup_colours.underline = colour,
                 Setting::StrikeOutColour(colour) => self.markup_colours.strike_out = colour,
                 Setting::SquigglyColour(colour) => self.markup_colours.squiggly = colour,
+                Setting::NoteColour(colour) => self.markup_colours.note = colour,
                 Setting::ScrollStep(step) => self.scroll_step = step,
                 Setting::ConfirmQuit(confirm) => self.care.confirm_quit = confirm,
                 Setting::Autosave(autosave) => self.care.autosave = autosave,

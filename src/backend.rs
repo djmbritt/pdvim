@@ -325,6 +325,8 @@ pub enum MarkupKind {
     StrikeOut,
     /// A wavy underline.
     Squiggly,
+    /// A sticky note, shown as an icon, with text to read.
+    Note,
 }
 
 impl MarkupKind {
@@ -335,6 +337,7 @@ impl MarkupKind {
             mupdf::pdf::PdfAnnotationType::Underline => Some(Self::Underline),
             mupdf::pdf::PdfAnnotationType::StrikeOut => Some(Self::StrikeOut),
             mupdf::pdf::PdfAnnotationType::Squiggly => Some(Self::Squiggly),
+            mupdf::pdf::PdfAnnotationType::Text => Some(Self::Note),
             _ => None,
         }
     }
@@ -346,6 +349,7 @@ impl MarkupKind {
             Self::Underline => mupdf::pdf::PdfAnnotationType::Underline,
             Self::StrikeOut => mupdf::pdf::PdfAnnotationType::StrikeOut,
             Self::Squiggly => mupdf::pdf::PdfAnnotationType::Squiggly,
+            Self::Note => mupdf::pdf::PdfAnnotationType::Text,
         }
     }
 
@@ -356,6 +360,7 @@ impl MarkupKind {
             Self::Underline => "underline",
             Self::StrikeOut => "strike-out",
             Self::Squiggly => "squiggly underline",
+            Self::Note => "note",
         }
     }
 
@@ -366,6 +371,7 @@ impl MarkupKind {
             Self::Underline => "underlined",
             Self::StrikeOut => "struck out",
             Self::Squiggly => "underlined with a squiggle",
+            Self::Note => "note added",
         }
     }
 }
@@ -447,6 +453,8 @@ pub struct Markup {
     /// to a line of text, on the unturned page in points.
     pub pages: Vec<(u32, Vec<Rect>)>,
     pub colour: Rgb,
+    /// The text of a note; none for the other kinds.
+    pub note: Option<String>,
 }
 
 /// A handle to the worker that owns an open document. The worker stops
@@ -955,9 +963,10 @@ fn highlight_in(document: &Document, highlight: &Markup) -> Result<Vec<Annotatio
             .create_annotation(highlight.kind.annotation())
             .map_err(failed)?;
         annotation.set_color(colour).map_err(failed)?;
-        annotation
-            .set_quad_points(quads(areas, &bounds))
-            .map_err(failed)?;
+        place(&mut annotation, highlight.kind, areas, &bounds).map_err(failed)?;
+        if let Some(note) = &highlight.note {
+            annotation.set_contents(note).map_err(failed)?;
+        }
         annotation.update().map_err(failed)?;
         added.push((*number, annotation.xref().map_err(failed)?));
     }
@@ -1015,9 +1024,7 @@ fn restore_in(document: &Document, markings: &[Marking]) -> Result<Vec<Annotatio
         if let Some(colour) = marking.kept.colour {
             annotation.set_color(colour).map_err(failed)?;
         }
-        annotation
-            .set_quad_points(quads(&marking.areas, &bounds))
-            .map_err(failed)?;
+        place(&mut annotation, marking.kind, &marking.areas, &bounds).map_err(failed)?;
         if marking.kept.opacity < 1.0 {
             annotation
                 .set_opacity(marking.kept.opacity)
@@ -1072,18 +1079,33 @@ fn read_marking(
 ) -> Option<Marking> {
     let kind = MarkupKind::of(annotation.r#type().ok()?)?;
     let xref = annotation.xref().ok().filter(|&xref| xref > 0)?;
-    let areas: Vec<Rect> = annotation
-        .quad_points()
-        .ok()?
-        .iter()
-        .map(|quad| quad_area(quad, bounds))
-        .collect();
+    let areas: Vec<Rect> = if kind == MarkupKind::Note {
+        let rect = annotation.rect().ok()?;
+        vec![Rect {
+            left: rect.x0 - bounds.x0,
+            top: rect.y0 - bounds.y0,
+            right: rect.x1 - bounds.x0,
+            bottom: rect.y1 - bounds.y0,
+        }]
+    } else {
+        annotation
+            .quad_points()
+            .ok()?
+            .iter()
+            .map(|quad| quad_area(quad, bounds))
+            .collect()
+    };
     let owned = |text: Option<&str>| text.filter(|text| !text.is_empty()).map(str::to_owned);
+    let text = if kind == MarkupKind::Note {
+        owned(annotation.contents().ok().flatten()).unwrap_or_default()
+    } else {
+        text_within(lines, &areas)
+    };
     Some(Marking {
         page,
         xref,
         kind,
-        text: text_within(lines, &areas),
+        text,
         areas,
         kept: Kept {
             colour: annotation.color().ok().flatten(),
@@ -1120,6 +1142,29 @@ fn text_within(lines: &[TextLine], areas: &[Rect]) -> String {
         }
     }
     text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Puts an annotation over areas of a page, measured from its corner: a
+/// note at the first area, which is where its icon goes, and any other
+/// marking over every area.
+fn place(
+    annotation: &mut mupdf::pdf::PdfAnnotation,
+    kind: MarkupKind,
+    areas: &[Rect],
+    bounds: &mupdf::Rect,
+) -> Result<(), mupdf::Error> {
+    if kind != MarkupKind::Note {
+        return annotation.set_quad_points(quads(areas, bounds));
+    }
+    let Some(area) = areas.first() else {
+        return Ok(());
+    };
+    annotation.set_rect(mupdf::Rect {
+        x0: bounds.x0 + area.left,
+        y0: bounds.y0 + area.top,
+        x1: bounds.x0 + area.right,
+        y1: bounds.y0 + area.bottom,
+    })
 }
 
 /// Areas of a page, measured from its corner, as quads on the page.
@@ -1691,6 +1736,7 @@ mod tests {
             kind: MarkupKind::Highlight,
             pages: vec![(0, vec![line])],
             colour: Rgb(0xff, 0xff, 0x00),
+            note: None,
         };
         let first = highlight_in(&document, &highlight).unwrap();
         highlight_in(&document, &highlight).unwrap();
@@ -1766,6 +1812,7 @@ mod tests {
                 }],
             )],
             colour: Rgb(0xff, 0xff, 0x00),
+            note: None,
         };
         highlight_in(&document, &highlight).unwrap();
         save_to(&document, &file.0, Some(&copy.0)).unwrap();
@@ -1817,6 +1864,7 @@ mod tests {
                 }],
             )],
             colour: Rgb(0xff, 0xff, 0x00),
+            note: None,
         };
         highlight_in(&document, &markup).unwrap();
         save_to(&document, &file.0, None).unwrap();
@@ -1931,6 +1979,7 @@ mod tests {
                 }],
             )],
             colour: Rgb(0xff, 0xff, 0x00),
+            note: None,
         };
         highlight_in(&document, &markup).unwrap();
         save_to(&document, &file.0, None).unwrap();
@@ -1969,6 +2018,7 @@ mod tests {
                 }],
             )],
             colour: Rgb(0x1e, 0x88, 0xe5),
+            note: None,
         };
         highlight_in(&document, &markup).unwrap();
         save_to(&document, &file.0, None).unwrap();
@@ -1995,6 +2045,7 @@ mod tests {
             kind: MarkupKind::Underline,
             pages: vec![(0, vec![hello])],
             colour: Rgb(0x1e, 0x88, 0xe5),
+            note: None,
         };
         let added = highlight_in(&document, &markup).unwrap();
         // A note, as another program may have written on it.
@@ -2033,6 +2084,47 @@ mod tests {
     }
 
     #[test]
+    fn a_note_is_found_taken_away_and_put_back_with_its_text() {
+        let file = Scratch::new("note", text_pdf());
+        let document = Document::open(file.0.to_str().unwrap()).unwrap();
+        let spot = Rect {
+            left: 72.0,
+            top: 80.0,
+            right: 92.0,
+            bottom: 100.0,
+        };
+        let markup = Markup {
+            kind: MarkupKind::Note,
+            pages: vec![(0, vec![spot])],
+            colour: Rgb(0xfd, 0xd8, 0x35),
+            note: Some("Check this greeting".to_owned()),
+        };
+        let added = highlight_in(&document, &markup).unwrap();
+        let found = page_markings(&document, 0).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].kind, MarkupKind::Note);
+        assert_eq!(found[0].text, "Check this greeting");
+        assert_eq!(found[0].annotation(), added[0]);
+        let area = found[0].areas[0];
+        assert!((area.left - spot.left).abs() < 0.5 && (area.top - spot.top).abs() < 0.5);
+
+        let removed = remove_in(&document, &added).unwrap();
+        assert_eq!(page_markings(&document, 0).unwrap(), []);
+        restore_in(&document, &removed).unwrap();
+        let again = page_markings(&document, 0).unwrap();
+        assert_eq!(again.len(), 1);
+        assert_eq!(again[0].kind, MarkupKind::Note);
+        assert_eq!(again[0].text, "Check this greeting");
+
+        save_to(&document, &file.0, None).unwrap();
+        let saved = Document::open(file.0.to_str().unwrap()).unwrap();
+        assert_eq!(
+            page_markings(&saved, 0).unwrap()[0].text,
+            "Check this greeting"
+        );
+    }
+
+    #[test]
     fn each_kind_of_marking_is_its_own_kind_of_annotation() {
         use mupdf::pdf::PdfAnnotationType as Type;
         let file = Scratch::new("kinds", text_pdf());
@@ -2053,6 +2145,7 @@ mod tests {
                 kind,
                 pages: vec![(0, vec![area])],
                 colour: Rgb(0x1e, 0x88, 0xe5),
+                note: None,
             };
             highlight_in(&document, &markup).unwrap();
         }

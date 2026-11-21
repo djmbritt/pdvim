@@ -191,10 +191,13 @@ After `v` or `V`, each line of text in view gets a label of two letters. Type a 
 | `U`                       | Underline the selection, and leave                         |
 | `S`                       | Strike out the selection, and leave                        |
 | `W`                       | Underline the selection with a squiggle, and leave         |
+| `n`                       | Put a note beside the cursor's line, typed at the prompt   |
 | `d`                       | Take away the markings under the selection, and leave      |
 | `Esc`, `Ctrl-c`           | Leave without copying                                      |
 
 `H`, `U`, `S` and `W` add the marking to the document as a standard PDF annotation (a highlight, underline, strike-out or squiggly underline), which other PDF readers show too once it is saved. Each has its color setting: `highlight-color`, `underline-color`, `strikeout-color` and `squiggly-color`. Nothing is written until you save with `:w`; until then the tab, the status bar and the window title show `[+]`, and closing the document asks first. `:w` saves into the file incrementally: everything that was in it when pdvim opened it stays byte for byte as it was, and the changes are written after it. `:w copy.pdf` writes the whole document with its highlights to a new file instead, and leaves the original alone. Set `autosave` to save every change into the file as it is made. Many downloaded PDFs are slightly damaged, and MuPDF repairs them as it opens them; such a file can't be added to, so `:w` writes it whole, beside the original, and then puts it in the original's place. That repairs the file too.
+
+`n` opens the prompt as `:note `; type the note and press `Enter`. The note is a sticky-note annotation, which shows as an icon in the left margin beside the cursor's line, and which other PDF readers open to show its text. `:note {text}` in normal mode puts one in the margin at the top of the window. Notes count as markings: `]h` / `[h` go to them and show their text, the markings sidebar lists them, `dh` takes one away, `u` takes one back, and `:w` saves them.
 
 Press `u` to take back the last marking, or the last taking away of one, and `Ctrl-r` to put back what `u` took back. Taking back everything since the last save leaves nothing to save. pdvim remembers what to undo for each open document until you close it.
 
@@ -251,6 +254,7 @@ A tab, and the window while its tab is in view, goes by the document's title whe
 | `:delm[arks] {letters}` or `!`         | Take marks away: those letters, or with `!` all of this document's   |
 | `:ve[rsion]`                           | Show pdvim's version and where to find it on GitHub                  |
 | `:info`, `:f[ile]`                     | Show the document's title, author, dates, pages, format, encryption  |
+| `:note {text}`                         | Put a note with that text in the margin at the top of the window     |
 | `:noh[lsearch]`                        | Hide search highlights                                               |
 | `:set recolor [true\|false\|auto]`     | Turn recoloring on or off, or follow the system's theme (default)    |
 | `:set trim [true\|false]`              | Turn margin trimming on or off                                       |
@@ -268,6 +272,7 @@ A tab, and the window while its tab is in view, goes by the document's title whe
 | `:set underline-color #rrggbb`         | Set the color of `U`'s underline (default `#1e88e5`)                 |
 | `:set strikeout-color #rrggbb`         | Set the color of `S`'s line through the text (default `#e53935`)     |
 | `:set squiggly-color #rrggbb`          | Set the color of `W`'s squiggly underline (default `#fb8c00`)        |
+| `:set note-color #rrggbb`              | Set the color of a note's icon (default `#fdd835`)                   |
 | `:map [mode] {keys} {action}`          | Bind keys to an action (see [Keys](#keys-1))                         |
 | `:unmap [mode] {keys}`                 | Remove a key binding                                                 |
 | `:mapclear [mode]`                     | Remove every key binding of a mode                                   |

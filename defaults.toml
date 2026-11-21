@@ -64,6 +64,7 @@ highlight-color = "#ffff00"
 underline-color = "#1e88e5"
 strikeout-color = "#e53935"
 squiggly-color = "#fb8c00"
+note-color = "#fdd835"
 
 # Key bindings come one table to a mode. Each binds keys to an action by
 # name, or to "none" to remove a default. The same can be done while
@@ -208,6 +209,7 @@ squiggly-color = "#fb8c00"
 "S" = "strike-out"
 "W" = "squiggly"
 "d" = "unmark"
+"n" = "note"
 "escape" = "leave"
 "ctrl+c" = "leave"
 "ctrl+[" = "leave"

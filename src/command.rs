@@ -21,6 +21,9 @@ pub enum Command {
     ShowTheme,
     /// Say which version of pdvim this is, and where it comes from.
     Version,
+    /// Put a note with this text where visual mode's cursor was, or at
+    /// the top of the window.
+    Note(String),
     /// Show what the document in view says about itself.
     Info,
     /// Say which marks are set.
@@ -112,6 +115,8 @@ pub enum Setting {
     StrikeOutColour(Rgb),
     /// The colour of a squiggly underline.
     SquigglyColour(Rgb),
+    /// The colour of a note's icon.
+    NoteColour(Rgb),
     /// Whether highlights are saved into the file as soon as they are
     /// made or taken back, rather than with `:w`.
     Autosave(bool),
@@ -153,7 +158,7 @@ pub enum Error {
 }
 
 /// Every command by its full name, and the shorter names it also goes by.
-const NAMES: [(&str, &[&str]); 25] = [
+const NAMES: [(&str, &[&str]); 26] = [
     ("delmarks", &["delm"]),
     ("goto", &[]),
     ("help", &["h"]),
@@ -162,6 +167,7 @@ const NAMES: [(&str, &[&str]); 25] = [
     ("mapclear", &[]),
     ("marks", &[]),
     ("nohlsearch", &["noh", "nohl"]),
+    ("note", &[]),
     ("open", &["o"]),
     ("qall", &["qa", "quita", "quitall"]),
     ("quit", &["q"]),
@@ -195,11 +201,12 @@ pub fn canonical(name: &str) -> Option<&'static str> {
 }
 
 /// The names of the settings `:set` knows.
-pub const SETTINGS: [&str; 15] = [
+pub const SETTINGS: [&str; 16] = [
     "autosave",
     "confirm-quit",
     "confirm-tab-close",
     "highlight-color",
+    "note-color",
     "recolor",
     "recolor-darkcolor",
     "recolor-lightcolor",
@@ -280,6 +287,8 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
         "recent" => Command::Recent,
         "version" => Command::Version,
         "info" => Command::Info,
+        "note" if argument.is_empty() => return Err(Error::MissingArgument("note")),
+        "note" => Command::Note(argument.to_owned()),
         "goto" if argument.is_empty() => return Err(Error::MissingArgument("goto")),
         "goto" => Command::GotoLabel(argument.to_owned()),
         "marks" => Command::Marks,
@@ -393,6 +402,7 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
         "underline-color" => Ok(Setting::UnderlineColour(value.parse()?)),
         "strikeout-color" => Ok(Setting::StrikeOutColour(value.parse()?)),
         "squiggly-color" => Ok(Setting::SquigglyColour(value.parse()?)),
+        "note-color" => Ok(Setting::NoteColour(value.parse()?)),
         "scroll-step" => match value.parse::<f32>() {
             Ok(step) if step.is_finite() && step > 0.0 => Ok(Setting::ScrollStep(step)),
             _ => Err(Error::NotPositive(value.to_owned())),
@@ -646,6 +656,11 @@ mod tests {
         assert_eq!(parse("version"), Ok(Some(Command::Version)));
         assert_eq!(parse("ve"), Ok(Some(Command::Version)));
         assert_eq!(parse("info"), Ok(Some(Command::Info)));
+        assert_eq!(
+            parse("note  check this  "),
+            Ok(Some(Command::Note("check this".into())))
+        );
+        assert_eq!(parse("note"), Err(Error::MissingArgument("note")));
         assert_eq!(
             parse("goto xii"),
             Ok(Some(Command::GotoLabel("xii".into())))

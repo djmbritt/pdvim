@@ -21,6 +21,8 @@ bindable! {
         StrikeOut = "strike-out", "Strike out the selection in the PDF, and leave";
         Squiggly = "squiggly", "Underline the selection with a squiggle, and leave";
         Unmark = "unmark", "Take away the markings under the selection, and leave";
+        /// The text is typed at the prompt that opens.
+        Note = "note", "Put a note at the cursor, and leave";
         Leave = "leave", "Leave without copying";
         OtherEnd = "other-end", "Go to the other end of the selection";
         /// The kind in force leaves; the other kind switches to it.
@@ -99,6 +101,9 @@ pub enum Outcome {
     /// Take away the markings over these areas, each a line's on a page,
     /// and leave.
     Unmark(Vec<(u32, Rect)>),
+    /// Put a note at the cursor, which is this area of this page, and
+    /// leave.
+    Note(u32, Rect),
     /// Leave without copying.
     Leave,
 }
@@ -196,6 +201,10 @@ impl Visual {
             Binding::StrikeOut => return Outcome::Mark(MarkupKind::StrikeOut, self.areas(text)),
             Binding::Squiggly => return Outcome::Mark(MarkupKind::Squiggly, self.areas(text)),
             Binding::Unmark => return Outcome::Unmark(self.areas(text)),
+            Binding::Note => {
+                return character(text, self.cursor)
+                    .map_or(Outcome::Leave, |area| Outcome::Note(self.cursor.page, area));
+            }
             Binding::OtherEnd => std::mem::swap(&mut self.anchor, &mut self.cursor),
             Binding::Characters | Binding::Lines => {
                 let kind = if binding == Binding::Characters {

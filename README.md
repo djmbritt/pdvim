@@ -57,10 +57,13 @@ Each [release](https://github.com/djmbritt/pdvim/releases) has packages for:
 | Platform             | Download                                                                                                                    |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | Linux, x86-64        | `pdvim_VERSION-1_amd64.deb`, or `pdvim-VERSION-x86_64-unknown-linux-gnu.tar.gz`                                             |
+| Linux, x86-64        | `pdvim-VERSION-x86_64.AppImage`, or `pdvim-VERSION-x86_64.flatpak` to install with `flatpak install --user`                 |
 | macOS, Apple silicon | `pdvim-VERSION-aarch64-apple-darwin.dmg`, or the `.tar.gz` for the terminal                                                 |
 | macOS, Intel         | `pdvim-VERSION-x86_64-apple-darwin.dmg`, or the `.tar.gz`                                                                   |
 | Windows, x86-64      | `pdvim-VERSION-x86_64-pc-windows-msvc.zip`                                                                                  |
 | Arch Linux           | `yay -S pdvim` or `paru -S pdvim` from the AUR, or `makepkg -si` in [`packaging/`](packaging/) to build what is checked out |
+
+The Flatpak reads its configuration from `~/.config/pdvim` too, but keeps its reading history apart, in `~/.var/app/io.github.djmbritt.pdvim`. It can open documents in your home folder, `/media`, `/run/media` and `/mnt`.
 
 On macOS and Windows pdvim keeps its configuration in `~/.config/pdvim` and `%APPDATA%\pdvim`, and its reading history in `~/.local/share/pdvim` and `%LOCALAPPDATA%\pdvim`.
 
@@ -80,6 +83,8 @@ The binary is written to `target/release/pdvim`.
 pdvim [FILE]...
 pdvim --version
 ```
+
+`man pdvim` describes the keys and commands, and `man 5 pdvim` the configuration file, once pdvim is installed from a package.
 
 Each file opens in a tab of its own. If you start pdvim without a file, it shows the documents you read most recently. Pick one, or open another file with `:open`.
 

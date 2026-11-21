@@ -1076,4 +1076,18 @@ mod tests {
         );
         assert_eq!(parse("tabm x"), Err(Error::NotPositive("x".into())));
     }
+
+    #[test]
+    fn the_manual_names_every_setting() {
+        // In roff a hyphen is written `\-`.
+        let manual = include_str!("../docs/man/pdvim.5").replace("\\-", "-");
+        for name in SETTINGS {
+            // Named in bold, alone or among others.
+            let named = manual
+                .lines()
+                .filter(|line| line.starts_with(".B"))
+                .any(|line| line.split([' ', '"', ',']).any(|word| word == name));
+            assert!(named, "docs/man/pdvim.5 does not describe {name}");
+        }
+    }
 }

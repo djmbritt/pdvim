@@ -28,6 +28,8 @@ assets = [
     ["packaging/pdvim.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
     ["README.md", "usr/share/doc/pdvim/", "644"],
     ["defaults.toml", "usr/share/doc/pdvim/", "644"],
+    ["docs/man/pdvim.1", "usr/share/man/man1/", "644"],
+    ["docs/man/pdvim.5", "usr/share/man/man5/", "644"],
 ]
 
 [lints.clippy]

@@ -1,0 +1,95 @@
+# Builds pdvim as an AppImage and as a Flatpak bundle, for Linux on x86-64.
+#
+# The release workflow runs this for each tag, and attaches both to the
+# draft release with the other packages. Run it by hand from the Actions
+# tab to build and try them without releasing; they are kept as the run's
+# artifacts.
+#
+#   AppImage  chmod +x pdvim-VERSION-x86_64.AppImage && ./pdvim-VERSION-x86_64.AppImage
+#   Flatpak   flatpak install --user pdvim-VERSION-x86_64.flatpak
+#
+# The Flatpak bundle needs the freedesktop runtime from Flathub, which
+# `flatpak install` fetches when the Flathub remote is set up.
+name: Linux bundles
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  appimage:
+    name: AppImage
+    # The oldest Ubuntu still offered, so that the AppImage runs on
+    # distributions with an older glibc.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # MuPDF is compiled from source, and its bindings are made with
+      # bindgen, which needs libclang.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libclang-dev libfontconfig1-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: appimage
+
+      - name: Build
+        run: cargo build --release --locked --target x86_64-unknown-linux-gnu
+      - name: Package
+        run: packaging/appimage.sh x86_64-unknown-linux-gnu
+      - name: Check it starts
+        run: dist/pdvim-*.AppImage --appimage-extract-and-run --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pdvim-appimage
+          path: dist/*
+          if-no-files-found: error
+
+  flatpak:
+    name: Flatpak
+    runs-on: ubuntu-latest
+    # The freedesktop SDK, flatpak and flatpak-builder, as Flathub builds.
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        id: version
+        run: echo "version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)" >> "$GITHUB_OUTPUT"
+
+      # The build has no network, so every crate in Cargo.lock is fetched
+      # beforehand, as the manifest's sources.
+      - name: List the crates
+        run: |
+          python3 -m venv /tmp/generator
+          /tmp/generator/bin/pip install --quiet aiohttp PyYAML tomlkit
+          curl -fsSL -o /tmp/flatpak-cargo-generator.py \
+            https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+          /tmp/generator/bin/python /tmp/flatpak-cargo-generator.py Cargo.lock \
+            -o packaging/flatpak/cargo-sources.json
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: packaging/flatpak/io.github.djmbritt.pdvim.yml
+          bundle: pdvim-${{ steps.version.outputs.version }}-x86_64.flatpak
+          upload-artifact: false
+          cache-key: flatpak-builder-${{ hashFiles('Cargo.lock') }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pdvim-flatpak
+          path: pdvim-*.flatpak
+          if-no-files-found: error

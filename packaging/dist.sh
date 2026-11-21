@@ -6,7 +6,7 @@
 # usage: packaging/dist.sh TARGET
 #
 #   Linux    pdvim-VERSION-TARGET.tar.gz: the program, its desktop entry and
-#            icon, and the documents
+#            icon, its manual pages, and the documents
 #   macOS    the same as a .tar.gz, and pdvim.app in pdvim-VERSION-TARGET.dmg
 #   Windows  pdvim-VERSION-TARGET.zip: pdvim.exe and the documents
 #
@@ -36,7 +36,7 @@ case "$target" in
     ;;
 
 *-apple-darwin)
-    cp "$build/pdvim" "$stage/"
+    cp "$build/pdvim" docs/man/pdvim.1 docs/man/pdvim.5 "$stage/"
     tar -C "$work" -czf "$out/$name.tar.gz" "$name"
 
     # An application bundle, so that pdvim can be started from Finder,
@@ -98,7 +98,8 @@ PLIST
     ;;
 
 *-linux-*)
-    cp "$build/pdvim" packaging/pdvim.desktop packaging/pdvim.svg "$stage/"
+    cp "$build/pdvim" packaging/pdvim.desktop packaging/pdvim.svg \
+        docs/man/pdvim.1 docs/man/pdvim.5 "$stage/"
     tar -C "$work" -czf "$out/$name.tar.gz" "$name"
     ;;
 

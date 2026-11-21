@@ -1,0 +1,392 @@
+.\" The manual page for pdvim, the program. pdvim(5) is its configuration.
+.\" View it with: man docs/man/pdvim.1
+.TH PDVIM 1 2026-11-21 "pdvim" "User Commands"
+.SH NAME
+pdvim \- a keyboard-driven PDF reader with vi key bindings
+.SH SYNOPSIS
+.B pdvim
+.RI [ file ]...
+.br
+.B pdvim
+.B \-\-version
+.SH DESCRIPTION
+.B pdvim
+reads PDF documents, EPUB and FB2 books, CBZ and CBT comics, XPS
+documents, SVG drawings, and PNG, JPEG, GIF, TIFF, BMP and other images,
+from the keyboard, with keys like those of
+.BR vi (1).
+It renders pages with MuPDF and lays them out in one continuous column,
+or in up to four side by side.
+.PP
+Each
+.I file
+opens in a tab of its own.
+Started without one, pdvim lists the documents read most recently, to pick
+one from.
+pdvim remembers the page, zoom, fit, rotation and columns of every
+document it has opened, and starts each where it was left.
+.PP
+Books without pages of their own, EPUB and FB2, are laid out on pages the
+size of the window, in the type size the
+.B fontsize
+setting gives, and laid out again when the window changes.
+.PP
+Highlights, underlines, strike-outs, squiggly underlines and notes made in
+pdvim are standard PDF annotations, written into the file when it is saved
+with
+.BR :w ,
+so other PDF readers show them too.
+.SH OPTIONS
+.TP
+.BR \-V ", " \-\-version
+Print pdvim's version and exit.
+.TP
+.BR \-h ", " \-\-help
+Print how to start pdvim and exit, as for any other argument that starts
+with
+.BR \- .
+.SH KEYS
+Put a count before a key to repeat it, as in vi:
+.B 3j
+scrolls three steps down, and
+.B 12G
+goes to page 12.
+These are the default keys of normal mode, reading.
+pdvim(5) tells how to change them, and
+.B :help
+lists every key of every mode as bound at the time.
+.SS Movement
+.TP 18
+.BR j ", " k ", " h ", " l
+Scroll down, up, left, right; the arrow keys do too.
+.TP
+.BR Ctrl\-d ", " Ctrl\-u
+Scroll half a screen down, up.
+.TP
+.BR Ctrl\-f ", " Space ", " Ctrl\-b ", " Shift\-Space
+Scroll a full screen down, up.
+.TP
+.BR J ", " K
+Go to the next, previous page; also
+.BR PageDown ", " PageUp .
+.TP
+.BR gg ", " G
+Go to the first, last page; with a count, to page
+.IR n .
+.TP
+.BR H ", " L
+Go to the top, bottom of the page.
+.TP
+.BR ]] ", " [[
+Go to the next, previous chapter or section.
+.TP
+.B Tab
+Show the table of contents, to go to a chapter.
+.SS View
+.TP 18
+.BR + ", " \- ", " zi ", " zo
+Zoom in, out.
+In a book, make the type bigger or smaller instead.
+.TP
+.BR = ", " z0
+Zoom to 100%;
+.IB n =
+zooms to
+.IR n %.
+.TP
+.BR zw ", " zp
+Fit the page width, or the whole page, to the window.
+.TP
+.B r
+Rotate.
+.TP
+.B R
+Turn recoloring for a dark background on or off.
+.TP
+.B t
+Turn margin trimming on or off.
+.TP
+.B zb
+Hide the tab and status bars, or show them.
+.TP
+.B zc
+Show two pages side by side, or one, in this tab.
+.TP
+.B F11
+Fill the screen, or stop.
+.SS Search and commands
+.TP 18
+.BR / ", " ?
+Search forwards, backwards.
+.TP
+.BR n ", " N
+Go to the next, previous match.
+.TP
+.B :
+Open the command prompt.
+.TP
+.B .
+Run the last command line again.
+.TP
+.B o
+List the documents read recently.
+.TP
+.B Ctrl\-g
+Show the document's title, author, dates and more.
+.TP
+.BR Esc ", " Ctrl\-c
+Cancel a half-typed command, and hide search highlights.
+.TP
+.B q
+Close the tab, and quit after the last one.
+.SS Links and forms
+.TP 18
+.B f
+Label every link, form field and marking in view; type a label to follow
+the link, fill in the field, or pick the marking.
+.TP
+.B F
+Label the links; type a label to open its place in a new tab.
+.TP
+.B ;y
+Label the links; type a label to copy where it goes.
+.TP
+.BR gi ", " gI
+Fill in the first, last form field in view;
+.B Tab
+goes on to the next.
+.TP
+.B g;
+Go back to the form field last filled in.
+.PP
+While labels are shown,
+.B /
+and some text narrows them to what holds the text.
+.SS Selecting text
+.TP 18
+.BR v ", " V
+Label the lines in view; type a label to start selecting characters, or
+whole lines, from there.
+.TP
+.B s
+Type some text in view, then the label beside a match, to start selecting
+there.
+.PP
+In visual mode,
+.BR h ", " j ", " k ", " l ,
+.BR w ", " b ", " e ,
+.BR 0 ", " ^ ", " $ ,
+.BR f ", " F ", " t ", " T
+and
+.BR ; ", " ,
+move the cursor as in vi, and
+.B o
+goes to the other end of the selection.
+.B y
+copies the selection;
+.BR H ,
+.BR U ,
+.B S
+and
+.B W
+highlight, underline, strike out or squiggly-underline it;
+.B n
+puts a note beside it,
+.B c
+changes the note on a marking, and
+.B d
+takes markings away.
+.B Esc
+leaves.
+.SS Highlights and other markings
+.TP 18
+.BR ]h ", " [h
+Go to the next, previous marking.
+.TP
+.B gh
+Label the markings in view; type a label to pick one.
+.TP
+.B d
+Take away the marking picked.
+.TP
+.B c
+Change the note on the marking picked.
+.TP
+.B Shift\-Tab
+List the markings in a sidebar.
+.TP
+.BR u ", " Ctrl\-r
+Take back the last change to the markings, or put it back.
+.TP
+.B Ctrl\-s
+Save the markings into the file, as
+.BR :w .
+.SS Marks and jumps
+.TP 18
+.BI m letter
+Mark this place:
+.BR a \(en z
+in this document,
+.BR A \(en Z
+to come back to from any.
+.TP
+.BI \(ga letter\fR,\fP\ \(aq letter
+Go to a mark;
+.B \(ga\(ga
+goes back to where the last jump left from.
+.TP
+.BR Ctrl\-o ", " Ctrl\-i
+Go back through the jumps, or forward again.
+.SS Tabs
+.TP 18
+.BR gt ", " gT
+Go to the next, previous tab; also
+.BR Ctrl\-Tab ", " Ctrl\-Shift\-Tab .
+With a count, go to tab
+.IR n .
+.TP
+.B b
+List the open tabs; type to narrow, Enter to go to one.
+.TP
+.B U
+Open the tab closed last again.
+.SS Copying
+.TP 18
+.B yy
+Copy the path of the document's file.
+.TP
+.B yt
+Copy the document's title, or its file name without one.
+.TP
+.B yp
+Copy the text of the page in view.
+.TP
+.B yh
+Copy the text of the marking picked.
+.SH COMMANDS
+Commands are typed after
+.BR : .
+Letters in brackets may be left out.
+.B Tab
+completes commands, settings, their values and file paths, and
+.BR Up " and " Down
+recall earlier command lines.
+.B ;
+separates commands run one after another.
+Any action named in pdvim(5) runs as a command too, a number after it
+standing for a count:
+.BR ":zoom\-to 150" .
+.TP
+.BI : n
+Go to page
+.IR n .
+.TP
+.BI ":goto " label
+Go to the page with that number printed on it, as
+.B xii
+or
+.BR A\-3 .
+.TP
+.BI ":o[pen] " file
+Open a document in a new tab.
+.TP
+.BI ":tabe[dit] " file "\fR, \fP:tabnew \fR[\fP" file \fR]\fP
+Open a document in a new tab, or open an empty tab.
+.TP
+.BR ":tabn[ext] " [\fIn\fP] ", " :tabp[revious]
+Go to the next tab, or tab
+.IR n ,
+or the previous.
+.TP
+.BR :tabc[lose] ", " :tabo[nly][!]
+Close the tab, or every other tab.
+.TP
+.BR ":tabm[ove] " [\fIn\fP|+\fIn\fP|\-\fIn\fP]
+Move the tab.
+.TP
+.BR :rec[ent]
+List the documents read recently.
+.TP
+.BR ":h[elp] " [\fItopic\fP]
+Show every action and the keys bound to it, at a mode, heading or action.
+.TP
+.BI ":apr[opos] " word
+Show only the actions and keys that mention the word.
+.TP
+.BR :marks ", " ":delm[arks] " \fIletters\fP|!
+List the marks, or take them away.
+.TP
+.BR :info ", " :f[ile]
+Show the document's title, author, dates, pages, format and encryption.
+.TP
+.BI ":note " text
+Put a note with that text in the margin at the top of the window.
+.TP
+.B :noh[lsearch]
+Hide search highlights.
+.TP
+.BI ":set " "setting value"
+Change a setting, as listed in pdvim(5).
+A boolean setting named without a value is turned on.
+.TP
+.BR ":theme " \fIname\fP|auto ", " :colo[rscheme]
+Set the theme, or follow the system's; without a name, show it.
+.TP
+.BI ":map " "\fR[\fPmode\fR]\fP keys action\fR,\fP\ " ":unmap " "\fR[\fPmode\fR]\fP keys\fR,\fP\ " ":mapclear " \fR[\fPmode\fR]\fP
+Bind keys to an action or to
+.BI : command\fR,
+remove a binding, or remove every binding of a mode.
+.TP
+.BR ":so[urce] " [\fIfile\fP]
+Read the configuration file again, or another like it.
+.TP
+.BR :w[rite] ", " ":w[!] " \fIfile\fP
+Save the markings into the file, or a copy with them into another.
+.TP
+.BR :wa[ll]
+Save every document with markings not saved.
+.TP
+.BR :q[uit] ", " :qa[ll] ", " :q! ", " :qa!
+Close the tab, or quit;
+.B !
+throws away markings not saved.
+.TP
+.BR :wq ", " :x ", " :wqa[ll] ", " :xa[ll]
+Save, then close the tab, or quit.
+.TP
+.B :ve[rsion]
+Show pdvim's version.
+.SH FILES
+.TP
+.I $XDG_CONFIG_HOME/pdvim/config.toml
+The configuration, described in pdvim(5); by default
+.IR ~/.config/pdvim/config.toml .
+pdvim works without it.
+.TP
+.I $XDG_DATA_HOME/pdvim/history.sqlite
+Where each document was left, its marks, and the commands and searches
+typed; by default
+.IR ~/.local/share/pdvim/history.sqlite .
+.SH ENVIRONMENT
+.TP
+.B XDG_CONFIG_HOME
+Where to look for
+.IR pdvim/config.toml .
+.TP
+.B XDG_DATA_HOME
+Where to keep
+.IR pdvim/history.sqlite .
+.TP
+.B HOME
+What
+.B \(ti
+stands for in paths, and where the two above are when not set.
+.SH EXIT STATUS
+0 when pdvim quits, and when it prints its version;
+not 0 when the window could not be made.
+.SH SEE ALSO
+.BR pdvim (5),
+.BR vi (1),
+.BR zathura (1)
+.PP
+https://github.com/djmbritt/pdvim

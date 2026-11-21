@@ -487,9 +487,8 @@ pub struct App {
     /// The marking whose note is being changed at the prompt: the document
     /// and the annotation.
     note_editing: Option<(u64, Annotation)>,
-    /// The field of a form whose value is being typed at the prompt: the
-    /// document, and the field as it was.
-    field_editing: Option<(u64, backend::Field)>,
+    /// The field of a form being filled in, over the page.
+    field_edit: Option<forms::FieldEdit>,
     /// Whether the next key is the letter of a mark to set, or to go to.
     awaiting_mark: Option<MarkVerb>,
     /// The marks A to Z: a document and a place in it. Kept in the history
@@ -571,7 +570,7 @@ impl App {
             chapter_wanted: None,
             note_at: None,
             note_editing: None,
-            field_editing: None,
+            field_edit: None,
             global_marks: HashMap::new(),
             arriving: None,
         };
@@ -775,6 +774,8 @@ impl App {
                 } else if self.info.take().is_some() {
                     // Any key puts it away.
                     Task::none()
+                } else if self.field_edit.is_some() {
+                    self.on_field_key(key)
                 } else if self.flash.is_some() {
                     self.on_flash_key(key)
                 } else if self.visual.is_some() {
@@ -937,6 +938,7 @@ impl App {
                         return Task::none();
                     }
                 };
+                let area = link.area;
                 match link.target {
                     Target::Page { page, top } => {
                         if let Some(document) = self.document_mut() {
@@ -950,7 +952,7 @@ impl App {
                             Err(error) => Notice::Error(format!("cannot open {uri}: {error}")),
                         };
                     }
-                    Target::Field(field) => return self.fill_field(field),
+                    Target::Field(field) => return self.fill_field(field, area),
                 }
             }
         }
@@ -1762,15 +1764,9 @@ impl App {
             Fed::Bound(
                 binding @ (PromptBinding::Complete | PromptBinding::CompletePrevious),
                 _,
-            ) if matches!(prompt, Prompt::Command | Prompt::Field) => {
+            ) if prompt == Prompt::Command => {
                 let forward = binding == PromptBinding::Complete;
-                self.completing = if prompt == Prompt::Field {
-                    complete_with(&mut line, completing, forward, |typed| {
-                        self.field_options(typed)
-                    })
-                } else {
-                    complete_line(&mut line, completing, forward)
-                };
+                self.completing = complete_line(&mut line, completing, forward);
                 self.prompt = Some((prompt, line));
                 return Task::none();
             }
@@ -1818,13 +1814,7 @@ impl App {
         self.completing = if line == before {
             completing
         } else {
-            completing.and_then(|_| {
-                if prompt == Prompt::Field {
-                    narrowed_with(self.field_options(&line))
-                } else {
-                    narrowed(&line)
-                }
-            })
+            completing.and_then(|_| narrowed(&line))
         };
         self.prompt = Some((prompt, line));
         Task::none()
@@ -1864,6 +1854,9 @@ impl App {
     /// Puts text from the clipboard at the end of the line being typed, on
     /// one line: each run of line breaks becomes a space.
     fn paste(&mut self, text: &str) {
+        if self.paste_into_field(text) {
+            return;
+        }
         let Some((_, line)) = &mut self.prompt else {
             return;
         };
@@ -1874,7 +1867,6 @@ impl App {
         }
     }
 
-    /// Runs what was typed into a prompt.
     /// Reads the lines typed at the prompts before, from the history.
     fn load_typed(&mut self) {
         let Some(history) = &self.history else {
@@ -1892,13 +1884,12 @@ impl App {
     }
 
     /// Remembers a line typed at a prompt, for up to recall; never a
-    /// password, or what is typed into a form.
+    /// password.
     fn remember_typed(&mut self, prompt: Prompt, line: &str) {
         let (name, lines) = match prompt {
             Prompt::Command => ("command", &mut self.typed_commands),
             Prompt::SearchForward | Prompt::SearchBackward => ("search", &mut self.typed_searches),
-            // What is typed into a form stays in the form.
-            Prompt::Password | Prompt::Field => return,
+            Prompt::Password => return,
         };
         lines.add(line);
         if line.trim().is_empty() {
@@ -1911,6 +1902,7 @@ impl App {
         }
     }
 
+    /// Runs what was typed into a prompt.
     fn submit(&mut self, prompt: Prompt, line: &str) -> Task<Message> {
         match prompt {
             Prompt::Command => match command::parse(line) {
@@ -1929,7 +1921,6 @@ impl App {
             Prompt::SearchForward => self.search(line, true),
             Prompt::SearchBackward => self.search(line, false),
             Prompt::Password => self.unlock(line.to_owned()),
-            Prompt::Field => self.submit_field(line),
         }
     }
 
@@ -2839,6 +2830,7 @@ impl App {
             _ if let Some(question) = self.asking => {
                 label(self.question(question), chrome.bar_error)
             }
+            _ if let Some(status) = self.field_status() => label(status, chrome.bar_text),
             _ if let Some(flash) = &self.flash => label(
                 format!("jump to: {}\u{2588}", flash.typed()),
                 chrome.bar_text,
@@ -2885,7 +2877,7 @@ impl App {
                 label(self.password_prompt(line), chrome.bar_text)
             }
             (Some((prompt, line)), _) => {
-                let typed = label(self.prompt_line(*prompt, line), chrome.bar_text);
+                let typed = label(format!("{}{line}\u{2588}", prompt.sigil()), chrome.bar_text);
                 if wrap {
                     typed.wrapping(text::Wrapping::WordOrGlyph)
                 } else {
@@ -3494,6 +3486,9 @@ impl canvas::Program<Message> for Marks<'_> {
         }
         if let Some(flash) = &self.0.flash {
             flash::draw(&mut frame, document, flash);
+        }
+        if let Some(edit) = &self.0.field_edit {
+            forms::draw(&mut frame, document, edit, self.0.chrome());
         }
         if let Some((_, hints)) = &self.0.line_hints {
             for hint in hints.shown() {

@@ -45,8 +45,6 @@ pub enum Prompt {
     SearchBackward,
     /// The password to unlock a document, shown as dots.
     Password,
-    /// What to put in a field of a form, after the field's name.
-    Field,
 }
 
 impl Prompt {
@@ -56,7 +54,7 @@ impl Prompt {
             Self::Command => ':',
             Self::SearchForward => '/',
             Self::SearchBackward => '?',
-            Self::Password | Self::Field => ' ',
+            Self::Password => ' ',
         }
     }
 }

@@ -162,6 +162,8 @@ note-color = "#fdd835"
 "n" = "search-next"
 "N" = "search-previous"
 ":" = "command-prompt"
+# Run the last command line again, typed after : or bound to keys
+"." = "repeat"
 "o" = "recent"
 # "help" lists every action and the keys bound to it, like :help. It has no
 # key by default; give it one with, for example:

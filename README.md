@@ -231,6 +231,7 @@ A tab, and the window while its tab is in view, goes by the document's title whe
 | `/` / `?`                 | Search forwards / backwards                            |
 | `n` / `N`                 | Go to the next / previous match                        |
 | `:`                       | Open the command prompt                                |
+| `.`, `{n}.`               | Run the last command again, or _n_ times               |
 | `o`                       | Show recent documents                                  |
 | `Esc`, `Ctrl-c`, `Ctrl-[` | Cancel a half-typed command and hide search highlights |
 | `q`                       | Close the tab, and quit after the last one             |
@@ -321,6 +322,8 @@ If you name a boolean setting without a value, it is turned on.
 You can also run any [action](#actions) by name, as in `:scroll-down` or `:next-tab`. A number after it works like a count typed before a key: `:zoom-to 150` zooms to 150%, and `:first-page 12` goes to page 12.
 
 Press `Tab` in the command prompt to complete what you're typing: command and action names, setting names and their values, mode and action names after `:map`, and file paths after `:open`, `:tabedit`, and `:tabnew`. Paths offer folders and PDF files. If more than one completion fits, `Tab` fills in as much as they share and lists them above the prompt. Press `Tab` again to go through the list, and `Shift-Tab` to go back. While the list is open, it narrows as you type, and it closes when nothing fits.
+
+`.` runs the last command line again, whether you typed it after `:` or pressed keys bound to it, all of its commands in turn; `3.` runs it three times. Only command lines count: `.` doesn't repeat keys such as `j` or `]h`.
 
 Press `Up` or `Ctrl-p` at `:`, `/` or `?` to bring back an earlier command or search, and again to go further back; `Down` or `Ctrl-n` comes forward again, back to what you were typing. Whatever you have typed already narrows them to the lines that start the same way, so `:zo` then `Up` finds your last `:zoom`. Commands and searches are kept apart, `/` and `?` share theirs, and the last 500 of each are kept in the reading history, so they last after pdvim closes. Passwords are never kept.
 
@@ -439,6 +442,7 @@ The actions of normal mode, and their default keys:
 | `search-forward` / `search-backward`  | `/` / `?`                                   |
 | `search-next` / `search-previous`     | `n` / `N`                                   |
 | `command-prompt`                      | `:`                                         |
+| `repeat`                              | `.`                                         |
 | `recent`                              | `o`                                         |
 | `next-tab` / `previous-tab`           | `g t`, `ctrl+tab` / `g T`, `ctrl+shift+tab` |
 | `reopen-tab`                          | `U`                                         |

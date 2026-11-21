@@ -507,6 +507,8 @@ pub struct App {
     fields_wanted: Option<(u64, forms::FieldGoal)>,
     /// Whether the next key is the letter of a mark to set, or to go to.
     awaiting_mark: Option<MarkVerb>,
+    /// The last command line run, typed or bound to keys, for `.`.
+    last_line: Option<String>,
     /// The tabs closed, the last closed last: each one's place and its
     /// document's file, to open again.
     closed: Vec<(usize, PathBuf)>,
@@ -592,6 +594,7 @@ impl App {
             awaiting_mark: None,
             sourcing: false,
             closed: Vec::new(),
+            last_line: None,
             chapter_wanted: None,
             note_at: None,
             note_editing: None,
@@ -2112,6 +2115,7 @@ impl App {
                 return Task::none();
             }
             Action::ReopenTab(times) => return self.reopen_tabs(times),
+            Action::Repeat(times) => return self.repeat_line(times),
             Action::OpenPrompt(prompt) => {
                 self.prompt = Some((prompt, String::new()));
                 self.prompt_pending = Pending::new();
@@ -2151,58 +2155,8 @@ impl App {
             _ => {}
         }
         let step = self.scroll_step;
-        let Some(document) = self.document_mut() else {
-            return Task::none();
-        };
-        let reader = &mut document.reader;
-        match action {
-            Action::Scroll { right, down } => {
-                reader.scroll_by(steps(right) * step, steps(down) * step);
-            }
-            Action::HalfScreen(count) => reader.scroll_screens(steps(count) / 2.0),
-            Action::FullScreen(count) => reader.scroll_screens(steps(count)),
-            Action::Page(count) => reader.page_by(count),
-            Action::GotoPage(page) => leap(document, page.saturating_sub(1)),
-            Action::GotoFirst => leap(document, 0),
-            Action::GotoLast => leap(document, u32::MAX),
-            Action::PageTop => reader.page_top(),
-            Action::PageBottom => reader.page_bottom(),
-            Action::ZoomIn => reader.zoom_in(),
-            Action::ZoomOut => reader.zoom_out(),
-            Action::ZoomTo(percent) => reader.zoom_to(num::float(percent) / 100.0),
-            Action::FitWidth => reader.fit(Fit::Width),
-            Action::FitPage => reader.fit(Fit::Page),
-            Action::Rotate => reader.rotate(),
-            Action::ToggleRecolor => document.recolor = !document.recolor,
-            Action::Abort => hide_marks(document),
-            Action::Quit
-            | Action::OpenPrompt(_)
-            | Action::ShowRecent
-            | Action::ShowHelp
-            | Action::ShowInfo
-            | Action::Write
-            | Action::Chapter { .. }
-            | Action::ShowOutline
-            | Action::Mark(_)
-            | Action::JumpBack(_)
-            | Action::JumpForward(_)
-            | Action::FollowLink
-            | Action::Visual { .. }
-            | Action::Flash
-            | Action::Field(_)
-            | Action::Copy(_)
-            | Action::Undo
-            | Action::Redo
-            | Action::Marking(_)
-            | Action::NextTab
-            | Action::PreviousTab(_)
-            | Action::GotoTab(_)
-            | Action::ReopenTab(_)
-            | Action::SearchNext
-            | Action::SearchPrevious
-            | Action::ToggleTrim
-            | Action::ToggleBars
-            | Action::ToggleFullscreen => {}
+        if let Some(document) = self.document_mut() {
+            move_view(document, action, step);
         }
         Task::none()
     }
@@ -3706,6 +3660,62 @@ fn translate(
             .and_then(|typed| typed.chars().next())
             .filter(|character| !character.is_control())
             .map(Key::Char),
+    }
+}
+
+/// Carries out an action that moves or changes the view of a document;
+/// any other does nothing here.
+fn move_view(document: &mut Document, action: Action, step: f32) {
+    let reader = &mut document.reader;
+    match action {
+        Action::Scroll { right, down } => {
+            reader.scroll_by(steps(right) * step, steps(down) * step);
+        }
+        Action::HalfScreen(count) => reader.scroll_screens(steps(count) / 2.0),
+        Action::FullScreen(count) => reader.scroll_screens(steps(count)),
+        Action::Page(count) => reader.page_by(count),
+        Action::GotoPage(page) => leap(document, page.saturating_sub(1)),
+        Action::GotoFirst => leap(document, 0),
+        Action::GotoLast => leap(document, u32::MAX),
+        Action::PageTop => reader.page_top(),
+        Action::PageBottom => reader.page_bottom(),
+        Action::ZoomIn => reader.zoom_in(),
+        Action::ZoomOut => reader.zoom_out(),
+        Action::ZoomTo(percent) => reader.zoom_to(num::float(percent) / 100.0),
+        Action::FitWidth => reader.fit(Fit::Width),
+        Action::FitPage => reader.fit(Fit::Page),
+        Action::Rotate => reader.rotate(),
+        Action::ToggleRecolor => document.recolor = !document.recolor,
+        Action::Abort => hide_marks(document),
+        Action::Quit
+        | Action::OpenPrompt(_)
+        | Action::ShowRecent
+        | Action::ShowHelp
+        | Action::ShowInfo
+        | Action::Write
+        | Action::Chapter { .. }
+        | Action::ShowOutline
+        | Action::Mark(_)
+        | Action::JumpBack(_)
+        | Action::JumpForward(_)
+        | Action::FollowLink
+        | Action::Visual { .. }
+        | Action::Flash
+        | Action::Field(_)
+        | Action::Copy(_)
+        | Action::Undo
+        | Action::Redo
+        | Action::Marking(_)
+        | Action::NextTab
+        | Action::PreviousTab(_)
+        | Action::GotoTab(_)
+        | Action::ReopenTab(_)
+        | Action::Repeat(_)
+        | Action::SearchNext
+        | Action::SearchPrevious
+        | Action::ToggleTrim
+        | Action::ToggleBars
+        | Action::ToggleFullscreen => {}
     }
 }
 

@@ -75,6 +75,7 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
                 B::SearchNext,
                 B::SearchPrevious,
                 B::CommandPrompt,
+                B::Repeat,
                 B::Recent,
                 B::Help,
             ],

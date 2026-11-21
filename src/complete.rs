@@ -251,7 +251,7 @@ mod tests {
             ]
         );
         assert_eq!(texts(&complete("qu")), ["quit"]);
-        assert_eq!(texts(&complete("r")), ["recent", "redo", "reopen-tab", "rotate"]);
+        assert_eq!(texts(&complete("r")), ["recent", "redo", "reopen-tab", "repeat", "rotate"]);
         assert_eq!(texts(&complete("  rec")), ["recent"]);
         assert_eq!(complete("  rec").start, 2);
         assert_eq!(texts(&complete("map")), ["map", "mapclear"]);

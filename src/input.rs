@@ -195,6 +195,8 @@ pub enum Action {
     GotoTab(u32),
     /// Open again the tab closed last, a number of times over.
     ReopenTab(u32),
+    /// Run the last command line again, a number of times over.
+    Repeat(u32),
     /// Drop whatever is half-typed and hide search highlights.
     Abort,
     /// Close the tab in view, and the program with its last tab.
@@ -242,6 +244,8 @@ bindable! {
         SearchNext = "search-next", "Go to the next match";
         SearchPrevious = "search-previous", "Go to the previous match";
         CommandPrompt = "command-prompt", "Open the command prompt";
+        /// The last line typed after `:`, or bound to keys.
+        Repeat = "repeat", "Run the last command again; with a count, n times";
         Recent = "recent", "Show recent documents";
         /// Show the key bindings.
         Help = "help", "Show this list";
@@ -345,6 +349,7 @@ impl Binding {
             Self::SearchForward => Action::OpenPrompt(Prompt::SearchForward),
             Self::SearchBackward => Action::OpenPrompt(Prompt::SearchBackward),
             Self::CommandPrompt => Action::OpenPrompt(Prompt::Command),
+            Self::Repeat => Action::Repeat(count.unwrap_or(1)),
             Self::Recent => Action::ShowRecent,
             Self::NextTab => count.map_or(Action::NextTab, Action::GotoTab),
             Self::PreviousTab => Action::PreviousTab(count.unwrap_or(1)),

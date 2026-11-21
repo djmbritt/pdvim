@@ -59,36 +59,7 @@ Each [release](https://github.com/djmbritt/pdvim/releases) has packages for:
 | Windows, x86-64      | `pdvim-VERSION-x86_64-pc-windows-msvc.zip`                                                                                  |
 | Arch Linux           | `yay -S pdvim` or `paru -S pdvim` from the AUR, or `makepkg -si` in [`packaging/`](packaging/) to build what is checked out |
 
-`SHA256SUMS` lists the checksum of each. The macOS app is not signed by a registered developer, so macOS refuses to open it at first: right-click it and choose Open, or run `xattr -dr com.apple.quarantine /Applications/pdvim.app`.
-
 On macOS and Windows pdvim keeps its configuration in `~/.config/pdvim` and `%APPDATA%\pdvim`, and its reading history in `~/.local/share/pdvim` and `%LOCALAPPDATA%\pdvim`.
-
-### The AUR
-
-[`packaging/aur/PKGBUILD`](packaging/aur/PKGBUILD) is the `pdvim` package on the AUR, which builds a tagged release. When a release is published on GitHub, [`.github/workflows/aur.yml`](.github/workflows/aur.yml) sets its version and checksum, builds and tests it on Arch Linux, and pushes it to the AUR. It needs the GitHub repository to be public, and an SSH key for the AUR account:
-
-```sh
-ssh-keygen -t ed25519 -N '' -C 'pdvim AUR publishing' -f ~/.ssh/aur-pdvim
-gh secret set AUR_SSH_PRIVATE_KEY < ~/.ssh/aur-pdvim
-cat ~/.ssh/aur-pdvim.pub   # add this in your AUR account, under My Account
-```
-
-The first upload makes the package yours on the AUR. After that, publishing a release on GitHub is enough. Run the workflow by hand from the Actions tab to publish a version again, with a higher `pkgrel` when only the PKGBUILD changed.
-
-### Versions
-
-Every push to main raises the version: [`.github/workflows/bump-version.yml`](.github/workflows/bump-version.yml) runs [`packaging/bump-version.sh`](packaging/bump-version.sh) and pushes the change as a commit of its own, so pull before pushing again. The patch number goes up, `0.1.0` to `0.1.1`, unless a commit in the push has `#minor` (`0.2.0`) or `#major` (`1.0.0`) on a line of its own in its message. A push that changes the version in `Cargo.toml` itself keeps that version.
-
-### Making a release
-
-[`.github/workflows/release.yml`](.github/workflows/release.yml) builds, tests and packages pdvim on each platform. Push a tag that matches the version in `Cargo.toml` to draft a release with every package attached:
-
-```sh
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-Check the draft on GitHub and publish it. Running the workflow by hand from the Actions tab builds the packages without releasing them, and keeps them as the run's artifacts. [`packaging/dist.sh`](packaging/dist.sh) does the packaging, and runs locally too, after `cargo build --release --target TARGET`.
 
 ## Building
 

@@ -53,6 +53,24 @@ pub enum Command {
     Quit,
     /// Close every tab and the program.
     QuitAll,
+    /// Close the tab in view, or the program with its last tab, throwing
+    /// away changes not saved: `:q!`.
+    ForceQuit,
+    /// Close every tab and the program, throwing away changes not saved:
+    /// `:qa!`.
+    ForceQuitAll,
+    /// Save the document's changes: into its own file, or as a new file,
+    /// which must not exist already unless forced with `:w!`.
+    Write {
+        target: Option<PathBuf>,
+        force: bool,
+    },
+    /// Save the document's changes into its file, then close the tab.
+    WriteQuit,
+    /// Save the changes of every document into its file.
+    WriteAll,
+    /// Save the changes of every document, then close the program.
+    WriteQuitAll,
 }
 
 /// A setting and its new value.
@@ -83,6 +101,9 @@ pub enum Setting {
     ConfirmTabClose(bool),
     /// The colour text is highlighted in.
     HighlightColour(Rgb),
+    /// Whether highlights are saved into the file as soon as they are
+    /// made or taken back, rather than with `:w`.
+    Autosave(bool),
 }
 
 /// Whether pages are recoloured for a dark background.
@@ -121,7 +142,7 @@ pub enum Error {
 }
 
 /// Every command by its full name, and the shorter names it also goes by.
-const NAMES: [(&str, &[&str]); 19] = [
+const NAMES: [(&str, &[&str]); 23] = [
     ("delmarks", &["delm"]),
     ("help", &["h"]),
     ("map", &[]),
@@ -141,6 +162,10 @@ const NAMES: [(&str, &[&str]); 19] = [
     ("theme", &["colo", "colorscheme"]),
     ("unmap", &[]),
     ("version", &["ve"]),
+    ("wall", &["wa"]),
+    ("wq", &["x", "xit"]),
+    ("wqall", &["wqa", "xa", "xall"]),
+    ("write", &["w"]),
 ];
 
 /// The full names of the commands, in alphabetical order.
@@ -157,7 +182,8 @@ pub fn canonical(name: &str) -> Option<&'static str> {
 }
 
 /// The names of the settings `:set` knows.
-pub const SETTINGS: [&str; 11] = [
+pub const SETTINGS: [&str; 12] = [
+    "autosave",
     "confirm-quit",
     "confirm-tab-close",
     "highlight-color",
@@ -183,6 +209,14 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
     let (name, argument) = line
         .split_once(char::is_whitespace)
         .map_or((line, ""), |(name, rest)| (name, rest.trim()));
+    // A `!` after `:q`, `:qa` or `:w` forces it, as in vim.
+    if let Some(forced) = name.strip_suffix('!')
+        && let Some(command) = canonical(forced)
+    {
+        return forced_command(command, argument)
+            .map(Some)
+            .ok_or_else(|| Error::Unknown(name.to_owned()));
+    }
     // Any action can be run by name, with a count after it.
     let Some(canonical) = canonical(name) else {
         let binding = Binding::named(name).ok_or_else(|| Error::Unknown(name.to_owned()))?;
@@ -198,6 +232,13 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
     };
     let command = match canonical {
         "quit" => Command::Quit,
+        "write" => Command::Write {
+            target: (!argument.is_empty()).then(|| expand_home(argument)),
+            force: false,
+        },
+        "wq" => Command::WriteQuit,
+        "wall" => Command::WriteAll,
+        "wqall" => Command::WriteQuitAll,
         "qall" => Command::QuitAll,
         "tabedit" | "tabnew" => {
             Command::TabOpen((!argument.is_empty()).then(|| expand_home(argument)))
@@ -223,17 +264,7 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
         "recent" => Command::Recent,
         "version" => Command::Version,
         "marks" => Command::Marks,
-        "delmarks" => match argument {
-            "!" => Command::DeleteMarks(None),
-            "" => return Err(Error::MissingArgument("delmarks")),
-            letters => {
-                let names: Vec<char> = letters.chars().filter(|c| !c.is_whitespace()).collect();
-                if let Some(bad) = names.iter().find(|name| !name.is_ascii_alphabetic()) {
-                    return Err(Error::NotAMark(*bad));
-                }
-                Command::DeleteMarks(Some(names))
-            }
-        },
+        "delmarks" => delete_marks(argument)?,
         // As `:set theme`; with nothing after it, says which is in force.
         "theme" if argument.is_empty() => Command::ShowTheme,
         "theme" => Command::Set(setting("theme", argument)?),
@@ -280,6 +311,34 @@ fn mode(argument: &str) -> (Mode, &str) {
         .unwrap_or((Mode::Normal, argument))
 }
 
+/// The command a `!` forces, given by its full name, if it takes one.
+fn forced_command(name: &str, argument: &str) -> Option<Command> {
+    match name {
+        "quit" => Some(Command::ForceQuit),
+        "qall" => Some(Command::ForceQuitAll),
+        "write" => Some(Command::Write {
+            target: (!argument.is_empty()).then(|| expand_home(argument)),
+            force: true,
+        }),
+        _ => None,
+    }
+}
+
+/// Parses the letters after `:delmarks`, or `!` for all.
+fn delete_marks(argument: &str) -> Result<Command, Error> {
+    match argument {
+        "!" => Ok(Command::DeleteMarks(None)),
+        "" => Err(Error::MissingArgument("delmarks")),
+        letters => {
+            let names: Vec<char> = letters.chars().filter(|c| !c.is_whitespace()).collect();
+            if let Some(bad) = names.iter().find(|name| !name.is_ascii_alphabetic()) {
+                return Err(Error::NotAMark(*bad));
+            }
+            Ok(Command::DeleteMarks(Some(names)))
+        }
+    }
+}
+
 /// Parses the `name value` that follows `:set`. A boolean setting named
 /// alone is switched on.
 fn parse_setting(argument: &str) -> Result<Setting, Error> {
@@ -309,6 +368,7 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
         "theme-dark" => theme(value).map(Setting::ThemeDark),
         "theme-light" => theme(value).map(Setting::ThemeLight),
         "confirm-quit" => parse_switch(value).map(Setting::ConfirmQuit),
+        "autosave" => parse_switch(value).map(Setting::Autosave),
         "confirm-tab-close" => parse_switch(value).map(Setting::ConfirmTabClose),
         "highlight-color" => Ok(Setting::HighlightColour(value.parse()?)),
         "scroll-step" => match value.parse::<f32>() {
@@ -509,6 +569,42 @@ mod tests {
         assert_eq!(parse("rec"), Ok(Some(Command::Recent)));
         assert_eq!(parse("recent"), Ok(Some(Command::Recent)));
         assert_eq!(parse("qa"), Ok(Some(Command::QuitAll)));
+    }
+
+    #[test]
+    fn write_and_quit_commands_parse() {
+        assert_eq!(
+            parse("w"),
+            Ok(Some(Command::Write {
+                target: None,
+                force: false
+            }))
+        );
+        assert_eq!(
+            parse("write /tmp/a copy.pdf"),
+            Ok(Some(Command::Write {
+                target: Some(PathBuf::from("/tmp/a copy.pdf")),
+                force: false
+            }))
+        );
+        assert_eq!(
+            parse("w! /tmp/b.pdf"),
+            Ok(Some(Command::Write {
+                target: Some(PathBuf::from("/tmp/b.pdf")),
+                force: true
+            }))
+        );
+        assert_eq!(parse("wq"), Ok(Some(Command::WriteQuit)));
+        assert_eq!(parse("x"), Ok(Some(Command::WriteQuit)));
+        assert_eq!(parse("wa"), Ok(Some(Command::WriteAll)));
+        assert_eq!(parse("xa"), Ok(Some(Command::WriteQuitAll)));
+        assert_eq!(parse("q!"), Ok(Some(Command::ForceQuit)));
+        assert_eq!(parse("qa!"), Ok(Some(Command::ForceQuitAll)));
+        assert_eq!(parse("tabnew!"), Err(Error::Unknown("tabnew!".into())));
+        assert_eq!(
+            parse("set autosave"),
+            Ok(Some(Command::Set(Setting::Autosave(true))))
+        );
     }
 
     #[test]

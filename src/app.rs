@@ -122,6 +122,16 @@ pub enum Message {
     /// A highlight in the document with this number was taken back and
     /// the file saved, or not.
     Unhighlighted(u64, Edit, Result<(), backend::Error>),
+    /// The changes to the document with this number were saved, or not:
+    /// into its own file or as another, the number of changes made by then,
+    /// and what to do next.
+    Saved(
+        u64,
+        Option<PathBuf>,
+        usize,
+        Result<(), backend::Error>,
+        AfterSave,
+    ),
     /// The text on some pages of the document with this number was read,
     /// or could not be.
     TextFound(u64, Vec<u32>, Result<backend::PageText, backend::Error>),
@@ -133,6 +143,16 @@ pub struct Edit {
     highlight: Highlight,
     /// The annotations the highlight added.
     annotations: Vec<Annotation>,
+}
+
+/// What to do once a document's changes are saved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AfterSave {
+    Nothing,
+    /// Close the document's tab.
+    Close,
+    /// Close the program, once every document being saved is.
+    Quit,
 }
 
 /// Whether a highlight was made afresh or put back by redo.
@@ -219,6 +239,9 @@ struct Document {
     reading: std::collections::HashSet<u32>,
     /// The places big moves left from, to go back to.
     jumps: Jumps,
+    /// How many changes the document had when it was last saved, counted
+    /// as the undo list's length; none when that state is gone for good.
+    saved: Option<usize>,
     /// The marks of this document, a to z.
     marks: HashMap<char, Place>,
     /// A place to go once a trimmed view is restored, which would move
@@ -278,6 +301,24 @@ struct Completing {
     typed: bool,
 }
 
+impl Document {
+    /// Whether the document has changes not saved into its file.
+    fn modified(&self) -> bool {
+        self.saved != Some(self.undo.len())
+    }
+}
+
+/// When to ask before closing, and whether to save changes at once.
+#[derive(Debug, Clone, Copy, Default)]
+struct Care {
+    /// Whether to ask before quitting.
+    confirm_quit: bool,
+    /// Whether to ask before closing a tab, when others are left.
+    confirm_tab_close: bool,
+    /// Whether changes are saved as soon as they are made.
+    autosave: bool,
+}
+
 /// How a document with no view in the history starts.
 #[derive(Debug, Clone, Copy, Default)]
 struct Fresh {
@@ -291,6 +332,10 @@ struct Fresh {
 enum Question {
     Quit,
     CloseTab,
+    /// Close the tab in view, whose document has changes not saved.
+    DiscardTab,
+    /// Quit, though documents have changes not saved.
+    DiscardAll,
 }
 
 /// What the bottom line says when nothing is being typed.
@@ -358,10 +403,10 @@ pub struct App {
     scroll_step: f32,
     /// How a document with no view in the history starts.
     fresh: Fresh,
-    /// Whether to ask before quitting.
-    confirm_quit: bool,
-    /// Whether to ask before closing a tab, when others are left.
-    confirm_tab_close: bool,
+    /// When to ask, and when to save.
+    care: Care,
+    /// How many saves are still to finish before quitting, after `:wqa`.
+    quitting_after: Option<usize>,
     /// Whether documents are recoloured to match the system's theme.
     recolor_auto: bool,
     /// Whether the system prefers a dark theme, once known, if it has a
@@ -434,8 +479,8 @@ impl App {
             highlight_colour: Rgb(0xff, 0xff, 0x00),
             scroll_step: 40.0,
             fresh: Fresh::default(),
-            confirm_quit: false,
-            confirm_tab_close: false,
+            care: Care::default(),
+            quitting_after: None,
             recolor_auto: false,
             system_dark: None,
             asking: None,
@@ -506,11 +551,14 @@ impl App {
 
     fn title(&self) -> String {
         self.document()
-            .and_then(|document| document.path.file_name())
-            .map_or_else(
-                || "pdvim".to_owned(),
-                |name| format!("{} - pdvim", name.to_string_lossy()),
-            )
+            .and_then(|document| {
+                let unsaved = if document.modified() { " [+]" } else { "" };
+                Some(format!(
+                    "{}{unsaved} - pdvim",
+                    document.path.file_name()?.to_string_lossy()
+                ))
+            })
+            .unwrap_or_else(|| "pdvim".to_owned())
     }
 
     fn subscription() -> Subscription<Message> {
@@ -552,7 +600,11 @@ impl App {
             }
             // Asked a second time, as when a window manager insists, the
             // window closes without asking again.
-            Message::CloseRequested if self.asking == Some(Question::Quit) => self.exit(),
+            Message::CloseRequested
+                if matches!(self.asking, Some(Question::Quit | Question::DiscardAll)) =>
+            {
+                self.exit()
+            }
             Message::CloseRequested => self.quit(),
             Message::SystemTheme(mode) => {
                 self.system_dark = match mode {
@@ -573,12 +625,11 @@ impl App {
                 Task::none()
             }
             Message::Highlighted(id, highlight, result, redone) => {
-                self.on_highlighted(id, highlight, result, redone);
-                Task::none()
+                self.on_highlighted(id, highlight, result, redone)
             }
-            Message::Unhighlighted(id, edit, result) => {
-                self.on_unhighlighted(id, edit, result);
-                Task::none()
+            Message::Unhighlighted(id, edit, result) => self.on_unhighlighted(id, edit, result),
+            Message::Saved(id, target, changes, result, after) => {
+                self.on_saved(id, target.as_deref(), changes, result, after)
             }
             Message::OutlineFound(id, result) => {
                 self.on_outline(id, result);
@@ -622,9 +673,12 @@ impl App {
                     let yes =
                         self.keymaps.confirm.lookup(&[key]) == Match::Bound(ConfirmBinding::Yes);
                     match question {
-                        Question::Quit if yes => self.exit(),
-                        Question::CloseTab if yes => self.close_tab_now(),
-                        Question::Quit | Question::CloseTab => Task::none(),
+                        Question::Quit | Question::DiscardAll if yes => self.exit(),
+                        Question::CloseTab | Question::DiscardTab if yes => self.close_tab_now(),
+                        Question::Quit
+                        | Question::CloseTab
+                        | Question::DiscardTab
+                        | Question::DiscardAll => Task::none(),
                     }
                 } else if self.visual.is_some() {
                     self.on_visual_key(key)
@@ -985,12 +1039,21 @@ impl App {
         highlight: Highlight,
         result: Result<Vec<Annotation>, backend::Error>,
         redone: Redone,
-    ) {
+    ) -> Task<Message> {
         let Some(document) = document_by_id(&mut self.tabs, id) else {
-            return;
+            return Task::none();
         };
         match result {
             Ok(annotations) => {
+                // A state that was saved and then undone is gone for good
+                // once something new is done in its place.
+                if redone == Redone::No
+                    && document
+                        .saved
+                        .is_some_and(|saved| saved > document.undo.len())
+                {
+                    document.saved = None;
+                }
                 document.undo.push(Edit {
                     highlight,
                     annotations,
@@ -1006,8 +1069,7 @@ impl App {
                 } else {
                     "highlighted"
                 };
-                self.notice =
-                    Notice::Info(format!("{done}, and saved to {}", tilde(&document.path)));
+                return self.changed(id, done);
             }
             Err(error) => {
                 // What failed to be redone can be tried again.
@@ -1020,6 +1082,152 @@ impl App {
                 self.notice = Notice::Error(error.to_string());
             }
         }
+        Task::none()
+    }
+
+    /// Says that a document changed, and saves it if that is wanted.
+    fn changed(&mut self, id: u64, done: &str) -> Task<Message> {
+        if self.care.autosave {
+            self.notice = Notice::Info(format!("{done}; saving"));
+            return self.save(id, None, AfterSave::Nothing);
+        }
+        self.notice = Notice::Info(format!("{done}; :w saves it into the file"));
+        Task::none()
+    }
+
+    /// Saves the changes to a document, into its own file or as a new file,
+    /// then does what follows.
+    fn save(&mut self, id: u64, target: Option<PathBuf>, after: AfterSave) -> Task<Message> {
+        let Some(document) = document_by_id(&mut self.tabs, id) else {
+            return Task::none();
+        };
+        let changes = document.undo.len();
+        let saving = document.backend.save(target.clone());
+        Task::perform(saving, move |result| {
+            Message::Saved(id, target, changes, result, after)
+        })
+    }
+
+    fn on_saved(
+        &mut self,
+        id: u64,
+        target: Option<&Path>,
+        changes: usize,
+        result: Result<(), backend::Error>,
+        after: AfterSave,
+    ) -> Task<Message> {
+        let Some(document) = document_by_id(&mut self.tabs, id) else {
+            return Task::none();
+        };
+        if let Err(error) = result {
+            self.notice = Notice::Error(error.to_string());
+            // Quitting would lose what failed to be saved.
+            self.quitting_after = None;
+            return Task::none();
+        }
+        let written = if let Some(path) = target {
+            tilde(path)
+        } else {
+            document.saved = Some(changes);
+            tilde(&document.path)
+        };
+        self.notice = Notice::Info(format!("saved {written}"));
+        match after {
+            AfterSave::Nothing => Task::none(),
+            AfterSave::Close => self.close_document(id),
+            AfterSave::Quit => {
+                let left = self.quitting_after.map(|left| left.saturating_sub(1));
+                self.quitting_after = left;
+                if left == Some(0) {
+                    return self.exit();
+                }
+                Task::none()
+            }
+        }
+    }
+
+    /// Saves the document in view, for `:w`: into its own file, or as a new
+    /// file that must not exist already unless forced.
+    fn write(&mut self, target: Option<PathBuf>, force: bool) -> Task<Message> {
+        let Some(document) = self.document() else {
+            return Task::none();
+        };
+        let id = document.id;
+        // A target that is the document's own file is a save into it.
+        let target = target.filter(|target| {
+            std::fs::canonicalize(target).map_or(true, |real| real != document.path)
+        });
+        if let Some(target) = &target
+            && target.exists()
+            && !force
+        {
+            self.notice = Notice::Error(format!(
+                "{} exists: :w! {} overwrites it",
+                tilde(target),
+                target.display()
+            ));
+            return Task::none();
+        }
+        self.notice = Notice::Info("saving".to_owned());
+        self.save(id, target, AfterSave::Nothing)
+    }
+
+    /// Saves the document in view if it has changes, then closes its tab,
+    /// for `:wq`.
+    fn write_and_close(&mut self) -> Task<Message> {
+        let Some(document) = self.document() else {
+            return self.close_tab();
+        };
+        if !document.modified() {
+            return self.close_tab_now();
+        }
+        let id = document.id;
+        self.save(id, None, AfterSave::Close)
+    }
+
+    /// Saves every document with changes not saved, then does what follows.
+    fn write_all(&mut self, after: AfterSave) -> Task<Message> {
+        let ids: Vec<u64> = self
+            .tabs
+            .iter()
+            .filter_map(|tab| tab.document.as_ref())
+            .filter(|document| document.modified())
+            .map(|document| document.id)
+            .collect();
+        if after == AfterSave::Quit {
+            if ids.is_empty() {
+                return self.exit();
+            }
+            self.quitting_after = Some(ids.len());
+        }
+        if ids.is_empty() {
+            self.notice = Notice::Info("nothing to save".to_owned());
+            return Task::none();
+        }
+        let tasks: Vec<_> = ids
+            .into_iter()
+            .map(|id| self.save(id, None, after))
+            .collect();
+        Task::batch(tasks)
+    }
+
+    /// Closes the tab of a document, wherever it is, without asking.
+    fn close_document(&mut self, id: u64) -> Task<Message> {
+        let Some(index) = self.tabs.iter().position(|tab| {
+            tab.document
+                .as_ref()
+                .is_some_and(|document| document.id == id)
+        }) else {
+            return Task::none();
+        };
+        if index == self.current {
+            return self.close_tab_now();
+        }
+        if let Some(document) = self.tabs.get_mut(index).and_then(|tab| tab.document.take()) {
+            self.remember(&document);
+        }
+        self.remove_tab(index);
+        Task::none()
     }
 
     /// Takes back the last highlight of the document in view.
@@ -1039,23 +1247,26 @@ impl App {
         })
     }
 
-    fn on_unhighlighted(&mut self, id: u64, edit: Edit, result: Result<(), backend::Error>) {
+    fn on_unhighlighted(
+        &mut self,
+        id: u64,
+        edit: Edit,
+        result: Result<(), backend::Error>,
+    ) -> Task<Message> {
         let Some(document) = document_by_id(&mut self.tabs, id) else {
-            return;
+            return Task::none();
         };
         match result {
             Ok(()) => {
                 document.redo.push(edit);
                 document.edition = document.edition.saturating_add(1);
-                self.notice = Notice::Info(format!(
-                    "highlight taken back, and saved to {}",
-                    tilde(&document.path)
-                ));
+                self.changed(id, "highlight taken back")
             }
             Err(error) => {
                 // Still there, so still to undo.
                 document.undo.push(edit);
                 self.notice = Notice::Error(error.to_string());
+                Task::none()
             }
         }
     }
@@ -1137,6 +1348,15 @@ impl App {
         if self.document().is_some_and(|document| document.id == id) {
             let _ = self.show_outline();
         }
+    }
+
+    /// Goes to the mark a document was opened to go to, if it was. Answers
+    /// with the place again when the view is still to be restored, after
+    /// its margins are measured, which would move away from it.
+    fn arrive(&mut self, path: &Path, reader: &mut Reader, returning: bool) -> Option<Place> {
+        let (_, place) = self.arriving.take_if(|(to, _)| to == path)?;
+        reader.go_to_place(place);
+        returning.then_some(place)
     }
 
     /// The marks a to z of a document, from the history.
@@ -1483,6 +1703,12 @@ impl App {
         match command {
             Command::Quit => return self.close_tab(),
             Command::QuitAll => return self.quit(),
+            Command::ForceQuit => return self.close_tab_now(),
+            Command::ForceQuitAll => return self.exit(),
+            Command::Write { target, force } => return self.write(target, force),
+            Command::WriteQuit => return self.write_and_close(),
+            Command::WriteAll => return self.write_all(AfterSave::Nothing),
+            Command::WriteQuitAll => return self.write_all(AfterSave::Quit),
             Command::Open(path) | Command::TabOpen(Some(path)) => return self.open_in_tab(path),
             Command::Recent => self.show_recent(),
             Command::Marks => self.list_marks(),
@@ -1562,8 +1788,9 @@ impl App {
                 Setting::ThemeLight(theme) => self.theme_light = theme,
                 Setting::HighlightColour(colour) => self.highlight_colour = colour,
                 Setting::ScrollStep(step) => self.scroll_step = step,
-                Setting::ConfirmQuit(confirm) => self.confirm_quit = confirm,
-                Setting::ConfirmTabClose(confirm) => self.confirm_tab_close = confirm,
+                Setting::ConfirmQuit(confirm) => self.care.confirm_quit = confirm,
+                Setting::Autosave(autosave) => self.care.autosave = autosave,
+                Setting::ConfirmTabClose(confirm) => self.care.confirm_tab_close = confirm,
             },
         }
         Task::none()
@@ -1765,13 +1992,7 @@ impl App {
         }
         let marks = self.load_marks(&path, &mut notice);
         // Opened to go to a mark: there, rather than where it was left.
-        let arriving = self
-            .arriving
-            .take_if(|(to, _)| *to == path)
-            .and_then(|(_, place)| {
-                reader.go_to_place(place);
-                returning.is_some().then_some(place)
-            });
+        let arriving = self.arrive(&path, &mut reader, returning.is_some());
         // Following the system, its theme wins over how the document was
         // left.
         if self.recolor_auto
@@ -1813,6 +2034,7 @@ impl App {
             text: HashMap::new(),
             reading: std::collections::HashSet::new(),
             jumps: Jumps::default(),
+            saved: Some(0),
             marks,
             arriving,
         });
@@ -2103,7 +2325,12 @@ impl App {
         if self.tabs.len() <= 1 {
             return self.quit();
         }
-        if self.confirm_tab_close {
+        if self.document().is_some_and(Document::modified) {
+            self.asking = Some(Question::DiscardTab);
+            self.pending = Pending::new();
+            return Task::none();
+        }
+        if self.care.confirm_tab_close {
             self.asking = Some(Question::CloseTab);
             self.pending = Pending::new();
             return Task::none();
@@ -2157,12 +2384,54 @@ impl App {
 
     /// Quits, or asks first when that is wanted.
     fn quit(&mut self) -> Task<Message> {
-        if self.confirm_quit {
+        if self.unsaved().next().is_some() {
+            self.asking = Some(Question::DiscardAll);
+            self.pending = Pending::new();
+            return Task::none();
+        }
+        if self.care.confirm_quit {
             self.asking = Some(Question::Quit);
             self.pending = Pending::new();
             return Task::none();
         }
         self.exit()
+    }
+
+    /// What the bottom line asks.
+    fn question(&self, question: Question) -> String {
+        let yes = self.keymaps.confirm.first(ConfirmBinding::Yes);
+        let name = self
+            .tabs
+            .get(self.current)
+            .map(Tab::name)
+            .unwrap_or_default();
+        match question {
+            Question::Quit => format!("quit pdvim? ({yes}/n)"),
+            Question::CloseTab => format!("close tab {name}? ({yes}/n)"),
+            Question::DiscardTab => {
+                format!("{name} has unsaved highlights: close it anyway? ({yes}/n)")
+            }
+            Question::DiscardAll => {
+                let unsaved: Vec<_> = self.unsaved().collect();
+                let what = match unsaved.as_slice() {
+                    [one] => one
+                        .path
+                        .file_name()
+                        .map_or_else(String::new, |name| name.to_string_lossy().into_owned()),
+                    many => format!("{} documents", many.len()),
+                };
+                let has = if unsaved.len() == 1 { "has" } else { "have" };
+                format!("{what} {has} unsaved highlights: quit anyway? ({yes}/n)")
+            }
+        }
+    }
+
+    /// The documents with changes not saved.
+    fn unsaved(&self) -> impl Iterator<Item = &Document> {
+        self.tabs
+            .iter()
+            .filter_map(|tab| tab.document.as_ref())
+            .filter(|document| document.modified())
     }
 
     /// Records where every document is being left, and closes the program.
@@ -2245,7 +2514,12 @@ impl App {
         }
         let tabs = self.tabs.iter().enumerate().map(|(index, tab)| {
             let current = index == self.current;
-            let name = format!("{} {}", index.saturating_add(1), tab.name());
+            let unsaved = if tab.document.as_ref().is_some_and(Document::modified) {
+                " [+]"
+            } else {
+                ""
+            };
+            let name = format!("{} {}{unsaved}", index.saturating_add(1), tab.name());
             let label = text(name)
                 .size(BAR_TEXT_SIZE)
                 .font(Font::MONOSPACE)
@@ -2288,18 +2562,8 @@ impl App {
                 .wrapping(text::Wrapping::None)
         };
         let left = match (&self.prompt, &self.notice) {
-            _ if self.asking == Some(Question::Quit) => {
-                let yes = self.keymaps.confirm.first(ConfirmBinding::Yes);
-                label(format!("quit pdvim? ({yes}/n)"), chrome.bar_error)
-            }
-            _ if self.asking == Some(Question::CloseTab) => {
-                let name = self
-                    .tabs
-                    .get(self.current)
-                    .map(Tab::name)
-                    .unwrap_or_default();
-                let yes = self.keymaps.confirm.first(ConfirmBinding::Yes);
-                label(format!("close tab {name}? ({yes}/n)"), chrome.bar_error)
+            _ if let Some(question) = self.asking => {
+                label(self.question(question), chrome.bar_error)
             }
             _ if self.visual.is_some() => {
                 let visual = self.visual.as_ref();
@@ -2349,7 +2613,10 @@ impl App {
             (None, Notice::Info(message)) => label(message.clone(), chrome.bar_text),
             (None, Notice::None) => label(
                 self.document()
-                    .map(|document| tilde(&document.path))
+                    .map(|document| {
+                        let unsaved = if document.modified() { " [+]" } else { "" };
+                        format!("{}{unsaved}", tilde(&document.path))
+                    })
                     .unwrap_or_default(),
                 chrome.bar_text,
             ),

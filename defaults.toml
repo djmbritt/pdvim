@@ -52,6 +52,11 @@ confirm-quit = true
 # decides about that.
 confirm-tab-close = true
 
+# Save highlights into the PDF as soon as they are made or taken back.
+# Off, they stay in pdvim until :w saves them (:w copy.pdf saves a copy
+# instead), and pdvim asks before closing a document with unsaved ones.
+autosave = false
+
 # The color H in visual mode highlights text in. Highlights are saved into
 # the PDF file, so other readers show them too.
 highlight-color = "#ffff00"
@@ -320,6 +325,8 @@ highlight-color = "#ffff00"
 
 [keys.confirm]
 
-# Questions, such as "quit pdvim? (y/n)". Any key not bound here is no.
+# Questions, such as "quit pdvim? (y/n)". Any key not bound here is no,
+# escape among them.
 "y" = "yes"
 "Y" = "yes"
+"enter" = "yes"

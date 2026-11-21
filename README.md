@@ -165,9 +165,9 @@ After `v` or `V`, each line of text in view gets a label of two letters. Type a 
 | `H`                       | Highlight the selection in the PDF file, and leave         |
 | `Esc`, `Ctrl-c`           | Leave without copying                                      |
 
-`H` saves the highlight into the PDF file as a standard highlight annotation, so other PDF readers show it too. pdvim saves the file incrementally: everything that was in it when pdvim opened it stays byte for byte as it was, and the changes are written after it. It can't highlight a PDF that MuPDF had to repair to open, or one it can't write to, and says so instead.
+`H` adds the highlight to the document as a standard highlight annotation, which other PDF readers show too once it is saved. Nothing is written until you save with `:w`; until then the tab, the status bar and the window title show `[+]`, and closing the document asks first. `:w` saves into the file incrementally: everything that was in it when pdvim opened it stays byte for byte as it was, and the changes are written after it. `:w copy.pdf` writes the whole document with its highlights to a new file instead, and leaves the original alone. Set `autosave` to save every change into the file as it is made. pdvim can't highlight a PDF that MuPDF had to repair to open, and says so instead.
 
-Press `u` to take back the last highlight, and `Ctrl-r` to put back the last one taken back. Each saves the file the same way, incrementally. pdvim remembers what to undo for each open document until you close it.
+Press `u` to take back the last highlight, and `Ctrl-r` to put back the last one taken back. Taking back everything since the last save leaves nothing to save. pdvim remembers what to undo for each open document until you close it.
 
 A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t`, and `T` look along the cursor's line only, and the cursor stays put if the character isn't there. These are the default keys; the `[keys.visual]` table of the [configuration](#configuration) changes them.
 
@@ -223,6 +223,12 @@ A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t
 | `:tabc[lose]`                          | Close the tab, unless it is the last                                 |
 | `:q[uit]`                              | Close the tab, and quit after the last one                           |
 | `:qa[ll]`                              | Quit                                                                 |
+| `:q!`, `:qa!`                          | Close the tab, or quit, throwing away highlights not saved           |
+| `:w[rite]`                             | Save the highlights into the file                                    |
+| `:w {file}`, `:w! {file}`              | Save a copy with the highlights; `!` overwrites a file that exists   |
+| `:wq`, `:x`                            | Save, then close the tab                                             |
+| `:wa[ll]`                              | Save every document with highlights not saved                        |
+| `:wqa[ll]`, `:xa[ll]`                  | Save every document, then quit                                       |
 
 If you name a boolean setting without a value, it is turned on.
 
@@ -280,7 +286,7 @@ theme = "catppuccin-macchiato"
 "Y" = "yank"
 ```
 
-`[settings]` takes the same names and values as `:set`. With `confirm-quit` on, as it is by default, pdvim asks `quit pdvim? (y/n)` before quitting: when you close the last tab, use `:qa`, or close the window. Press `y` to quit, or any other key to stay. If the window is closed again while pdvim is asking, for example by a window manager that insists, it quits without asking. With `confirm-tab-close` on, also the default, pdvim asks `close tab {name}? (y/n)` before closing a tab with `q`, `:q`, or `:tabclose` while other tabs are open. Closing the last tab quits pdvim, so `confirm-quit` decides whether that asks. `recolor` is `"auto"` by default: pdvim recolors every document while the system prefers a dark theme, shows them as printed while it prefers a light one, and changes as soon as the system does. pdvim reads the preference from the desktop's color-scheme setting (`org.freedesktop.appearance` through the desktop portal on Linux). `R` still turns recoloring on or off for the document in view, until the system's theme changes again. With `recolor` set to `true` or `false`, it and `trim` decide how a document starts the first time you open it. After that, the document is restored the way you left it.
+`[settings]` takes the same names and values as `:set`. With `confirm-quit` on, as it is by default, pdvim asks `quit pdvim? (y/n)` before quitting: when you close the last tab, use `:qa`, or close the window. Press `y` or `Enter` to quit, or `Esc` or any other key to stay. If the window is closed again while pdvim is asking, for example by a window manager that insists, it quits without asking. With `confirm-tab-close` on, also the default, pdvim asks `close tab {name}? (y/n)` before closing a tab with `q`, `:q`, or `:tabclose` while other tabs are open. Closing the last tab quits pdvim, so `confirm-quit` decides whether that asks. Whatever these say, pdvim asks before closing a document with highlights not saved, unless `autosave` is on. `recolor` is `"auto"` by default: pdvim recolors every document while the system prefers a dark theme, shows them as printed while it prefers a light one, and changes as soon as the system does. pdvim reads the preference from the desktop's color-scheme setting (`org.freedesktop.appearance` through the desktop portal on Linux). `R` still turns recoloring on or off for the document in view, until the system's theme changes again. With `recolor` set to `true` or `false`, it and `trim` decide how a document starts the first time you open it. After that, the document is restored the way you left it.
 
 `theme` sets the colors of the tab bar, the status bar, the lists and the backdrop behind the pages, and the colors pages are recolored in unless `recolor-lightcolor` and `recolor-darkcolor` set their own. The themes are `catppuccin-latte` (light), `catppuccin-frappe`, `catppuccin-macchiato`, `catppuccin-mocha`, `pdvim-dark` and `pdvim-light`. With `theme = "auto"`, the default, pdvim uses `theme-dark` (`catppuccin-mocha`) while the system prefers a dark theme and `theme-light` (`catppuccin-latte`) while it prefers a light one, whatever `recolor` is set to.
 

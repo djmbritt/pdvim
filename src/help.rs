@@ -275,7 +275,7 @@ mod tests {
         assert_eq!(entry(&help, Mode::Normal, "first-page"), Some("g g, home"));
         assert_eq!(entry(&help, Mode::Normal, "help"), Some(""));
         assert_eq!(entry(&help, Mode::Visual, "yank"), Some("y"));
-        assert_eq!(entry(&help, Mode::Confirm, "yes"), Some("y, Y"));
+        assert_eq!(entry(&help, Mode::Confirm, "yes"), Some("y, Y, enter"));
 
         keymaps.unbind(Mode::Normal, &parse_keys("q").unwrap());
         keymaps.bind(

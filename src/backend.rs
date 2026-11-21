@@ -61,6 +61,8 @@ pub enum Error {
     Text(String),
     #[error("cannot highlight: {0}")]
     Highlight(String),
+    #[error("cannot save: {0}")]
+    Save(String),
     #[error("cannot read the table of contents: {0}")]
     Outline(String),
     #[error("the document was closed")]
@@ -154,6 +156,7 @@ enum Request {
     Text(Vec<u32>, oneshot::Sender<Result<PageText, Error>>),
     Highlight(Highlight, oneshot::Sender<Result<Vec<Annotation>, Error>>),
     Unhighlight(Vec<Annotation>, oneshot::Sender<Result<(), Error>>),
+    Save(Option<PathBuf>, oneshot::Sender<Result<(), Error>>),
     Outline(oneshot::Sender<Result<Vec<Chapter>, Error>>),
 }
 
@@ -220,10 +223,9 @@ impl Backend {
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
-    /// Highlights text by adding highlight annotations to the PDF, and
-    /// saves the file. What was in the file when it was opened is left as
-    /// it was, with the changes written after it.
-    /// Answers with the annotations added, to take away again on undo.
+    /// Highlights text by adding highlight annotations to the PDF in
+    /// memory; [`Self::save`] writes them to a file. Answers with the
+    /// annotations added, to take away again on undo.
     pub fn highlight(
         &self,
         highlight: Highlight,
@@ -233,14 +235,23 @@ impl Backend {
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
-    /// Takes away annotations that highlighting added, and saves the file
-    /// the same way.
+    /// Takes away annotations that highlighting added, in memory.
     pub fn unhighlight(
         &self,
         annotations: Vec<Annotation>,
     ) -> impl Future<Output = Result<(), Error>> + use<> {
         let (reply, answer) = oneshot::channel();
         let _ = self.requests.send(Request::Unhighlight(annotations, reply));
+        async move { answer.await.unwrap_or(Err(Error::Closed)) }
+    }
+
+    /// Saves the document's changes: into its own file without a target,
+    /// where what the file had is left as it was and the changes are
+    /// written after it; or as a whole new file at the target, leaving the
+    /// document's own file alone.
+    pub fn save(&self, target: Option<PathBuf>) -> impl Future<Output = Result<(), Error>> + use<> {
+        let (reply, answer) = oneshot::channel();
+        let _ = self.requests.send(Request::Save(target, reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -575,13 +586,9 @@ fn page_links(document: &Document, number: u32) -> Result<Vec<Link>, mupdf::Erro
 /// Adds a highlight annotation to each page, over the areas given, and
 /// saves the file incrementally. Answers with the
 /// annotations added.
-fn highlight_in_file(
-    document: &Document,
-    path: &Path,
-    highlight: &Highlight,
-) -> Result<Vec<Annotation>, Error> {
+fn highlight_in(document: &Document, highlight: &Highlight) -> Result<Vec<Annotation>, Error> {
     let failed = |error: mupdf::Error| Error::Highlight(error.to_string());
-    let (pdf, name) = writable(document, path)?;
+    let pdf = editable(document)?;
     let Rgb(red, green, blue) = highlight.colour;
     let colour = mupdf::color::AnnotationColor::Rgb {
         red: f32::from(red) / 255.0,
@@ -612,19 +619,14 @@ fn highlight_in_file(
         annotation.update().map_err(failed)?;
         added.push((*number, annotation.xref().map_err(failed)?));
     }
-    save(&pdf, &name)?;
     Ok(added)
 }
 
-/// Takes away annotations that highlighting added, and saves the file
-/// incrementally. Annotations no longer there are passed over.
-fn unhighlight_in_file(
-    document: &Document,
-    path: &Path,
-    annotations: &[Annotation],
-) -> Result<(), Error> {
+/// Takes away annotations that highlighting added. Annotations no longer
+/// there are passed over.
+fn unhighlight_in(document: &Document, annotations: &[Annotation]) -> Result<(), Error> {
     let failed = |error: mupdf::Error| Error::Highlight(error.to_string());
-    let (pdf, name) = writable(document, path)?;
+    let pdf = editable(document)?;
     let mut pages: Vec<u32> = annotations.iter().map(|(page, _)| *page).collect();
     pages.sort_unstable();
     pages.dedup();
@@ -643,13 +645,13 @@ fn unhighlight_in_file(
             page.delete_annotation(annotation).map_err(failed)?;
         }
     }
-    save(&pdf, &name)
+    Ok(())
 }
 
-/// The document as a PDF that can be saved incrementally, and the file's
-/// name. A file MuPDF had to repair to open cannot be saved that way, and
-/// is left alone, as is any file that is not a PDF.
-fn writable(document: &Document, path: &Path) -> Result<(mupdf::pdf::PdfDocument, String), Error> {
+/// The document as a PDF that can be changed and saved incrementally. A
+/// file MuPDF had to repair to open cannot be saved that way, and is left
+/// alone, as is any file that is not a PDF.
+fn editable(document: &Document) -> Result<mupdf::pdf::PdfDocument, Error> {
     let pdf = mupdf::pdf::PdfDocument::try_from(document.clone())
         .map_err(|_| Error::Highlight("only PDF files can be highlighted".to_owned()))?;
     if !pdf.can_be_saved_incrementally() {
@@ -657,24 +659,35 @@ fn writable(document: &Document, path: &Path) -> Result<(mupdf::pdf::PdfDocument
             "the file is damaged, so it cannot be saved safely".to_owned(),
         ));
     }
-    let Some(name) = path.to_str() else {
-        return Err(Error::Highlight(format!(
-            "{} is not a path MuPDF can write to",
-            path.display()
-        )));
-    };
-    Ok((pdf, name.to_owned()))
+    Ok(pdf)
 }
 
-/// Saves a PDF incrementally: what was in its file when it was opened is
-/// left as it was, and every change since is written after it. MuPDF
-/// rewrites that tail on each save, so the file can shrink when a change is
-/// taken back.
-fn save(pdf: &mupdf::pdf::PdfDocument, name: &str) -> Result<(), Error> {
+/// Saves the changes to a PDF. Into its own file, the save is incremental:
+/// what was in the file when it was opened is left as it was, and every
+/// change since is written after it. MuPDF rewrites that tail on each
+/// save, so the file can shrink when a change is taken back. To a target,
+/// the whole document is written as a new file.
+fn save_to(document: &Document, path: &Path, target: Option<&Path>) -> Result<(), Error> {
+    let failed = |error: mupdf::Error| Error::Save(error.to_string());
+    let pdf = mupdf::pdf::PdfDocument::try_from(document.clone())
+        .map_err(|_| Error::Save("only PDF files can be saved".to_owned()))?;
+    let into = target.unwrap_or(path);
+    let Some(name) = into.to_str() else {
+        return Err(Error::Save(format!(
+            "{} is not a path MuPDF can write to",
+            into.display()
+        )));
+    };
     let mut options = mupdf::pdf::PdfWriteOptions::default();
-    options.set_incremental(true);
-    pdf.save_with_options(name, options)
-        .map_err(|error| Error::Highlight(error.to_string()))
+    if target.is_none() {
+        if !pdf.can_be_saved_incrementally() {
+            return Err(Error::Save(
+                "the file is damaged, so it cannot be saved into safely".to_owned(),
+            ));
+        }
+        options.set_incremental(true);
+    }
+    pdf.save_with_options(name, options).map_err(failed)
 }
 
 /// The box around a quad, measured from the corner of the page.
@@ -802,7 +815,7 @@ impl Worker {
                     let _ = reply.send(self.links(&pages));
                 }
                 Request::Highlight(highlight, reply) => {
-                    let _ = reply.send(highlight_in_file(&self.document, &self.path, &highlight));
+                    let _ = reply.send(highlight_in(&self.document, &highlight));
                 }
                 Request::Outline(reply) => {
                     let _ = reply.send(
@@ -811,11 +824,10 @@ impl Worker {
                     );
                 }
                 Request::Unhighlight(annotations, reply) => {
-                    let _ = reply.send(unhighlight_in_file(
-                        &self.document,
-                        &self.path,
-                        &annotations,
-                    ));
+                    let _ = reply.send(unhighlight_in(&self.document, &annotations));
+                }
+                Request::Save(target, reply) => {
+                    let _ = reply.send(save_to(&self.document, &self.path, target.as_deref()));
                 }
                 Request::Text(pages, reply) => {
                     let _ = reply.send(
@@ -1132,9 +1144,13 @@ mod tests {
             pages: vec![(0, vec![line])],
             colour: Rgb(0xff, 0xff, 0x00),
         };
-        let first = highlight_in_file(&document, &path, &highlight).unwrap();
-        highlight_in_file(&document, &path, &highlight).unwrap();
+        let first = highlight_in(&document, &highlight).unwrap();
+        highlight_in(&document, &highlight).unwrap();
         assert_eq!(first.len(), 1);
+
+        // Nothing is written until the document is saved.
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        save_to(&document, &path, None).unwrap();
 
         // The original bytes are untouched, with the change after them.
         let saved = std::fs::read(&path).unwrap();
@@ -1169,7 +1185,8 @@ mod tests {
         // Taking the first away leaves the second. MuPDF rewrites what it
         // added since the file was opened, so the file may shrink, but what
         // was there when it was opened stays as it was.
-        unhighlight_in_file(&document, &path, &first).unwrap();
+        unhighlight_in(&document, &first).unwrap();
+        save_to(&document, &path, None).unwrap();
         let after = std::fs::read(&path).unwrap();
         assert!(after.len() > original.len());
         assert_eq!(&after[..original.len()], original.as_slice());
@@ -1181,6 +1198,33 @@ mod tests {
             .collect();
         assert_eq!(left.len(), 1);
         assert!(!left.contains(&first[0].1));
+    }
+
+    #[test]
+    fn saving_to_another_file_leaves_the_document_s_own_alone() {
+        let original = text_pdf();
+        let file = Scratch::new("save-as", &original);
+        let copy = Scratch::new("save-as-copy", b"");
+        let document = Document::open(file.0.to_str().unwrap()).unwrap();
+        let highlight = Highlight {
+            pages: vec![(
+                0,
+                vec![Rect {
+                    left: 10.0,
+                    top: 10.0,
+                    right: 100.0,
+                    bottom: 30.0,
+                }],
+            )],
+            colour: Rgb(0xff, 0xff, 0x00),
+        };
+        highlight_in(&document, &highlight).unwrap();
+        save_to(&document, &file.0, Some(&copy.0)).unwrap();
+        assert_eq!(std::fs::read(&file.0).unwrap(), original);
+
+        let saved = Document::open(copy.0.to_str().unwrap()).unwrap();
+        let page = mupdf::pdf::PdfPage::try_from(saved.load_page(0).unwrap()).unwrap();
+        assert_eq!(page.annotations().count(), 1);
     }
 
     /// A PDF of three pages with a table of contents: Chapter 1 on the

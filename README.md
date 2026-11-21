@@ -14,7 +14,7 @@ pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.r
 - Recoloring for dark backgrounds, with colors you choose (like Zathura's `recolor`), following the system's light or dark theme by default
 - Themes, including the four [Catppuccin](https://catppuccin.com) flavors, for the bars, lists and recolored pages
 - Trimming of blank page margins
-- Per-document memory of page, zoom, fit, and rotation, stored in SQLite
+- Per-document memory of page, zoom, fit, rotation and columns, stored in SQLite
 - A list of recently read documents to reopen from
 - A configuration file for settings and key bindings
 - Selecting and copying text from the keyboard, with a visual mode like vim's
@@ -89,7 +89,7 @@ Each file opens in a tab of its own. If you start pdvim without a file, it shows
 
 Besides PDF, pdvim opens EPUB and FB2 books, CBZ and CBT comics, XPS and OpenXPS documents, SVG drawings, and images: PNG, JPEG, GIF, BMP, TIFF, JPEG 2000, JPEG XR, PSD and the PNM family. Completion after `:open` offers all of these.
 
-A book has no pages of its own, so pdvim lays it out on pages the size of the window, in type of the size `:set fontsize` gives (12 points by default). A book always fits the window's width: in a book, the zoom keys change the type instead. `+` and `-` make it a point bigger or smaller, `=` and `z0` go back to the size set, `{n}=` makes it _n_% of that, and `zw` and `zp` do nothing. With two columns (`zc`, or `:set columns 2`), the book is laid out on pages half the window wide, two side by side. When the window, the columns or the type change, the book is laid out again, and you stay at the same place in it, measured as a share of the whole book. The book in view stays on screen while it is laid out. Your place is remembered the same way between sessions, so a book left in a small window opens at the same passage in a big one. Marks and the jump list point at pages, so they can land a little off after the book is laid out again.
+A book has no pages of its own, so pdvim lays it out on pages the size of the window, in type of the size `:set fontsize` gives (12 points by default). A book always fits the window's width: in a book, the zoom keys change the type instead. `+` and `-` make it a point bigger or smaller, `=` and `z0` go back to the size set, `{n}=` makes it _n_% of that, and `zw` and `zp` do nothing. With two columns (`zc`, or `:set columns 2`), the book is laid out on pages half the window wide, two side by side. Columns are set for the tab in view only, and each document remembers its own, as it does its zoom; `columns` in the configuration file sets how documents not opened before start. When the window, the columns or the type change, the book is laid out again, and you stay at the same place in it, measured as a share of the whole book. The book in view stays on screen while it is laid out. Your place is remembered the same way between sessions, so a book left in a small window opens at the same passage in a big one. Marks and the jump list point at pages, so they can land a little off after the book is laid out again.
 
 Characters a document's own fonts lack are drawn from the fonts installed on your system, Chinese, Japanese and Korean included (from Noto CJK, Source Han and the like, when installed).
 
@@ -308,7 +308,7 @@ The box at the left of the status bar always names the mode, which says what the
 | `:set theme-light {name}`              | Set the theme followed while the system is light                     |
 | `:set scroll-step {pixels}`            | Set how far one `j` or `k` scrolls                                   |
 | `:set fontsize {points}`               | Set the type size books (EPUB, FB2) are laid out in (default 12)     |
-| `:set columns {n}`                     | Show _n_ pages side by side, 1 to 4 (default 1); `zc` switches 1 and 2 |
+| `:set columns {n}`                     | Show _n_ pages side by side in this tab, 1 to 4; `zc` switches 1 and 2 |
 | `:set hintchars {letters}`             | Set the letters labels are made of (default `asdfghjkl`)             |
 | `:set incsearch [true\|false]`         | Highlight the matches in view while a search is typed (default on)   |
 | `:set tabbar [true\|false]`            | Show the tab bar when more than one tab is open (default on)         |

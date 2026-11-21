@@ -13,6 +13,9 @@ use crate::num;
 /// The smallest and largest zoom, in screen pixels per point.
 const ZOOM_RANGE: (f32, f32) = (0.1, 10.0);
 
+/// The most pages that sit side by side.
+pub const MOST_COLUMNS: usize = 4;
+
 /// How much one zoom step enlarges the page.
 const ZOOM_STEP: f32 = 1.1;
 
@@ -87,9 +90,10 @@ impl Reader {
         reader
     }
 
-    /// Sets how many pages sit side by side, staying at the same place.
+    /// Sets how many pages sit side by side, from 1 to [`MOST_COLUMNS`],
+    /// staying at the same place.
     pub fn set_columns(&mut self, columns: usize) {
-        let columns = columns.max(1);
+        let columns = columns.clamp(1, MOST_COLUMNS);
         if columns == self.columns {
             return;
         }
@@ -100,9 +104,15 @@ impl Reader {
         self.go_to_place(place);
     }
 
+    /// How many pages sit side by side.
+    pub const fn columns(&self) -> usize {
+        self.columns
+    }
+
     /// Puts the view back the way it was left.
     pub fn restore(&mut self, view: View) {
         self.rotation = view.rotation;
+        self.columns = view.columns.clamp(1, MOST_COLUMNS);
         self.lay_out();
         self.zoom = clamp_zoom(view.zoom);
         self.fit = view.fit;
@@ -123,6 +133,7 @@ impl Reader {
         let trim = self.crops.is_some();
         View {
             extent: self.extent(),
+            columns: self.columns,
             x: self.x,
             y: self.y,
             zoom: self.zoom,
@@ -755,6 +766,12 @@ mod tests {
         reader.fit(Fit::Page);
         let width = 1200.0 / GAP.mul_add(1.0, 1200.0);
         assert!(close(reader.zoom(), width.min(1000.0 / PAGE.height)));
+        // Kept with the view, for the next time.
+        let view = reader.view(false);
+        assert_eq!(view.columns, 2);
+        let mut again = Reader::new(vec![PAGE; 10], WINDOW);
+        again.restore(view);
+        assert_eq!(again.view(false), view);
         reader.set_columns(1);
         assert_eq!(reader.current_page(), 4);
     }

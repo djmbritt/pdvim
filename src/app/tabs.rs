@@ -59,7 +59,7 @@ impl App {
         self.arriving = Some((path.clone(), place));
         self.notice = Notice::Info(format!("opening {}", tilde(&path)));
         Task::perform(
-            backend::open(path.clone(), None, self.flow()),
+            backend::open(path.clone(), None, self.flow_for(&path)),
             move |result| Message::Opened(request, path, result),
         )
     }

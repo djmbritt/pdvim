@@ -19,11 +19,11 @@ use crate::reader::Reader;
 const FONT_STEP: f32 = 1.0;
 
 impl App {
-    /// The page books are laid out on: the window, or one column of it,
+    /// The page a book is laid out on: the window, or one column of it,
     /// in the type set. A row of pages and the gaps between them fill the
     /// window's width exactly when the book fits it.
-    pub(super) fn flow(&self) -> Flow {
-        let columns = num::float(u32::try_from(self.columns).unwrap_or(1));
+    pub(super) fn flow(&self, columns: usize) -> Flow {
+        let columns = num::float(u32::try_from(columns.max(1)).unwrap_or(1));
         let gaps = GAP * (columns - 1.0);
         let width = (self.area.width - gaps) / columns;
         Flow::new(width, self.area.height, self.font_size)
@@ -35,13 +35,24 @@ impl App {
             .is_some_and(|document| document.flow.is_some())
     }
 
-    /// Sets how many pages sit side by side in every tab, laying books out
-    /// again to match.
+    /// The page a document about to open would be laid out on, if it is a
+    /// book: in as many columns as it was left in, or as a document not
+    /// seen before starts with.
+    pub(super) fn flow_for(&self, path: &Path) -> Flow {
+        let left = self
+            .history
+            .as_ref()
+            .and_then(|history| history.load(path).ok().flatten());
+        self.flow(left.map_or(self.fresh.columns, |view| view.columns))
+    }
+
+    /// Sets how many pages sit side by side in the tab in view, laying a
+    /// book out again to match.
     pub(super) fn set_columns(&mut self, columns: usize) -> Task<Message> {
-        self.columns = columns;
-        for document in self.tabs.iter_mut().filter_map(|tab| tab.document.as_mut()) {
-            document.reader.set_columns(columns);
-        }
+        let Some(document) = self.document_mut() else {
+            return Task::none();
+        };
+        document.reader.set_columns(columns);
         self.notice = Notice::Info(if columns == 1 {
             "one page to a row".to_owned()
         } else {
@@ -78,7 +89,6 @@ impl App {
     /// out on another, by opening it again in its tab. The book stays in
     /// view until the new layout is ready, and then shows the same place.
     pub(super) fn reflow(&mut self) -> Task<Message> {
-        let flow = self.flow();
         let mut tasks = Vec::new();
         for index in 0..self.tabs.len() {
             let Some(tab) = self.tabs.get(index) else {
@@ -87,6 +97,7 @@ impl App {
             let Some(document) = &tab.document else {
                 continue;
             };
+            let flow = self.flow(document.reader.columns());
             // Each layout waits for the one before it: a window dragged to
             // a new size is laid out for once the last is done.
             if tab.opening.is_some() || document.flow.is_none_or(|laid| laid == flow) {
@@ -128,6 +139,16 @@ impl App {
     }
 }
 
+/// Puts a reader's view back as it was left, moved to the same place if
+/// the book has been laid out anew, and says what view it took.
+pub(super) fn restore(reader: &mut Reader, view: View, laid_out: bool) -> View {
+    // Laid out as it was, to compare its height with the view's.
+    reader.set_columns(view.columns);
+    let view = refit(view, reader, laid_out);
+    reader.restore(view);
+    view
+}
+
 /// A view moved to the same place in a book laid out anew, which may have
 /// come out taller or shorter: as far down, as a share of the whole, and
 /// fitting the window's width, as a book always does.
@@ -166,6 +187,7 @@ mod tests {
             recolor: false,
             trim: false,
             extent,
+            columns: 1,
         }
     }
 

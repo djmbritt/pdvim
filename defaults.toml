@@ -47,9 +47,10 @@ scroll-step = 40
 # book, the zoom keys (+, -, =) make the type bigger or smaller instead.
 fontsize = 12
 
-# How many pages sit side by side, from 1 to 4: 2 shows two-page spreads,
-# and lays books out in two columns, each half the window wide. z c
-# switches between 1 and 2.
+# How many pages sit side by side in a document not opened before, from 1
+# to 4: 2 shows two-page spreads, and lays books out in two columns, each
+# half the window wide. z c and :set columns change only the tab in view,
+# and each document remembers its own.
 columns = 1
 
 # Ask "quit pdvim? (y/n)" before quitting: when the last tab is closed,

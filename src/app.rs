@@ -385,6 +385,8 @@ struct Fresh {
     recolor: bool,
     /// Whether the margins are trimmed.
     trim: bool,
+    /// How many pages sit side by side.
+    columns: usize,
 }
 
 /// A question the bottom line asks before doing something.
@@ -497,8 +499,6 @@ pub struct App {
     font_size: f32,
     /// The size of type set, which the zoom keys go back to in a book.
     font_base: f32,
-    /// How many pages sit side by side.
-    columns: usize,
     /// How a document with no view in the history starts.
     fresh: Fresh,
     /// When to ask, and when to save.
@@ -615,8 +615,10 @@ impl App {
             scroll_step: 40.0,
             font_size: 12.0,
             font_base: 12.0,
-            columns: 1,
-            fresh: Fresh::default(),
+            fresh: Fresh {
+                columns: 1,
+                ..Fresh::default()
+            },
             care: Care::default(),
             bars: bars::Bars::default(),
             quitting_after: None,
@@ -2053,7 +2055,12 @@ impl App {
                 self.font_base = size;
                 return self.set_font_size(size);
             }
-            Setting::Columns(columns) => return self.set_columns(columns),
+            Setting::Columns(columns) => {
+                if self.document().is_some() && !self.sourcing {
+                    return self.set_columns(columns);
+                }
+                self.fresh.columns = columns;
+            }
             Setting::ConfirmQuit(confirm) => self.care.confirm_quit = confirm,
             Setting::Autosave(autosave) => self.care.autosave = autosave,
             Setting::ConfirmTabClose(confirm) => self.care.confirm_tab_close = confirm,
@@ -2122,7 +2129,8 @@ impl App {
             }
             Action::ToggleBars => self.bars.toggle(),
             Action::ToggleColumns => {
-                return self.set_columns(if self.columns == 1 { 2 } else { 1 });
+                let columns = self.document().map_or(1, |document| document.reader.columns());
+                return self.set_columns(if columns == 1 { 2 } else { 1 });
             }
             Action::ToggleFullscreen => return self.bars.toggle_fullscreen(),
             Action::ZoomIn
@@ -2193,7 +2201,7 @@ impl App {
         tab.opening = Some((request, path.clone()));
         self.notice = Notice::Info(format!("opening {}", tilde(&path)));
         Task::perform(
-            backend::open(path.clone(), None, self.flow()),
+            backend::open(path.clone(), None, self.flow_for(&path)),
             move |result| Message::Opened(request, path, result),
         )
     }
@@ -2224,15 +2232,15 @@ impl App {
         let Fresh {
             mut recolor,
             mut trim,
+            columns,
         } = self.fresh;
         let mut returning = None;
         let mut notice = Notice::None;
         let laid_out = opened.flow.is_some();
-        reader.set_columns(self.columns);
+        reader.set_columns(columns);
         match self.starting_view(index, &path) {
             Some(Ok(Some(view))) => {
-                let view = reflow::refit(view, &reader, laid_out);
-                reader.restore(view);
+                let view = reflow::restore(&mut reader, view, laid_out);
                 recolor = view.recolor;
                 trim = view.trim;
                 // A trimmed view only makes sense once the margins are

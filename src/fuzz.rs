@@ -525,6 +525,7 @@ pub fn reader(data: &[u8]) {
                     recolor: false,
                     trim: false,
                     extent: f32::from(bytes.byte()) * 1000.0,
+                    columns: usize::from(bytes.byte()),
                 });
             }
         }

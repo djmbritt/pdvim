@@ -141,6 +141,8 @@ pub enum Action {
     },
     /// Ask for text in view to start selecting at, as flash.nvim's `s`.
     Flash,
+    /// Go to the first field of a form in view, to fill it in.
+    FirstField,
     /// Show the table of contents in a sidebar.
     ShowOutline,
     /// Wait for a letter, then put a mark there, or go to it.
@@ -217,6 +219,8 @@ bindable! {
         VisualLine = "visual-line", "Select whole lines from a line picked by label";
         /// As flash.nvim's `s`.
         Flash = "flash", "Type text in view, then its label, to start selecting there";
+        /// As `gi` in Vimium: tab then goes from field to field.
+        FirstField = "first-field", "Fill in the first field of a form in view; tab goes to the next";
         NextMarking = "next-marking", "Go to the next highlight or other marking";
         PreviousMarking = "previous-marking", "Go to the previous highlight or other marking";
         /// The marking last gone to with next-marking or previous-marking.
@@ -316,6 +320,7 @@ impl Binding {
             Self::Visual => Action::Visual { lines: false },
             Self::VisualLine => Action::Visual { lines: true },
             Self::Flash => Action::Flash,
+            Self::FirstField => Action::FirstField,
             Self::NextMarking => Action::Marking(MarkingAction::Step {
                 forward: true,
                 times: count.unwrap_or(1),

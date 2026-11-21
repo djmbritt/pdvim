@@ -77,7 +77,7 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
                 B::Help,
             ],
         ),
-        ("Links", &[B::FollowLink]),
+        ("Links and forms", &[B::FollowLink, B::FirstField]),
         (
             "Marks and jumps",
             &[B::SetMark, B::GoToMark, B::JumpBack, B::JumpForward],

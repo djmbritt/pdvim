@@ -850,6 +850,27 @@ impl App {
         {
             document.marking = None;
         }
+        if let Edit::Filled {
+            widget,
+            before,
+            after,
+            tick,
+        } = &edit
+        {
+            if *tick {
+                // Picking a button changes the others of its group.
+                document.fields = None;
+            } else if let Some((_, field)) = document
+                .fields
+                .iter_mut()
+                .flatten()
+                .find(|(_, field)| field.widget == *widget)
+            {
+                field
+                    .value
+                    .clone_from(if step == Step::Undo { before } else { after });
+            }
+        }
         match step {
             Step::Do | Step::Redo => document.undo.push(edit),
             Step::Undo => document.redo.push(edit),

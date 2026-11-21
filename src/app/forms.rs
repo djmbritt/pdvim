@@ -6,13 +6,22 @@ use iced::widget::canvas;
 use iced::{Font, Point, Size, Task};
 
 use super::{App, Document, Message, Notice, rectangle};
-use crate::backend::{Field, FieldKind, OFF};
+use crate::backend::{Annotation, Field, FieldKind, OFF};
 use crate::input::{Key, PromptBinding};
 use crate::keymap::{Counts, Fed};
 use crate::layout::Rect;
 use crate::theme::Colours;
 
 use super::markings::{Edit, Step};
+
+/// Which field to go to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FieldGoal {
+    /// The first in view, or the next below it.
+    First,
+    /// The one after, or before, this one, coming round at the ends.
+    Step { from: Annotation, forward: bool },
+}
 
 /// The most options a list shows at once.
 const LIST_ROWS: usize = 8;
@@ -39,6 +48,8 @@ pub(super) enum Editor {
         typed: String,
         selected: usize,
     },
+    /// A box or a button, gone to with tab, to tick with a key.
+    Toggle,
 }
 
 /// What a key comes to.
@@ -50,6 +61,14 @@ pub(super) enum Typed {
     Cancel,
     /// The clipboard is to be pasted.
     Paste,
+    /// The box is to be ticked or unticked.
+    Toggle,
+    /// On to the next field, or back to the one before; the field is to
+    /// hold this first, if anything.
+    Move {
+        forward: bool,
+        value: Option<String>,
+    },
 }
 
 impl Editor {
@@ -76,7 +95,7 @@ impl Editor {
     /// The options left once narrowed by what is typed.
     pub fn shown(&self) -> Vec<&String> {
         match self {
-            Self::Text { .. } => Vec::new(),
+            Self::Text { .. } | Self::Toggle => Vec::new(),
             Self::Choice { options, typed, .. } => fitting(options, typed),
         }
     }
@@ -85,8 +104,32 @@ impl Editor {
     pub fn feed(&mut self, fed: Fed<PromptBinding>) -> Typed {
         use PromptBinding as B;
         let shown = self.shown().len();
+        // Tab goes on to the next field, keeping what is in this one.
+        if let Fed::Bound(binding @ (B::Complete | B::CompletePrevious), _) = fed {
+            let value = match &*self {
+                Self::Text { text, .. } => Some(text.iter().collect()),
+                Self::Choice { .. } => self
+                    .shown()
+                    .get(self.selected())
+                    .map(|option| (*option).clone()),
+                Self::Toggle => None,
+            };
+            return Typed::Move {
+                forward: binding == B::Complete,
+                value,
+            };
+        }
         match (self, fed) {
             (_, Fed::Bound(B::Cancel, _)) => Typed::Cancel,
+            (Self::Toggle, Fed::Bound(B::Submit, _)) => Typed::Toggle,
+            (Self::Toggle, Fed::Unbound(keys))
+                if keys
+                    .iter()
+                    .any(|key| matches!(key, Key::Char(' ') | Key::ShiftSpace)) =>
+            {
+                Typed::Toggle
+            }
+            (Self::Toggle, _) => Typed::Stay,
             (_, Fed::Bound(B::Paste, _)) => Typed::Paste,
             (Self::Text { text, cursor }, fed) => edit_text(text, cursor, fed),
             (
@@ -97,6 +140,14 @@ impl Editor {
                 },
                 fed,
             ) => pick(options, typed, selected, shown, fed),
+        }
+    }
+
+    /// Which of the options shown is picked.
+    const fn selected(&self) -> usize {
+        match self {
+            Self::Choice { selected, .. } => *selected,
+            Self::Text { .. } | Self::Toggle => 0,
         }
     }
 
@@ -117,6 +168,7 @@ impl Editor {
                 typed.push_str(&line);
                 *selected = 0;
             }
+            Self::Toggle => {}
         }
     }
 }
@@ -195,10 +247,10 @@ fn pick(
             typed.clear();
             *selected = 0;
         }
-        Fed::Bound(B::Newer | B::Complete, _) => {
+        Fed::Bound(B::Newer, _) => {
             *selected = selected.saturating_add(1).checked_rem(shown).unwrap_or(0);
         }
-        Fed::Bound(B::Older | B::CompletePrevious, _) => {
+        Fed::Bound(B::Older, _) => {
             *selected = selected
                 .checked_sub(1)
                 .unwrap_or_else(|| shown.saturating_sub(1));
@@ -281,21 +333,143 @@ impl App {
                 self.field_edit = None;
                 Task::none()
             }
+            Typed::Toggle => self.toggle_focused(),
             Typed::Done(value) => {
                 let Some(FieldEdit { id, field, .. }) = self.field_edit.take() else {
                     return Task::none();
                 };
-                if value == field.value {
-                    return Task::none();
-                }
-                let edit = Edit::Filled {
-                    widget: field.widget,
-                    before: field.value,
-                    after: value,
-                    tick: false,
-                };
-                self.start_edit(id, edit, Step::Do)
+                self.put_in(id, field, value)
             }
+            Typed::Move { forward, value } => {
+                let Some(FieldEdit { id, field, .. }) = self.field_edit.take() else {
+                    return Task::none();
+                };
+                let from = field.widget;
+                let kept = value.map_or_else(Task::none, |value| self.put_in(id, field, value));
+                Task::batch([kept, self.go_to_field(FieldGoal::Step { from, forward })])
+            }
+        }
+    }
+
+    /// Fills in a field with what was typed or picked, if that is new.
+    fn put_in(&mut self, id: u64, field: Field, value: String) -> Task<Message> {
+        if value == field.value {
+            return Task::none();
+        }
+        let edit = Edit::Filled {
+            widget: field.widget,
+            before: field.value,
+            after: value,
+            tick: false,
+        };
+        self.start_edit(id, edit, Step::Do)
+    }
+
+    /// Ticks or unticks the box gone to, which stays gone to.
+    fn toggle_focused(&mut self) -> Task<Message> {
+        let Some(edit) = &mut self.field_edit else {
+            return Task::none();
+        };
+        let field = &mut edit.field;
+        let after = match &field.kind {
+            FieldKind::Checkbox { on } if field.value == *on => OFF.to_owned(),
+            FieldKind::Checkbox { on } | FieldKind::Radio { on } if field.value != *on => {
+                on.clone()
+            }
+            _ => return Task::none(),
+        };
+        let filled = Edit::Filled {
+            widget: field.widget,
+            before: std::mem::replace(&mut field.value, after.clone()),
+            after,
+            tick: true,
+        };
+        let id = edit.id;
+        self.start_edit(id, filled, Step::Do)
+    }
+
+    /// Goes to a field of a form, to fill it in: the first in view, or
+    /// the one after or before another. The fields are found first, when
+    /// they have not been.
+    pub(super) fn go_to_field(&mut self, goal: FieldGoal) -> Task<Message> {
+        self.pending = crate::keymap::Pending::new();
+        let Some(document) = self.document() else {
+            return Task::none();
+        };
+        let id = document.id;
+        let Some(fields) = &document.fields else {
+            let found = document.backend.fields();
+            self.fields_wanted = Some((id, goal));
+            return Task::perform(found, move |result| Message::FieldsFound(id, result));
+        };
+        if fields.is_empty() {
+            self.notice = Notice::Info("no fields to fill in".to_owned());
+            return Task::none();
+        }
+        let reader = &document.reader;
+        let index = match goal {
+            // Not above the view: in it, or else the next below it.
+            FieldGoal::First => fields
+                .iter()
+                .position(|(area, field)| {
+                    reader
+                        .area_on_screen(field.widget.0, *area)
+                        .is_some_and(|area| area.bottom > 0.0)
+                })
+                .unwrap_or(0),
+            FieldGoal::Step { from, forward } => {
+                let count = fields.len();
+                fields
+                    .iter()
+                    .position(|(_, field)| field.widget == from)
+                    .map_or(0, |index| {
+                        if forward {
+                            index.saturating_add(1).checked_rem(count).unwrap_or(0)
+                        } else {
+                            index
+                                .checked_sub(1)
+                                .unwrap_or_else(|| count.saturating_sub(1))
+                        }
+                    })
+            }
+        };
+        let Some((area, field)) = fields.get(index).cloned() else {
+            return Task::none();
+        };
+        let editor = match &field.kind {
+            FieldKind::Text => Editor::text(&field.value),
+            FieldKind::Choice(options) => Editor::choice(options.clone(), &field.value),
+            FieldKind::Checkbox { .. } | FieldKind::Radio { .. } => Editor::Toggle,
+        };
+        self.start_field(id, editor, field, area);
+        Task::none()
+    }
+
+    /// Keeps the fields found in a document, and goes to the one wanted.
+    pub(super) fn on_fields(
+        &mut self,
+        id: u64,
+        result: Result<Vec<(Rect, Field)>, crate::backend::Error>,
+    ) -> Task<Message> {
+        let wanted = self
+            .fields_wanted
+            .take()
+            .filter(|(wanted, _)| *wanted == id);
+        let Some(document) = super::document_by_id(&mut self.tabs, id) else {
+            return Task::none();
+        };
+        match result {
+            Ok(fields) => document.fields = Some(fields),
+            Err(error) => {
+                self.notice = Notice::Error(error.to_string());
+                return Task::none();
+            }
+        }
+        match wanted {
+            Some((_, goal)) if self.document().is_some_and(|document| document.id == id) => {
+                self.go_to_field(goal)
+            }
+            _ => Task::none(),
         }
     }
 
@@ -313,19 +487,21 @@ impl App {
         let edit = self.field_edit.as_ref()?;
         let key = |binding| self.keymaps.prompt.first(binding);
         let how = match edit.editor {
-            Editor::Text { .. } => format!(
-                "{} fills it in, {} leaves it as it was",
-                key(PromptBinding::Submit),
-                key(PromptBinding::Cancel),
-            ),
+            Editor::Text { .. } => format!("{} fills it in", key(PromptBinding::Submit)),
             Editor::Choice { .. } => format!(
-                "type to narrow, {}/{} to move, {} picks, {} leaves it",
+                "type to narrow, {}/{} to move, {} picks",
                 key(PromptBinding::Newer),
                 key(PromptBinding::Older),
                 key(PromptBinding::Submit),
-                key(PromptBinding::Cancel),
             ),
+            Editor::Toggle => format!("space or {} ticks it", key(PromptBinding::Submit)),
         };
+        let how = format!(
+            "{how}, {}/{} to the next/previous field, {} leaves it",
+            key(PromptBinding::Complete),
+            key(PromptBinding::CompletePrevious),
+            key(PromptBinding::Cancel),
+        );
         Some(format!("-- FIELD -- {}    {how}", edit.field.name))
     }
 }
@@ -348,6 +524,17 @@ pub(super) fn draw(
         return;
     };
     let field = rectangle(area);
+    let stroke = canvas::Stroke::default()
+        .with_color(super::CURSOR)
+        .with_width(2.0);
+    // A box keeps its look, framed.
+    if edit.editor == Editor::Toggle {
+        frame.stroke(
+            &canvas::Path::rectangle(field.position(), field.size()),
+            stroke,
+        );
+        return;
+    }
     let size = (field.height * 0.62).clamp(8.0, 28.0);
     // A monospaced font, so that the cursor goes where the letters are.
     let width = size * 0.6;
@@ -363,6 +550,7 @@ pub(super) fn draw(
             let cursor = text.len();
             (text, cursor)
         }
+        Editor::Toggle => (Vec::new(), 0),
     };
     // The text scrolls along so that the cursor stays in the field.
     let first = cursor.saturating_sub(fits);
@@ -381,9 +569,6 @@ pub(super) fn draw(
         Size::new(2.0, size * 1.2),
         chrome.bar_text,
     );
-    let stroke = canvas::Stroke::default()
-        .with_color(super::CURSOR)
-        .with_width(2.0);
     frame.stroke(
         &canvas::Path::rectangle(field.position(), field.size()),
         stroke,
@@ -572,6 +757,43 @@ mod tests {
         assert_eq!(bound(&mut editor, PromptBinding::Submit), Typed::Stay);
         bound(&mut editor, PromptBinding::RubOut);
         assert_eq!(editor.shown().len(), 2);
+    }
+
+    #[test]
+    fn tab_goes_on_keeping_what_is_in_the_field() {
+        let mut text = Editor::text("Ann");
+        keys(&mut text, &[Key::Char('e')]);
+        assert_eq!(
+            bound(&mut text, PromptBinding::Complete),
+            Typed::Move {
+                forward: true,
+                value: Some("Anne".to_owned())
+            }
+        );
+        let mut list = Editor::choice(countries(), "Germany");
+        bound(&mut list, PromptBinding::Newer);
+        assert_eq!(
+            bound(&mut list, PromptBinding::CompletePrevious),
+            Typed::Move {
+                forward: false,
+                value: Some("New Zealand".to_owned())
+            }
+        );
+        let mut tick = Editor::Toggle;
+        assert_eq!(keys_last(&mut tick, Key::Char(' ')), Typed::Toggle);
+        assert_eq!(bound(&mut tick, PromptBinding::Submit), Typed::Toggle);
+        assert_eq!(keys_last(&mut tick, Key::Char('x')), Typed::Stay);
+        assert_eq!(
+            bound(&mut tick, PromptBinding::Complete),
+            Typed::Move {
+                forward: true,
+                value: None
+            }
+        );
+    }
+
+    fn keys_last(editor: &mut Editor, key: Key) -> Typed {
+        editor.feed(Fed::Unbound(vec![key]))
     }
 
     #[test]

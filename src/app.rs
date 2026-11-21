@@ -132,6 +132,9 @@ pub enum Message {
     /// The markings of the document with this number were found, as it
     /// was at this edition, or could not be; and what they were wanted for.
     MarkingsFound(u64, u32, Wanted, Result<Vec<Marking>, backend::Error>),
+    /// The fields of a form in the document with this number were found,
+    /// or could not be.
+    FieldsFound(u64, Result<Vec<(Rect, backend::Field)>, backend::Error>),
     /// The changes to the document with this number were saved, or not:
     /// into its own file or as another, the number of changes made by then,
     /// and what to do next.
@@ -236,6 +239,8 @@ struct Document {
     chapters: Option<Vec<backend::Chapter>>,
     /// The links on each page whose links have been asked for.
     links: HashMap<u32, Vec<Link>>,
+    /// The fields of its forms, in reading order, once found.
+    fields: Option<Vec<(Rect, backend::Field)>>,
     /// The lines of text on each page read so far.
     text: visual::Text,
     /// The pages whose text is being read right now.
@@ -489,6 +494,8 @@ pub struct App {
     note_editing: Option<(u64, Annotation)>,
     /// The field of a form being filled in, over the page.
     field_edit: Option<forms::FieldEdit>,
+    /// The document whose fields are being found, to go to one of them.
+    fields_wanted: Option<(u64, forms::FieldGoal)>,
     /// Whether the next key is the letter of a mark to set, or to go to.
     awaiting_mark: Option<MarkVerb>,
     /// The marks A to Z: a document and a place in it. Kept in the history
@@ -571,6 +578,7 @@ impl App {
             note_at: None,
             note_editing: None,
             field_edit: None,
+            fields_wanted: None,
             global_marks: HashMap::new(),
             arriving: None,
         };
@@ -722,6 +730,7 @@ impl App {
             Message::Saved(id, target, changes, result, after) => {
                 self.on_saved(id, target.as_deref(), changes, result, after)
             }
+            Message::FieldsFound(id, result) => self.on_fields(id, result),
             Message::OutlineFound(id, result) => {
                 self.on_outline(id, result);
                 Task::none()
@@ -2028,20 +2037,21 @@ impl App {
     }
 
     /// Carries out an action from the keyboard.
+    /// Goes to the next tab, or back, or to the one with a number.
+    fn switch_tab(&mut self, action: Action) {
+        match action {
+            Action::NextTab => self.step_tab(1),
+            Action::PreviousTab(count) => self.step_tab(i64::from(count).saturating_neg()),
+            Action::GotoTab(tab) => self.go_to_tab(index(tab)),
+            _ => {}
+        }
+    }
+
     fn act(&mut self, action: Action) -> Task<Message> {
         match action {
             Action::Quit => return self.close_tab(),
-            Action::NextTab => {
-                self.step_tab(1);
-                return Task::none();
-            }
-            Action::PreviousTab(count) => {
-                let back = i64::from(count).saturating_neg();
-                self.step_tab(back);
-                return Task::none();
-            }
-            Action::GotoTab(tab) => {
-                self.go_to_tab(index(tab));
+            Action::NextTab | Action::PreviousTab(_) | Action::GotoTab(_) => {
+                self.switch_tab(action);
                 return Task::none();
             }
             Action::OpenPrompt(prompt) => {
@@ -2061,6 +2071,7 @@ impl App {
             Action::Marking(what) => return self.on_marking_action(what),
             Action::Visual { lines } => return self.start_visual(lines),
             Action::Flash => return self.start_flash(),
+            Action::FirstField => return self.go_to_field(forms::FieldGoal::First),
             Action::ShowOutline => return self.show_outline(),
             Action::Mark(verb) => {
                 self.awaiting_mark = Some(verb);
@@ -2117,6 +2128,7 @@ impl App {
             | Action::FollowLink
             | Action::Visual { .. }
             | Action::Flash
+            | Action::FirstField
             | Action::Undo
             | Action::Redo
             | Action::Marking(_)
@@ -2261,6 +2273,7 @@ impl App {
             results: Results::default(),
             chapters: None,
             links: HashMap::new(),
+            fields: None,
             text: HashMap::new(),
             reading: std::collections::HashSet::new(),
             jumps: Jumps::default(),

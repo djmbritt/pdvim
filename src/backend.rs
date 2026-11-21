@@ -340,6 +340,7 @@ enum Request {
         oneshot::Sender<Result<Option<String>, Error>>,
     ),
     Fill(Annotation, String, oneshot::Sender<Result<String, Error>>),
+    Fields(oneshot::Sender<Result<Vec<(Rect, Field)>, Error>>),
     Markings(oneshot::Sender<Result<Vec<Marking>, Error>>),
     Save(Option<PathBuf>, oneshot::Sender<Result<(), Error>>),
     Outline(oneshot::Sender<Result<Vec<Chapter>, Error>>),
@@ -576,6 +577,14 @@ impl Backend {
 
     /// Sets the note on a marking: the text of a note, or the comment on
     /// another kind; empty for none. Answers with what it was.
+    /// Every field of a form in the document that can be filled in, page by
+    /// page, in reading order, each with its area.
+    pub fn fields(&self) -> impl Future<Output = Result<Vec<(Rect, Field)>, Error>> + use<> {
+        let (reply, answer) = oneshot::channel();
+        let _ = self.requests.send(Request::Fields(reply));
+        async move { answer.await.unwrap_or(Err(Error::Closed)) }
+    }
+
     /// Sets the value of a field of a form. Answers with the value it had.
     pub fn fill(
         &self,
@@ -1013,8 +1022,27 @@ fn page_links(document: &Document, number: u32) -> Result<Vec<Link>, mupdf::Erro
     if !document.is_pdf() {
         return Ok(links);
     }
-    let page = mupdf::pdf::PdfPage::try_from(page)?;
     let mut links = links;
+    links.extend(
+        page_fields(page, bounds, number)?
+            .into_iter()
+            .map(|(area, field)| Link {
+                area,
+                target: Target::Field(field),
+            }),
+    );
+    Ok(links)
+}
+
+/// The fields of a form on a page that can be filled in, each with its
+/// area, in the order the page lists them.
+fn page_fields(
+    page: mupdf::Page,
+    bounds: mupdf::Rect,
+    number: u32,
+) -> Result<Vec<(Rect, Field)>, mupdf::Error> {
+    let page = mupdf::pdf::PdfPage::try_from(page)?;
+    let mut fields = Vec::new();
     for widget in page.widgets() {
         let Some(kind) = field_kind(&widget)? else {
             continue;
@@ -1024,17 +1052,34 @@ fn page_links(document: &Document, number: u32) -> Result<Vec<Link>, mupdf::Erro
             .or(widget.name()?)
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| "field".to_owned());
-        links.push(Link {
-            area: relative(widget.annotation().bounds()?, bounds),
-            target: Target::Field(Field {
+        fields.push((
+            relative(widget.annotation().bounds()?, bounds),
+            Field {
                 widget: (number, widget.xref()?),
                 kind,
                 value: widget.value()?.unwrap_or_default(),
                 name,
-            }),
-        });
+            },
+        ));
     }
-    Ok(links)
+    Ok(fields)
+}
+
+/// The fields on a page, in reading order: down the page, and along each
+/// line.
+fn fields_in_order(document: &Document, number: u32) -> Result<Vec<(Rect, Field)>, mupdf::Error> {
+    if !document.is_pdf() {
+        return Ok(Vec::new());
+    }
+    let page = document.load_page(page_number(number))?;
+    let bounds = page.bounds()?;
+    let mut fields = page_fields(page, bounds, number)?;
+    fields.sort_by(|(one, _), (other, _)| {
+        one.top
+            .total_cmp(&other.top)
+            .then(one.left.total_cmp(&other.left))
+    });
+    Ok(fields)
 }
 
 /// An area of a page as measured from its top-left corner.
@@ -1650,6 +1695,12 @@ impl Worker {
                 self.recordings.clear();
                 let _ = reply.send(restore_in(&self.document, &markings));
             }
+            Request::Fields(reply) => {
+                let _ = reply.send(
+                    self.fields()
+                        .map_err(|error| Error::Form(error.to_string())),
+                );
+            }
             Request::Fill(widget, value, reply) => {
                 self.recordings.clear();
                 let _ = reply.send(fill_in(&self.document, widget, &value));
@@ -1756,6 +1807,17 @@ impl Worker {
             markings.extend(on_page);
         }
         Ok(markings)
+    }
+
+    /// Finds the fields of every page, in reading order.
+    fn fields(&mut self) -> Result<Vec<(Rect, Field)>, mupdf::Error> {
+        let count = u32::try_from(self.document.page_count()?).unwrap_or(0);
+        let mut fields = Vec::new();
+        for number in 0..count {
+            self.render_waiting();
+            fields.extend(fields_in_order(&self.document, number)?);
+        }
+        Ok(fields)
     }
 
     /// Finds the content of every page.

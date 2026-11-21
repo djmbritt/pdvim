@@ -306,6 +306,7 @@ The box at the left of the status bar always names the mode, which says what the
 | `:note {text}`                         | Put a note with that text in the margin at the top of the window     |
 | `:noh[lsearch]`                        | Hide search highlights                                               |
 | `:!{command}`                          | Run a shell command; `%` is the document's file                      |
+| `:export[!] {file}`                    | Save the page in view as a `.png` image or `.svg` drawing            |
 | `:set recolor [true\|false\|auto]`     | Turn recoloring on or off, or follow the system's theme (default)    |
 | `:set trim [true\|false]`              | Turn margin trimming on or off                                       |
 | `:set recolor-lightcolor #rrggbb`      | Set the color white paper becomes when recolored (default: theme's)  |
@@ -350,6 +351,8 @@ The box at the left of the status bar always names the mode, which says what the
 | `:wqa[ll]`, `:xa[ll]`                  | Save every document, then quit                                       |
 
 If you name a boolean setting without a value, it is turned on.
+
+`:export page.png` saves the page in view as an image the size it is shown at, and `:export page.svg` as a drawing, each turned as it is shown, with its markings and in its own colours, recolored or not. A file that is there already is kept, unless you write `:export!`. To copy the page's text, press `yp`.
 
 `:!` runs the rest of the line in the shell (`sh -c`, or `cmd /C` on Windows), `;` and all, with each `%` standing for the file of the document in view, quoted so that any path works; `\%` is a `%` itself. `:!xdg-open %` opens the document in your default program for it, and `:!cp % ~/papers/` copies it. pdvim goes on while the command runs, and shows the last line it printed in the status bar once it finishes, or its exit status and error if it fails.
 

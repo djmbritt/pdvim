@@ -73,7 +73,7 @@ pub fn complete(line: &str) -> Completion {
         Some("theme") if words_before == 0 => {
             words(last_word, std::iter::once("auto").chain(Theme::names()))
         }
-        Some("open" | "tabedit" | "tabnew") => {
+        Some("open" | "tabedit" | "tabnew" | "export") => {
             return Completion {
                 start: after,
                 candidates: paths(rest),

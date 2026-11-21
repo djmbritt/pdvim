@@ -17,6 +17,8 @@ use iced::futures::channel::oneshot;
 pub enum Error {
     #[error("no file for % to stand for")]
     NoFile,
+    #[error("{0} is not a name % can stand for")]
+    NotUnicode(String),
     #[error("{0}")]
     NotRun(String),
 }
@@ -42,7 +44,15 @@ pub fn expand(command: &str, file: Option<&Path>) -> Result<String, Error> {
                 characters.next();
                 expanded.push('%');
             }
-            '%' => expanded.push_str(&quote(&file.ok_or(Error::NoFile)?.to_string_lossy())),
+            '%' => {
+                let file = file.ok_or(Error::NoFile)?;
+                // A path that is not Unicode would be written with
+                // replacement characters, and so name some other file.
+                let path = file
+                    .to_str()
+                    .ok_or_else(|| Error::NotUnicode(file.display().to_string()))?;
+                expanded.push_str(&quote(path));
+            }
             _ => expanded.push(character),
         }
     }
@@ -142,6 +152,21 @@ mod tests {
         );
         assert_eq!(expand("ls", None), Ok("ls".to_owned()));
         assert_eq!(expand("ls %", None), Err(Error::NoFile));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_whose_name_is_not_unicode_is_not_guessed_at() {
+        use std::os::unix::ffi::OsStrExt;
+        let file = Path::new(std::ffi::OsStr::from_bytes(b"/books/caf\xe9.pdf"));
+        assert!(matches!(
+            expand("cp % /tmp/", Some(file)),
+            Err(Error::NotUnicode(_))
+        ));
+        assert_eq!(
+            expand(r"echo 100\%", Some(file)),
+            Ok("echo 100%".to_owned())
+        );
     }
 
     #[cfg(not(windows))]

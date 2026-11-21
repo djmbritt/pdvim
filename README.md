@@ -52,7 +52,7 @@ The packages install the manual pages too: `man pdvim` covers the keys and comma
 
 ### Building from source
 
-pdvim needs Rust 1.85 or newer (the 2024 edition). The `mupdf` crate builds MuPDF from source, so you also need a C toolchain and `libclang`.
+pdvim needs Rust 1.90 or newer. The `mupdf` crate builds MuPDF from source, so you also need a C toolchain and `libclang`.
 
 ```sh
 cargo build --release

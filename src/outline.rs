@@ -301,10 +301,12 @@ pub fn starts(chapters: &[Chapter]) -> Vec<Start> {
             })
         })
         .collect();
+    // A total order even where a document gives a position that is not a
+    // number: sorting by an order that is not total can panic.
     starts.sort_by(|one, other| {
-        (one.page, one.top.unwrap_or(0.0))
-            .partial_cmp(&(other.page, other.top.unwrap_or(0.0)))
-            .unwrap_or(std::cmp::Ordering::Equal)
+        one.page
+            .cmp(&other.page)
+            .then_with(|| one.top.unwrap_or(0.0).total_cmp(&other.top.unwrap_or(0.0)))
     });
     starts
 }
@@ -353,6 +355,28 @@ pub fn step(offsets: &[f32], forward: bool, times: u32) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn starts_are_sorted_even_where_a_place_is_not_a_number() {
+        let chapter = |title: &str, page, top| Chapter {
+            title: title.into(),
+            page: Some(page),
+            top,
+            sections: Vec::new(),
+        };
+        let chapters: Vec<Chapter> = (0..40)
+            .map(|index| {
+                let top = match index % 3 {
+                    0 => Some(f32::NAN),
+                    1 => Some(f32::from(u8::try_from(index).unwrap())),
+                    _ => None,
+                };
+                chapter(&index.to_string(), 40 - index, top)
+            })
+            .collect();
+        let pages: Vec<u32> = starts(&chapters).iter().map(|start| start.page).collect();
+        assert!(pages.is_sorted(), "{pages:?}");
+    }
 
     #[test]
     fn chapters_start_in_reading_order() {

@@ -207,8 +207,10 @@ impl Visual {
             Binding::Squiggly => return Outcome::Mark(MarkupKind::Squiggly, self.areas(text)),
             Binding::Unmark => return Outcome::Unmark(self.areas(text)),
             Binding::Note => {
-                return character(text, self.cursor)
-                    .map_or(Outcome::Leave, |area| Outcome::Note(self.cursor.page, area));
+                // The note goes at the start of the cursor's sentence.
+                let start = sentence_start(text, self.cursor);
+                return character(text, start)
+                    .map_or(Outcome::Leave, |area| Outcome::Note(start.page, area));
             }
             Binding::ChangeNote => {
                 return character(text, self.cursor).map_or(Outcome::Leave, |area| {
@@ -465,6 +467,49 @@ impl Visual {
 /// or after an initial does not end a sentence. Sentences that start a
 /// line are left out, as the line's start is labelled already.
 pub fn sentence_starts(lines: &[TextLine]) -> Vec<(usize, usize)> {
+    every_sentence_start(lines)
+        .into_iter()
+        .filter(|&(_, index)| index > 0)
+        .collect()
+}
+
+/// The start of the sentence a spot is in: the last sentence to start on
+/// its page at or before it, or else the page's first character.
+pub fn sentence_start(text: &Text, at: Spot) -> Spot {
+    let Some(lines) = text.get(&at.page) else {
+        return at;
+    };
+    let spot = |(line, index)| Spot {
+        page: at.page,
+        line,
+        index,
+    };
+    every_sentence_start(lines)
+        .into_iter()
+        .map(spot)
+        .take_while(|start| *start <= at)
+        .last()
+        .or_else(|| {
+            lines
+                .iter()
+                .enumerate()
+                .find_map(|(line, text)| {
+                    let index = text
+                        .chars
+                        .iter()
+                        .position(|character| !character.character.is_whitespace())?;
+                    Some(spot((line, index)))
+                })
+                .filter(|start| *start <= at)
+        })
+        .unwrap_or(at)
+}
+
+/// Where sentences start on a page, those that start a line among them,
+/// and the page's first if it starts one. A line after a short one, such
+/// as a heading or a paragraph's last line, starts one too, if it starts
+/// with a capital.
+fn every_sentence_start(lines: &[TextLine]) -> Vec<(usize, usize)> {
     const ENDS: &[char] = &['.', '!', '?', '\u{2026}'];
     const CLOSERS: &[char] = &['"', '\'', ')', ']', '\u{201d}', '\u{2019}', '\u{bb}'];
     const OPENERS: &[char] = &['"', '\'', '(', '[', '\u{201c}', '\u{2018}', '\u{ab}'];
@@ -477,11 +522,26 @@ pub fn sentence_starts(lines: &[TextLine]) -> Vec<(usize, usize)> {
     // sentence's.
     let mut word = String::new();
     // Whether the text so far ends a sentence, and whether a space or a
-    // line break has come since.
-    let mut ended = false;
-    let mut gap = false;
+    // line break has come since. A page starts as if after one.
+    let mut ended = true;
+    let mut gap = true;
+    let (left, right) = lines
+        .iter()
+        .flat_map(|line| &line.chars)
+        .fold((f32::INFINITY, f32::NEG_INFINITY), |(left, right), character| {
+            (left.min(character.area.left), right.max(character.area.right))
+        });
+    // A line that stops this far short of the text's right edge ends what
+    // it is in.
+    let short = (right - left).mul_add(-0.15, right);
     for (row, line) in lines.iter().enumerate() {
-        if ended {
+        let after_short = row
+            .checked_sub(1)
+            .and_then(|above| lines.get(above))
+            .and_then(|above| above.chars.last())
+            .is_some_and(|last| last.area.right < short);
+        if ended || after_short {
+            ended = true;
             gap = true;
         }
         for (index, text) in line.chars.iter().enumerate() {
@@ -494,7 +554,7 @@ pub fn sentence_starts(lines: &[TextLine]) -> Vec<(usize, usize)> {
             let opens = character.is_uppercase()
                 || character.is_ascii_digit()
                 || OPENERS.contains(&character);
-            if ended && gap && opens && index > 0 {
+            if ended && gap && opens {
                 starts.push((row, index));
             }
             let shortened = character == '.'
@@ -649,6 +709,34 @@ mod tests {
             sentence_starts(&lines),
             vec![(0, 15), (0, 25), (1, 5), (2, 6), (2, 15)]
         );
+    }
+
+    #[test]
+    fn a_spot_is_in_the_sentence_started_last() {
+        let mut text = Text::new();
+        text.insert(
+            0,
+            page(&[
+                "the end. First one goes",
+                "on here. Second goes",
+                "on and on",
+                "Heading",
+                "Para starts here and",
+                "goes on.",
+            ]),
+        );
+        let start = |line, index| sentence_start(&text, Spot { page: 0, line, index });
+        // Before any sentence starts, the page's first character.
+        assert_eq!(start(0, 4), Spot { page: 0, line: 0, index: 0 });
+        // "First" starts at 9; "on here" is still in that sentence.
+        assert_eq!(start(0, 9), Spot { page: 0, line: 0, index: 9 });
+        assert_eq!(start(1, 3), Spot { page: 0, line: 0, index: 9 });
+        // "Second" starts at 9 of the second line.
+        assert_eq!(start(2, 4), Spot { page: 0, line: 1, index: 9 });
+        // A line after a short one starts a sentence: the heading, and
+        // the paragraph after it.
+        assert_eq!(start(3, 2), Spot { page: 0, line: 3, index: 0 });
+        assert_eq!(start(5, 2), Spot { page: 0, line: 4, index: 0 });
     }
 
     /// Lines of text, each character ten points wide and each line twenty

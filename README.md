@@ -20,7 +20,8 @@ pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.r
 - Selecting and copying text from the keyboard, with a visual mode like vim's
 - A sidebar with the table of contents, to go to a chapter
 - Marks (`ma`, `` `a ``, and `A`–`Z` across documents) and a jump list (`Ctrl-o`, `Ctrl-i`), as in vim
-- Following links from the keyboard: `f` labels every link, highlight and note in view, and typing a label follows the link or picks the marking
+- Following links from the keyboard: `f` labels every link, form field, highlight and note in view, and typing a label follows the link, fills in the field, or picks the marking
+- Filling in PDF forms: text fields and lists at the prompt, and boxes ticked with a label
 - A cheat sheet of the key bindings in force, with `:help`
 - `Tab` completion of commands, settings, and file paths in the command prompt, and `Up` / `Down` to recall earlier commands and searches
 - Tabs, with vim's `gt` / `gT`, `Ctrl-Tab` / `Ctrl-Shift-Tab`, and `:tabedit`
@@ -121,9 +122,11 @@ The mouse wheel also scrolls.
 
 | Key | Action                   |
 | --- | ------------------------ |
-| `f` | Label every link, highlight and note in view |
+| `f` | Label every link, form field, highlight and note in view |
 
 After `f`, each link in view is highlighted and gets a label of two letters. Type a label to follow its link. A link to another place in the document goes there. A web or mail link (`http`, `https`, `mailto`) opens in your default program; links to anything else, such as files, are not followed. Highlights, notes and the other markings get labels too, just left of them; typing one picks that marking as `]h` would, so its note shows and `d` and `c` work on it. `Backspace` takes back the first letter, and `Esc` puts the labels away.
+
+The fields of a PDF form get labels too, so `f` is also how you fill one in. Picking a checkbox ticks or unticks it, and picking a radio button picks it. Picking a text field opens the prompt after the field's name, with what the field holds, to change and `Enter`; `Ctrl-u` clears it. For a list or a drop-down, `Tab` offers the values it takes that start as what you've typed, or that contain it, and goes through them. Read-only fields, buttons and signatures get no label. The form's scripts are not run. Filling in a field is a change like a highlight: `u` takes it back, `:w` saves it into the file, and pdvim asks before quitting with it unsaved.
 
 ### Marks and jumps
 

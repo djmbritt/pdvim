@@ -48,6 +48,14 @@ pub enum Edit {
         before: Option<String>,
         after: String,
     },
+    /// A field of a form was filled in: what it held, and holds; and
+    /// whether it is a box or a button, ticked rather than typed in.
+    Filled {
+        widget: Annotation,
+        before: String,
+        after: String,
+        tick: bool,
+    },
 }
 
 impl Edit {
@@ -60,6 +68,7 @@ impl Edit {
                 many => format!("{} markings", many.len()),
             },
             Self::Renoted { .. } => "note".to_owned(),
+            Self::Filled { .. } => "field".to_owned(),
         }
     }
 
@@ -84,6 +93,8 @@ impl Edit {
                 }
             }
             Self::Renoted { annotation, .. } => *annotation = new(*annotation),
+            // A widget of a form is never taken away and put back.
+            Self::Filled { .. } => {}
         }
     }
 
@@ -730,6 +741,27 @@ impl App {
                         after,
                     })
                 }
+                (
+                    Edit::Filled {
+                        widget,
+                        before,
+                        after,
+                        tick,
+                    },
+                    step,
+                ) => {
+                    let undoing = step == Step::Undo;
+                    let value = if undoing { &before } else { &after };
+                    let held = backend.fill(widget, value.clone()).await?;
+                    // Done afresh, what it held is what undo goes back to.
+                    let before = if undoing { before } else { held };
+                    Ok(Edit::Filled {
+                        widget,
+                        before,
+                        after,
+                        tick,
+                    })
+                }
                 (Edit::Unmarked(mut markings), Step::Undo) => {
                     let annotations = backend.restore(markings.clone()).await?;
                     for (marking, (_, xref)) in markings.iter_mut().zip(annotations) {
@@ -781,6 +813,12 @@ impl App {
             }
             (Edit::Renoted { .. }, Step::Do | Step::Redo) => "note changed".to_owned(),
             (Edit::Renoted { .. }, Step::Undo) => "note changed back".to_owned(),
+            (Edit::Filled { after, tick, .. }, Step::Do | Step::Redo) => {
+                super::forms::filled(after, *tick)
+            }
+            (Edit::Filled { before, tick, .. }, Step::Undo) => {
+                format!("{}, as it was", super::forms::filled(before, *tick))
+            }
         };
         if step == Step::Do {
             // A state that was saved and then undone is gone for good once
@@ -819,6 +857,8 @@ impl App {
         // Every page is rendered afresh to show the change.
         document.edition = document.edition.saturating_add(1);
         document.markings = None;
+        // The fields found with the links hold what they held before.
+        document.links.clear();
         let wanted_again = document.marking.is_some();
         let in_view = self.document().is_some_and(|document| document.id == id);
         let refresh =

@@ -65,6 +65,7 @@ impl App {
         // A note asked for from visual mode is given up with its prompt.
         self.note_at = None;
         self.note_editing = None;
+        self.field_editing = None;
         if prompt != Prompt::Password {
             return Task::none();
         }

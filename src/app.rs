@@ -35,6 +35,7 @@ use crate::visual::{self, Kind, Spot, Visual};
 
 mod chapters;
 mod flash;
+mod forms;
 mod info;
 mod markings;
 mod unlock;
@@ -486,6 +487,9 @@ pub struct App {
     /// The marking whose note is being changed at the prompt: the document
     /// and the annotation.
     note_editing: Option<(u64, Annotation)>,
+    /// The field of a form whose value is being typed at the prompt: the
+    /// document, and the field as it was.
+    field_editing: Option<(u64, backend::Field)>,
     /// Whether the next key is the letter of a mark to set, or to go to.
     awaiting_mark: Option<MarkVerb>,
     /// The marks A to Z: a document and a place in it. Kept in the history
@@ -567,6 +571,7 @@ impl App {
             chapter_wanted: None,
             note_at: None,
             note_editing: None,
+            field_editing: None,
             global_marks: HashMap::new(),
             arriving: None,
         };
@@ -780,8 +785,7 @@ impl App {
                     self.on_line_hint(kind, outcome)
                 } else if let Some(hints) = &mut self.hints {
                     let outcome = hints.feed(key, &self.keymaps.hints);
-                    self.on_hint(outcome);
-                    Task::none()
+                    self.on_hint(outcome)
                 } else if let Some(hints) = &mut self.marking_hints {
                     let outcome = hints.feed(key, &self.keymaps.hints);
                     self.on_marking_hint(outcome);
@@ -911,12 +915,12 @@ impl App {
                 .collect(),
         );
         if self.hints.is_none() {
-            self.notice = Notice::Info("no links or markings in view".to_owned());
+            self.notice = Notice::Info("no links, fields or markings in view".to_owned());
         }
     }
 
     /// Acts on a key typed while the links are labelled.
-    fn on_hint(&mut self, outcome: Outcome<Labelled>) {
+    fn on_hint(&mut self, outcome: Outcome<Labelled>) -> Task<Message> {
         match outcome {
             Outcome::Wait => {}
             Outcome::Cancel => self.hints = None,
@@ -930,7 +934,7 @@ impl App {
                     Labelled::Link(link) => link,
                     Labelled::Marking(marking) => {
                         self.pick_marking(&marking);
-                        return;
+                        return Task::none();
                     }
                 };
                 match link.target {
@@ -946,9 +950,11 @@ impl App {
                             Err(error) => Notice::Error(format!("cannot open {uri}: {error}")),
                         };
                     }
+                    Target::Field(field) => return self.fill_field(field),
                 }
             }
         }
+        Task::none()
     }
 
     /// Starts selecting whole lines, or characters, at a line picked by
@@ -1753,9 +1759,15 @@ impl App {
             Fed::Bound(
                 binding @ (PromptBinding::Complete | PromptBinding::CompletePrevious),
                 _,
-            ) if prompt == Prompt::Command => {
+            ) if matches!(prompt, Prompt::Command | Prompt::Field) => {
                 let forward = binding == PromptBinding::Complete;
-                self.completing = complete_line(&mut line, completing, forward);
+                self.completing = if prompt == Prompt::Field {
+                    complete_with(&mut line, completing, forward, |typed| {
+                        self.field_options(typed)
+                    })
+                } else {
+                    complete_line(&mut line, completing, forward)
+                };
                 self.prompt = Some((prompt, line));
                 return Task::none();
             }
@@ -1803,7 +1815,13 @@ impl App {
         self.completing = if line == before {
             completing
         } else {
-            completing.and_then(|_| narrowed(&line))
+            completing.and_then(|_| {
+                if prompt == Prompt::Field {
+                    narrowed_with(self.field_options(&line))
+                } else {
+                    narrowed(&line)
+                }
+            })
         };
         self.prompt = Some((prompt, line));
         Task::none()
@@ -1907,6 +1925,7 @@ impl App {
             Prompt::SearchForward => self.search(line, true),
             Prompt::SearchBackward => self.search(line, false),
             Prompt::Password => self.unlock(line.to_owned()),
+            Prompt::Field => self.submit_field(line),
         }
     }
 
@@ -2862,7 +2881,7 @@ impl App {
                 label(self.password_prompt(line), chrome.bar_text)
             }
             (Some((prompt, line)), _) => {
-                let typed = label(format!("{}{line}\u{2588}", prompt.sigil()), chrome.bar_text);
+                let typed = label(self.prompt_line(*prompt, line), chrome.bar_text);
                 if wrap {
                     typed.wrapping(text::Wrapping::WordOrGlyph)
                 } else {
@@ -2945,6 +2964,16 @@ fn complete_line(
     completing: Option<Completing>,
     forward: bool,
 ) -> Option<Completing> {
+    complete_with(line, completing, forward, complete::complete)
+}
+
+/// Completes a line from the candidates a source gives for it.
+fn complete_with(
+    line: &mut String,
+    completing: Option<Completing>,
+    forward: bool,
+    source: impl FnOnce(&str) -> complete::Completion,
+) -> Option<Completing> {
     if let Some(mut completing) = completing.filter(|completing| !completing.typed) {
         let count = completing.candidates.len();
         let last = count.saturating_sub(1);
@@ -2961,7 +2990,7 @@ fn complete_line(
         }
         return Some(completing);
     }
-    let complete::Completion { start, candidates } = complete::complete(line);
+    let complete::Completion { start, candidates } = source(line);
     let typed = line.len().saturating_sub(start);
     match candidates.as_slice() {
         [] => None,
@@ -2993,7 +3022,12 @@ fn complete_line(
 /// The list for a line that was typed into while a list was shown, or
 /// none when nothing fits it.
 fn narrowed(line: &str) -> Option<Completing> {
-    let complete::Completion { start, candidates } = complete::complete(line);
+    narrowed_with(complete::complete(line))
+}
+
+/// The list of candidates, narrowed to those given, while any are.
+fn narrowed_with(completion: complete::Completion) -> Option<Completing> {
+    let complete::Completion { start, candidates } = completion;
     (!candidates.is_empty()).then_some(Completing {
         start,
         candidates,

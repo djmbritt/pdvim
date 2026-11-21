@@ -77,6 +77,8 @@ pub enum Error {
     Save(String),
     #[error("cannot read the table of contents: {0}")]
     Outline(String),
+    #[error("cannot fill in the form: {0}")]
+    Form(String),
     #[error("the document was closed")]
     Closed,
 }
@@ -128,7 +130,38 @@ pub enum Target {
     Page { page: u32, top: Option<f32> },
     /// Anything else, such as a web page, for another program to open.
     Uri(String),
+    /// A field of a form, to fill in.
+    Field(Field),
 }
+
+/// A field of a form that can be filled in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Field {
+    /// The page and the widget's object number, which find it again.
+    pub widget: Annotation,
+    pub kind: FieldKind,
+    /// What it holds: its text, or the state of a box.
+    pub value: String,
+    /// What the form calls it.
+    pub name: String,
+}
+
+/// What can be put in a field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FieldKind {
+    /// Text, typed.
+    Text,
+    /// One of these.
+    Choice(Vec<String>),
+    /// A box that is ticked by setting it to the state named, and
+    /// unticked by setting it to `Off`.
+    Checkbox { on: String },
+    /// One of a group, picked by setting it to the state named.
+    Radio { on: String },
+}
+
+/// The state of a box that is not ticked.
+pub const OFF: &str = "Off";
 
 /// A line of text on a page, in the order MuPDF reads the page.
 #[derive(Debug, Clone, PartialEq)]
@@ -306,6 +339,7 @@ enum Request {
         String,
         oneshot::Sender<Result<Option<String>, Error>>,
     ),
+    Fill(Annotation, String, oneshot::Sender<Result<String, Error>>),
     Markings(oneshot::Sender<Result<Vec<Marking>, Error>>),
     Save(Option<PathBuf>, oneshot::Sender<Result<(), Error>>),
     Outline(oneshot::Sender<Result<Vec<Chapter>, Error>>),
@@ -542,6 +576,17 @@ impl Backend {
 
     /// Sets the note on a marking: the text of a note, or the comment on
     /// another kind; empty for none. Answers with what it was.
+    /// Sets the value of a field of a form. Answers with the value it had.
+    pub fn fill(
+        &self,
+        widget: Annotation,
+        value: String,
+    ) -> impl Future<Output = Result<String, Error>> + use<> {
+        let (reply, answer) = oneshot::channel();
+        let _ = self.requests.send(Request::Fill(widget, value, reply));
+        async move { answer.await.unwrap_or(Err(Error::Closed)) }
+    }
+
     pub fn set_note(
         &self,
         annotation: Annotation,
@@ -960,17 +1005,134 @@ fn page_links(document: &Document, number: u32) -> Result<Vec<Link>, mupdf::Erro
                 None => Target::Uri(link.uri),
             };
             Link {
-                area: Rect {
-                    left: link.bounds.x0 - bounds.x0,
-                    top: link.bounds.y0 - bounds.y0,
-                    right: link.bounds.x1 - bounds.x0,
-                    bottom: link.bounds.y1 - bounds.y0,
-                },
+                area: relative(link.bounds, bounds),
                 target,
             }
         })
-        .collect();
+        .collect::<Vec<_>>();
+    if !document.is_pdf() {
+        return Ok(links);
+    }
+    let page = mupdf::pdf::PdfPage::try_from(page)?;
+    let mut links = links;
+    for widget in page.widgets() {
+        let Some(kind) = field_kind(&widget)? else {
+            continue;
+        };
+        let name = widget
+            .label()?
+            .or(widget.name()?)
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| "field".to_owned());
+        links.push(Link {
+            area: relative(widget.annotation().bounds()?, bounds),
+            target: Target::Field(Field {
+                widget: (number, widget.xref()?),
+                kind,
+                value: widget.value()?.unwrap_or_default(),
+                name,
+            }),
+        });
+    }
     Ok(links)
+}
+
+/// An area of a page as measured from its top-left corner.
+fn relative(area: mupdf::Rect, page: mupdf::Rect) -> Rect {
+    Rect {
+        left: area.x0 - page.x0,
+        top: area.y0 - page.y0,
+        right: area.x1 - page.x0,
+        bottom: area.y1 - page.y0,
+    }
+}
+
+/// What can be put in a widget of a form; none for one that cannot be
+/// filled in, as a button, a signature, or a field made read-only.
+fn field_kind(widget: &mupdf::pdf::PdfWidget) -> Result<Option<FieldKind>, mupdf::Error> {
+    use mupdf::pdf::WidgetType;
+    if widget.is_readonly()? {
+        return Ok(None);
+    }
+    Ok(match widget.r#type()? {
+        WidgetType::Text => Some(FieldKind::Text),
+        WidgetType::Combobox | WidgetType::Listbox => Some(FieldKind::Choice(options(widget)?)),
+        WidgetType::Checkbox => Some(FieldKind::Checkbox {
+            on: on_state(widget)?,
+        }),
+        WidgetType::RadioButton => Some(FieldKind::Radio {
+            on: on_state(widget)?,
+        }),
+        WidgetType::Button | WidgetType::Signature | WidgetType::Unknown => None,
+    })
+}
+
+/// The name of the state a box is in when ticked: its appearance's other
+/// state than `Off`, or `Yes` when it gives none.
+fn on_state(widget: &mupdf::pdf::PdfWidget) -> Result<String, mupdf::Error> {
+    let Some(states) = widget
+        .annotation()
+        .object()
+        .get_dict("AP")?
+        .and_then(|appearance| appearance.get_dict("N").transpose())
+        .transpose()?
+    else {
+        return Ok("Yes".to_owned());
+    };
+    for index in 0..i32::try_from(states.dict_len()?).unwrap_or(i32::MAX) {
+        if let Some(key) = states.get_dict_key(index)? {
+            let name = String::from_utf8_lossy(&key.as_name()?).into_owned();
+            if name != OFF {
+                return Ok(name);
+            }
+        }
+    }
+    Ok("Yes".to_owned())
+}
+
+/// The values a choice field offers, as the form stores them.
+fn options(widget: &mupdf::pdf::PdfWidget) -> Result<Vec<String>, mupdf::Error> {
+    let Some(list) = widget.annotation().object().get_dict_inheritable("Opt")? else {
+        return Ok(Vec::new());
+    };
+    let mut found = Vec::new();
+    for index in 0..i32::try_from(list.len()?).unwrap_or(i32::MAX) {
+        let Some(option) = list.get_array(index)? else {
+            continue;
+        };
+        // An option is its value, or a pair of its value and what to show.
+        let value = match option.get_array(0)? {
+            Some(first) if option.is_array()? => first,
+            _ => option,
+        };
+        found.push(value.as_string()?);
+    }
+    Ok(found)
+}
+
+/// Sets the value of a field of a form, and answers with the value it had.
+fn fill_in(document: &Document, (number, xref): Annotation, value: &str) -> Result<String, Error> {
+    let failed = |error: mupdf::Error| Error::Form(error.to_string());
+    let mut pdf = mupdf::pdf::PdfDocument::try_from(document.clone())
+        .map_err(|_| Error::Form("only PDF files have forms".to_owned()))?;
+    if !pdf.can_be_saved_incrementally() {
+        settle(&pdf);
+    }
+    let page = pdf.load_page(page_number(number)).map_err(failed)?;
+    let page = mupdf::pdf::PdfPage::try_from(page).map_err(failed)?;
+    let Some(mut widget) = page
+        .widgets()
+        .find(|widget| widget.xref().is_ok_and(|found| found == xref))
+    else {
+        return Err(Error::Form("the field is gone".to_owned()));
+    };
+    let before = widget.value().map_err(failed)?.unwrap_or_default();
+    // The form's scripts are not run: a document may not run code here.
+    if !widget.set_value(&mut pdf, value, true).map_err(failed)? {
+        return Err(Error::Form(format!("the field does not take {value:?}")));
+    }
+    widget.update().map_err(failed)?;
+    Ok(before)
 }
 
 /// Adds a highlight annotation to each page, over the areas given, and
@@ -1488,6 +1650,10 @@ impl Worker {
                 self.recordings.clear();
                 let _ = reply.send(restore_in(&self.document, &markings));
             }
+            Request::Fill(widget, value, reply) => {
+                self.recordings.clear();
+                let _ = reply.send(fill_in(&self.document, widget, &value));
+            }
             Request::SetNote(annotation, text, reply) => {
                 self.recordings.clear();
                 let _ = reply.send(set_note_in(&self.document, annotation, &text));
@@ -1757,6 +1923,102 @@ mod tests {
             ),
             "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
         ])
+    }
+
+    /// A page with a form: a text field, a box to tick, and a list to pick
+    /// from.
+    fn form_pdf() -> Vec<u8> {
+        let style = "/DA (/Helv 10 Tf 0 g) /F 4 /P 3 0 R";
+        pdf(&[
+            "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R 5 0 R 6 0 R] \
+             /DA (/Helv 10 Tf 0 g) /DR << /Font << /Helv 8 0 R >> >> >> >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] \
+             /Annots [4 0 R 5 0 R 6 0 R] >>",
+            &format!(
+                "<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /TU (Your name) \
+                 /Rect [72 700 300 720] /V (Ann) {style} >>"
+            ),
+            &format!(
+                "<< /Type /Annot /Subtype /Widget /FT /Btn /T (agree) /Rect [72 650 90 668] \
+                 /V /Off /AS /Off /AP << /N << /Yes 7 0 R /Off 7 0 R >> >> {style} >>"
+            ),
+            &format!(
+                "<< /Type /Annot /Subtype /Widget /FT /Ch /Ff 131072 /T (country) \
+                 /Rect [72 600 300 620] /Opt [(Netherlands) [(de) (Germany)]] \
+                 /V (Netherlands) {style} >>"
+            ),
+            "<< /Type /XObject /Subtype /Form /BBox [0 0 18 18] /Length 0 >>\nstream\n\nendstream",
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        ])
+    }
+
+    /// The fields among the links on the first page.
+    fn fields(document: &Document) -> Vec<(Rect, Field)> {
+        page_links(document, 0)
+            .unwrap()
+            .into_iter()
+            .filter_map(|link| match link.target {
+                Target::Field(field) => Some((link.area, field)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_fields_of_a_form_are_found_with_the_links() {
+        let file = Scratch::new("form", form_pdf());
+        let document = Document::open(file.0.to_str().unwrap()).unwrap();
+        let found = fields(&document);
+        let kinds: Vec<(&str, &FieldKind, &str)> = found
+            .iter()
+            .map(|(_, field)| (field.name.as_str(), &field.kind, field.value.as_str()))
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                ("Your name", &FieldKind::Text, "Ann"),
+                (
+                    "agree",
+                    &FieldKind::Checkbox {
+                        on: "Yes".to_owned()
+                    },
+                    OFF
+                ),
+                (
+                    "country",
+                    &FieldKind::Choice(vec!["Netherlands".to_owned(), "de".to_owned()]),
+                    "Netherlands"
+                ),
+            ]
+        );
+        // Measured down from the top of the page, as links are.
+        let (area, _) = &found[0];
+        assert!((area.top - 72.0).abs() < 0.5 && (area.left - 72.0).abs() < 0.5, "{area:?}");
+    }
+
+    #[test]
+    fn fields_filled_in_are_saved_with_the_file() {
+        let file = Scratch::new("filled", form_pdf());
+        let document = Document::open(file.0.to_str().unwrap()).unwrap();
+        let widgets: Vec<Annotation> = fields(&document)
+            .into_iter()
+            .map(|(_, field)| field.widget)
+            .collect();
+        assert_eq!(fill_in(&document, widgets[0], "Bob").unwrap(), "Ann");
+        assert_eq!(fill_in(&document, widgets[1], "Yes").unwrap(), OFF);
+        assert_eq!(fill_in(&document, widgets[2], "de").unwrap(), "Netherlands");
+        save_to(&document, &file.0, None).unwrap();
+        drop(document);
+
+        let reopened = Document::open(file.0.to_str().unwrap()).unwrap();
+        let values: Vec<String> = fields(&reopened)
+            .into_iter()
+            .map(|(_, field)| field.value)
+            .collect();
+        assert_eq!(values, ["Bob", "Yes", "de"]);
+        // And taken back, as undo does.
+        assert_eq!(fill_in(&reopened, widgets[1], OFF).unwrap(), "Yes");
     }
 
     /// A PDF of these objects, numbered from 1, the first the catalog.

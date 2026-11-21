@@ -214,6 +214,7 @@ These go through every highlight, underline, strike-out, squiggly underline and 
 | ----------------------------------------- | ----------------------------- |
 | `gt`, `Ctrl-Tab` / `gT`, `Ctrl-Shift-Tab` | Go to the next / previous tab |
 | `{n}gt`, `{n}Ctrl-Tab`                    | Go to tab _n_                 |
+| `b`                                       | List the tabs; type to narrow, `Enter` to go to one |
 | `U`                                       | Open the tab closed last again |
 
 `U` brings back the tab closed last, in the place it had, and the document where you left it; press it again for the one closed before. pdvim keeps the last 20 tabs closed with `q`, `:q`, `:tabclose` or `:tabonly`, until it quits.
@@ -259,7 +260,7 @@ The box at the left of the status bar always names the mode, which says what the
 | Green  | `INSERT`: filling in a field of a form                                                    |
 | Peach  | `COMMAND`, `SEARCH`, `PASSWORD`: typing at the bottom line; `CONFIRM`: answering it        |
 | Yellow | `FOLLOW`, `PICK`: labels on links, fields and markings, after `f` or `gh`                 |
-| Teal   | `CONTENTS`, `MARKINGS`, `HELP`, `RECENT`, `INFO`: a list or panel over the pages           |
+| Teal   | `CONTENTS`, `MARKINGS`, `HELP`, `RECENT`, `TABS`, `INFO`: a list or panel over the pages   |
 
 ## Commands
 
@@ -334,15 +335,19 @@ Press `Up` or `Ctrl-p` at `:`, `/` or `?` to bring back an earlier command or se
 
 ## Recent documents
 
-`o` or `:recent` lists up to 20 documents you read before, the most recent first. The open document and files that no longer exist are left out.
+`o` or `:recent` lists up to 20 documents you read before, the most recent first. The open document and files that no longer exist are left out. Type to narrow the list: it keeps the documents whose path holds every word you type, ignoring case, so `rust book` finds `~/books/the-rust-programming-language-book.pdf`.
 
-| Key                                        | Action                                  |
-| ------------------------------------------ | --------------------------------------- |
-| `j` / `k`, arrow keys, `Ctrl-n` / `Ctrl-p` | Move the selection down / up            |
-| `gg`, `Home` / `G`, `End`                  | Select the first / last entry           |
-| `Enter`, `l`, `o`                          | Open the selected document in a new tab |
-| `1`–`9`                                    | Open that entry in a new tab            |
-| `Esc`, `Ctrl-c`, `q`                       | Close the list                          |
+| Key                                         | Action                                  |
+| ------------------------------------------- | --------------------------------------- |
+| Letters, digits, `Space`                    | Narrow the list                         |
+| `Down`, `Ctrl-n`, `Ctrl-j`, `Tab`           | Select the next entry                   |
+| `Up`, `Ctrl-p`, `Ctrl-k`, `Shift-Tab`       | Select the previous entry               |
+| `Home` / `End`                              | Select the first / last entry           |
+| `Enter`                                     | Open the selected document in a new tab |
+| `Backspace` / `Ctrl-u`                      | Rub out a character / all that's typed  |
+| `Esc`, `Ctrl-c`, or `Backspace` with nothing typed | Close the list                   |
+
+`b` lists the open tabs the same way, each with its number, name and file, the tab in view selected. Type to narrow it, by name, file or number, and press `Enter` to go to the tab selected.
 
 ## Configuration
 
@@ -450,7 +455,7 @@ The actions of normal mode, and their default keys:
 | `repeat`                              | `.`                                         |
 | `recent`                              | `o`                                         |
 | `next-tab` / `previous-tab`           | `g t`, `ctrl+tab` / `g T`, `ctrl+shift+tab` |
-| `reopen-tab`                          | `U`                                         |
+| `tabs` / `reopen-tab`                 | `b` / `U`                                   |
 | `abort`                               | `escape`, `ctrl+c`, `ctrl+[`                |
 | `info`                                | `ctrl+g`                                    |
 | `quit`                                | `q`                                         |

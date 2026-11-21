@@ -148,6 +148,8 @@ pub enum Action {
     OpenPrompt(Prompt),
     /// Show the recently read documents, to pick one to open.
     ShowRecent,
+    /// Show the open tabs, to pick one to go to.
+    ShowTabs,
     /// Show the key bindings.
     ShowHelp,
     /// Show what the document says about itself.
@@ -280,6 +282,8 @@ bindable! {
         /// The next tab, or the tab given by a count.
         NextTab = "next-tab", "Go to the next tab, or tab n";
         PreviousTab = "previous-tab", "Go to the previous tab";
+        /// As Tridactyl's `b`.
+        Tabs = "tabs", "List the open tabs; type to narrow, enter to go to one";
         /// As Tridactyl's `u`, which here takes back markings.
         ReopenTab = "reopen-tab", "Open the tab closed last again, where it was";
         /// The letter is the next key: a to z for this document, A to Z
@@ -351,6 +355,7 @@ impl Binding {
             Self::CommandPrompt => Action::OpenPrompt(Prompt::Command),
             Self::Repeat => Action::Repeat(count.unwrap_or(1)),
             Self::Recent => Action::ShowRecent,
+            Self::Tabs => Action::ShowTabs,
             Self::NextTab => count.map_or(Action::NextTab, Action::GotoTab),
             Self::PreviousTab => Action::PreviousTab(count.unwrap_or(1)),
             Self::ReopenTab => Action::ReopenTab(count.unwrap_or(1)),

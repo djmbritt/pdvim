@@ -215,7 +215,8 @@ note-color = "#fdd835"
 "ctrl+o" = "jump-back"
 "ctrl+i" = "jump-forward"
 
-# Tabs
+# Tabs. b lists them: type to narrow the list, enter to go to one
+"b" = "tabs"
 "g t" = "next-tab"
 "ctrl+tab" = "next-tab"
 "g T" = "previous-tab"
@@ -353,25 +354,22 @@ note-color = "#fdd835"
 
 [keys.recent]
 
-# The list of recent documents (o). A digit not bound here opens that
-# entry, counted from 1.
-"j" = "down"
+# The lists of recent documents (o) and open tabs (b). Keys not bound here
+# type, and the list narrows to the entries that hold every word typed.
 "down" = "down"
 "ctrl+n" = "down"
 "ctrl+j" = "down"
-"k" = "up"
+"tab" = "down"
 "up" = "up"
 "ctrl+p" = "up"
 "ctrl+k" = "up"
-"g g" = "top"
+"shift+tab" = "up"
 "home" = "top"
-"G" = "bottom"
 "end" = "bottom"
 "enter" = "open"
-"l" = "open"
-"o" = "open"
-"right" = "open"
-"q" = "close"
+"backspace" = "rub-out"
+"ctrl+h" = "rub-out"
+"ctrl+u" = "clear-line"
 "escape" = "close"
 "ctrl+c" = "close"
 "ctrl+[" = "close"

@@ -104,7 +104,7 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
                 B::Write,
             ],
         ),
-        ("Tabs", &[B::NextTab, B::PreviousTab, B::ReopenTab]),
+        ("Tabs", &[B::NextTab, B::PreviousTab, B::Tabs, B::ReopenTab]),
         (
             "Other",
             &[
@@ -128,7 +128,7 @@ const fn heading(mode: Mode) -> &'static str {
         Mode::Hints => "Labels on links and lines",
         Mode::Outline => "Table of contents",
         Mode::Markings => "List of markings",
-        Mode::Recent => "Recent documents; a digit opens that one",
+        Mode::Recent => "Lists of recent documents and tabs; typing narrows them",
         Mode::Help => "This list",
         Mode::Prompt => "Typing a command or search",
         Mode::Confirm => "Questions such as quit? (y/n)",

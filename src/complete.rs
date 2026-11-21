@@ -247,7 +247,8 @@ mod tests {
                 "tabnew",
                 "tabnext",
                 "tabonly",
-                "tabprevious"
+                "tabprevious",
+                "tabs"
             ]
         );
         // Actions are offered too, once each when a command shares a name.

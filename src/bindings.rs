@@ -10,7 +10,7 @@ use crate::command::Command;
 use crate::config;
 use crate::input::{self, ConfirmBinding, Key, PromptBinding};
 use crate::keymap::{Bindable, Keymap};
-use crate::{help, hints, markings, outline, recent, visual};
+use crate::{help, hints, markings, outline, picker, visual};
 
 /// The built-in configuration: every setting and key binding at its
 /// default.
@@ -148,8 +148,8 @@ modes! {
     Outline, outline, "outline": outline::Binding;
     /// The list of highlights and other markings, in a sidebar.
     Markings, markings, "markings": markings::Binding;
-    /// The list of recent documents.
-    Recent, recent, "recent": recent::Binding;
+    /// The lists of recent documents and of open tabs.
+    Recent, recent, "recent": picker::Binding;
     /// The help sheet.
     Help, help, "help": help::Binding;
     /// Typing a command or a search.
@@ -239,6 +239,6 @@ mod tests {
         );
         keymaps.clear(Mode::Visual);
         assert_eq!(keymaps.visual.keys_for(visual::Binding::Up).count(), 0);
-        assert!(keymaps.recent.keys_for(recent::Binding::Up).count() > 0);
+        assert!(keymaps.recent.keys_for(picker::Binding::Up).count() > 0);
     }
 }

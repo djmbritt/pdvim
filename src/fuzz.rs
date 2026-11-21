@@ -24,7 +24,7 @@ use crate::layout::{PageSize, Rect, Rotation};
 use crate::num;
 use crate::outline::{self, Outline};
 use crate::reader::Reader;
-use crate::recent::{Choice, Picker};
+use crate::picker::{Choice, Entry, Picker};
 use crate::visual::{self, Kind, Spot, Text, Visual};
 
 /// The keys the reader tells apart that type no character.
@@ -242,7 +242,10 @@ pub fn modes(data: &[u8]) {
     let mut hints = Hints::new((0..num::len(labels)).map(|item| (item, item)).collect());
     let mut picker = Picker::new(
         (0..recent)
-            .map(|entry| PathBuf::from(format!("/{entry}.pdf")))
+            .map(|entry| Entry {
+                text: format!("/{entry}.pdf"),
+                value: PathBuf::from(format!("/{entry}.pdf")),
+            })
             .collect(),
     );
     let mut sidebar = Outline::new(&chapters, page);
@@ -314,12 +317,13 @@ fn hints_key(hints: &mut Hints<u32>, keymaps: &Keymaps, key: Key) -> bool {
 }
 
 /// Returns whether the list stays up.
-fn picker_key(picker: &mut Picker, keymaps: &Keymaps, key: Key) -> bool {
+fn picker_key(picker: &mut Picker<PathBuf>, keymaps: &Keymaps, key: Key) -> bool {
     let outcome = picker.feed(key, &keymaps.recent);
-    assert!(picker.selected() < picker.entries().len());
+    let shown = picker.shown().count();
+    assert!(picker.selected() < shown.max(1));
     match outcome {
         Some(Choice::Open(path)) => {
-            assert!(picker.entries().contains(&path));
+            assert!(picker.shown().any(|entry| entry.value == path));
             false
         }
         Some(Choice::Close) => false,

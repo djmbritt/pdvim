@@ -33,6 +33,7 @@ pub(super) enum Mode {
     Markings,
     Help,
     Recent,
+    Tabs,
     Info,
 }
 
@@ -55,6 +56,7 @@ impl Mode {
             Self::Markings => "MARKINGS",
             Self::Help => "HELP",
             Self::Recent => "RECENT",
+            Self::Tabs => "TABS",
             Self::Info => "INFO",
         }
     }
@@ -67,7 +69,12 @@ impl Mode {
             Self::Insert => modes.insert,
             Self::Command | Self::Search | Self::Password | Self::Confirm => modes.command,
             Self::Follow | Self::Pick => modes.label,
-            Self::Contents | Self::Markings | Self::Help | Self::Recent | Self::Info => modes.list,
+            Self::Contents
+            | Self::Markings
+            | Self::Help
+            | Self::Recent
+            | Self::Tabs
+            | Self::Info => modes.list,
         }
     }
 }
@@ -104,6 +111,8 @@ impl App {
             Mode::Help
         } else if self.picker.is_some() {
             Mode::Recent
+        } else if self.tab_list.is_some() {
+            Mode::Tabs
         } else {
             match self.prompt.as_ref().map(|(prompt, _)| *prompt) {
                 Some(Prompt::Command) => Mode::Command,

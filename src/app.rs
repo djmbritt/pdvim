@@ -28,7 +28,7 @@ use crate::num;
 use crate::outline::{self, Outline};
 use crate::reader::{Place, Reader};
 use crate::recall::{Lines, Recall};
-use crate::recent::{self, Choice, Picker};
+use crate::picker::{self, Choice, Entry, Picker};
 use crate::recolor::{Palette, Rgb};
 use crate::theme::{self, Colours};
 use crate::visual::{self, Kind, Spot, Visual};
@@ -441,7 +441,9 @@ pub struct App {
     /// The completions shown above the prompt, while there are any.
     completing: Option<Completing>,
     /// The list of recent documents, while it is shown.
-    picker: Option<Picker>,
+    picker: Option<Picker<PathBuf>>,
+    /// The list of open tabs, by their places, while it is shown.
+    tab_list: Option<Picker<usize>>,
     /// The cheat sheet, while it is shown.
     help: Option<Help>,
     /// What the document in view says about itself, by name, while it is
@@ -574,6 +576,7 @@ impl App {
             prompt: None,
             completing: None,
             picker: None,
+            tab_list: None,
             help: None,
             info: None,
             sidebar: None,
@@ -616,7 +619,7 @@ impl App {
         app.load_typed();
         // Started without a document, it offers the ones read lately.
         if paths.is_empty() {
-            app.picker = Picker::new(app.recent_documents());
+            app.picker = Picker::new(app.recent_entries());
         }
         let tasks: Vec<_> = paths
             .into_iter()
@@ -868,6 +871,9 @@ impl App {
                     Task::none()
                 } else if self.picker.is_some() {
                     self.on_picker_key(key)
+                } else if self.tab_list.is_some() {
+                    self.on_tab_list_key(key);
+                    Task::none()
                 } else if self.prompt.is_some() {
                     self.on_prompt_key(key)
                 } else if let Some(verb) = self.awaiting_mark.take() {
@@ -1756,6 +1762,7 @@ impl App {
             Action::ShowRecent => self.show_recent(),
             Action::ShowHelp => self.show_help(),
             Action::ShowInfo => self.show_info(),
+            Action::ShowTabs => self.show_tab_list(),
             _ => {}
         }
     }
@@ -1776,10 +1783,21 @@ impl App {
     /// Shows the list of recent documents, or says there are none.
     fn show_recent(&mut self) {
         self.pending = Pending::new();
-        self.picker = Picker::new(self.recent_documents());
+        self.picker = Picker::new(self.recent_entries());
         if self.picker.is_none() && matches!(self.notice, Notice::None) {
             self.notice = Notice::Info("no recent documents".to_owned());
         }
+    }
+
+    /// The recent documents, as the list shows them.
+    fn recent_entries(&mut self) -> Vec<Entry<PathBuf>> {
+        self.recent_documents()
+            .into_iter()
+            .map(|path| Entry {
+                text: tilde(&path),
+                value: path,
+            })
+            .collect()
     }
 
     /// The documents read lately that still exist, newest first, leaving
@@ -1799,7 +1817,7 @@ impl App {
         paths
             .into_iter()
             .filter(|path| Some(path) != open && path.is_file())
-            .take(recent::SHOWN)
+            .take(picker::SHOWN)
             .collect()
     }
 
@@ -2161,7 +2179,7 @@ impl App {
                 self.prompt_pending = Pending::new();
                 return Task::none();
             }
-            Action::ShowRecent | Action::ShowHelp | Action::ShowInfo => {
+            Action::ShowRecent | Action::ShowHelp | Action::ShowInfo | Action::ShowTabs => {
                 self.show_panel(action);
                 return Task::none();
             }
@@ -2788,7 +2806,10 @@ impl App {
         let marks = Canvas::new(Marks(self)).width(Fill).height(Fill);
         let mut layers = stack![pages, marks];
         if let Some(picker) = &self.picker {
-            layers = layers.push(list(picker, chrome));
+            layers = layers.push(list("Recent documents", picker, chrome));
+        }
+        if let Some(tabs) = &self.tab_list {
+            layers = layers.push(list("Tabs", tabs, chrome));
         }
         if let Some(completing) = &self.completing {
             layers = layers.push(completions(completing, chrome));
@@ -3393,7 +3414,11 @@ fn contents<'a>(
 
 /// The list of recent documents, drawn over the pages. The first nine are
 /// numbered, for the digit that opens each.
-fn list(picker: &Picker, chrome: Colours) -> Element<'_, Message> {
+fn list<'a, T: Clone>(
+    title: &'a str,
+    picker: &'a Picker<T>,
+    chrome: Colours,
+) -> Element<'a, Message> {
     let label = |content: String, colour: Color| {
         text(content)
             .size(LIST_TEXT_SIZE)
@@ -3401,32 +3426,43 @@ fn list(picker: &Picker, chrome: Colours) -> Element<'_, Message> {
             .color(colour)
             .wrapping(text::Wrapping::None)
     };
-    let heading = container(label("Recent documents".to_owned(), chrome.bar_text)).padding([4, 10]);
-    let entries = picker.entries().iter().enumerate().map(|(index, path)| {
-        let number = index
-            .checked_add(1)
-            .filter(|number| *number <= 9)
-            .map_or_else(|| " ".to_owned(), |number| number.to_string());
-        let selected = index == picker.selected();
-        let line = row![
-            label(number, chrome.list_number),
-            container(label(tilde(path), chrome.bar_text))
+    let typed = picker.typed();
+    let heading = container(
+        row![
+            label(title.to_owned(), chrome.bar_text),
+            container(label(format!("{typed}\u{2588}"), chrome.list_number))
                 .width(Fill)
                 .clip(true),
         ]
-        .spacing(12);
-        container(line)
-            .padding([3, 10])
-            .width(Fill)
-            .style(move |_| {
-                if selected {
-                    container::background(chrome.list_selected)
-                } else {
-                    container::Style::default()
-                }
-            })
-            .into()
-    });
+        .spacing(16),
+    )
+    .padding([4, 10]);
+    let mut entries: Vec<Element<'a, Message>> = picker
+        .shown()
+        .enumerate()
+        .map(|(index, entry)| {
+            let selected = index == picker.selected();
+            container(label(entry.text.clone(), chrome.bar_text))
+                .padding([3, 10])
+                .width(Fill)
+                .clip(true)
+                .style(move |_| {
+                    if selected {
+                        container::background(chrome.list_selected)
+                    } else {
+                        container::Style::default()
+                    }
+                })
+                .into()
+        })
+        .collect();
+    if entries.is_empty() {
+        entries.push(
+            container(label(format!("nothing holds {typed}"), chrome.list_number))
+                .padding([3, 10])
+                .into(),
+        );
+    }
     let body = Column::with_children(entries).spacing(1);
     let panel = container(column![heading, body].spacing(4))
         .padding(8)
@@ -3732,6 +3768,7 @@ fn move_view(document: &mut Document, action: Action, step: f32) {
         Action::Quit
         | Action::OpenPrompt(_)
         | Action::ShowRecent
+        | Action::ShowTabs
         | Action::ShowHelp
         | Action::ShowInfo
         | Action::Write

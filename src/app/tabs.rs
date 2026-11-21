@@ -6,8 +6,9 @@ use std::path::PathBuf;
 
 use iced::Task;
 
-use super::{App, Message, Notice};
+use super::{App, Message, Notice, info, tilde};
 use crate::command::TabPlace;
+use crate::picker::{Choice, Entry, Picker};
 
 /// How many closed tabs are kept to open again.
 const CLOSED_KEPT: usize = 20;
@@ -43,6 +44,48 @@ impl App {
             }
         }
         Task::batch(tasks)
+    }
+
+    /// Lists the open tabs, each with its number, name and file, the one in
+    /// view selected; typing narrows the list.
+    pub(super) fn show_tab_list(&mut self) {
+        self.pending = crate::keymap::Pending::new();
+        let entries = self
+            .tabs
+            .iter()
+            .enumerate()
+            .map(|(index, tab)| {
+                let path = tab
+                    .document
+                    .as_ref()
+                    .map(|document| &document.path)
+                    .or_else(|| tab.opening.as_ref().map(|(_, path)| path));
+                let name = info::tab_name(&tab.name());
+                let number = index.saturating_add(1);
+                let file = path.map(|path| format!("  {}", tilde(path)));
+                let text = format!("{number} {name}{}", file.unwrap_or_default());
+                Entry { text, value: index }
+            })
+            .collect();
+        self.tab_list = Picker::new(entries);
+        if let Some(list) = &mut self.tab_list {
+            list.select(self.current);
+        }
+    }
+
+    /// Moves through the list of tabs, narrows it, or goes to a tab.
+    pub(super) fn on_tab_list_key(&mut self, key: crate::input::Key) {
+        let Some(list) = &mut self.tab_list else {
+            return;
+        };
+        match list.feed(key, &self.keymaps.recent) {
+            Some(Choice::Open(index)) => {
+                self.tab_list = None;
+                self.go_to_tab(index);
+            }
+            Some(Choice::Close) => self.tab_list = None,
+            None => {}
+        }
     }
 
     /// Moves the tab in view, keeping it in view.

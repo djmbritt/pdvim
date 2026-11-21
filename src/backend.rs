@@ -12,7 +12,9 @@ use std::sync::mpsc;
 use std::thread;
 
 use iced::futures::channel::oneshot;
-use mupdf::{Colorspace, DestinationKind, Device, Document, Matrix, Pixmap, TextPageFlags};
+use mupdf::{
+    Colorspace, DestinationKind, Device, DisplayList, Document, Matrix, Pixmap, TextPageFlags,
+};
 
 use crate::layout::{PageSize, Rect, Rotation};
 use crate::num;
@@ -22,6 +24,10 @@ use crate::recolor::{Palette, Rgb};
 /// refuse textures much larger than this, so a page zoomed in further is
 /// rendered at this size and stretched.
 const LONGEST_SIDE: f32 = 8000.0;
+
+/// How many pages the worker keeps the recordings of, to draw again at
+/// another zoom or in other colours without reading them again.
+const RECORDINGS_KEPT: usize = 8;
 
 /// The scale pages are rendered at to find their margins, in pixels per
 /// point. Coarse is enough: only the outline of the content matters.
@@ -623,6 +629,7 @@ pub fn open(
                 password,
                 inbox,
                 deferred: VecDeque::new(),
+                recordings: VecDeque::new(),
             }
             .serve();
         });
@@ -758,10 +765,14 @@ pub fn examine(bytes: &[u8], pages: u32) {
         let _ = page_hits(&document, number, "e");
         let _ = page_content(&document, number);
         // The cap on the size of a rendering is lower than the reader's,
-        // as the fuzzer slows every pixel, but it is met the same way.
+        // as the fuzzer slows every pixel, but it is met the same way: from
+        // a recording, played twice as the worker plays it again.
+        let Ok(recording) = record(&document, number) else {
+            continue;
+        };
         for rotation in [Rotation::None, Rotation::Quarter] {
             let _ = render(
-                &document,
+                &recording,
                 RenderJob {
                     page: number,
                     scale: 0.25,
@@ -1395,6 +1406,27 @@ struct Worker {
     inbox: mpsc::Receiver<Request>,
     /// Long requests that arrived while another was under way.
     deferred: VecDeque<Request>,
+    /// The pages drawn lately, recorded, the latest last.
+    recordings: VecDeque<Recording>,
+}
+
+/// What it takes to draw a page, recorded once: MuPDF reads the page and
+/// its annotations into a list of drawing operations, which can be played
+/// at any scale far faster than the page can be read again.
+struct Recording {
+    page: u32,
+    list: DisplayList,
+    bounds: mupdf::Rect,
+}
+
+/// Records a page, with its annotations.
+fn record(document: &Document, page: u32) -> Result<Recording, mupdf::Error> {
+    let loaded = document.load_page(page_number(page))?;
+    Ok(Recording {
+        page,
+        bounds: loaded.bounds()?,
+        list: loaded.to_display_list(true)?,
+    })
 }
 
 impl Worker {
@@ -1408,64 +1440,75 @@ impl Worker {
                     Err(_) => return,
                 },
             };
-            // The asker may have gone away meanwhile; a failed reply is fine.
-            match request {
-                Request::Render(job, reply) => {
-                    let _ = reply.send(self.render(job));
-                }
-                Request::Search(needle, reply) => {
-                    let _ = reply.send(
-                        self.search(&needle)
-                            .map_err(|error| Error::Search(error.to_string())),
-                    );
-                }
-                Request::Measure(reply) => {
-                    let _ = reply.send(
-                        self.measure()
-                            .map_err(|error| Error::Measure(error.to_string())),
-                    );
-                }
-                Request::Links(pages, reply) => {
-                    let _ = reply.send(self.links(&pages));
-                }
-                Request::Markup(highlight, reply) => {
-                    let _ = reply.send(highlight_in(&self.document, &highlight));
-                }
-                Request::Outline(reply) => {
-                    let _ = reply.send(
-                        outline(&self.document, || {
-                            reopen(&self.path, self.password.as_deref())
-                        })
-                        .map_err(|error| Error::Outline(error.to_string())),
-                    );
-                }
-                Request::Remove(annotations, reply) => {
-                    let _ = reply.send(remove_in(&self.document, &annotations));
-                }
-                Request::Restore(markings, reply) => {
-                    let _ = reply.send(restore_in(&self.document, &markings));
-                }
-                Request::SetNote(annotation, text, reply) => {
-                    let _ = reply.send(set_note_in(&self.document, annotation, &text));
-                }
-                Request::Markings(reply) => {
-                    let _ = reply.send(
-                        self.markings()
-                            .map_err(|error| Error::Markings(error.to_string())),
-                    );
-                }
-                Request::Save(target, reply) => {
-                    let _ = reply.send(save_to(&self.document, &self.path, target.as_deref()));
-                }
-                Request::Text(pages, reply) => {
-                    let _ = reply.send(
-                        pages
-                            .iter()
-                            .map(|&page| Ok((page, page_text(&self.document, page)?)))
-                            .collect::<Result<_, mupdf::Error>>()
-                            .map_err(|error| Error::Text(error.to_string())),
-                    );
-                }
+            self.answer(request);
+        }
+    }
+
+    /// Carries out a request and replies to it.
+    fn answer(&mut self, request: Request) {
+        // The asker may have gone away meanwhile; a failed reply is fine.
+        match request {
+            Request::Render(job, reply) => {
+                let _ = reply.send(self.render(job));
+            }
+            Request::Search(needle, reply) => {
+                let _ = reply.send(
+                    self.search(&needle)
+                        .map_err(|error| Error::Search(error.to_string())),
+                );
+            }
+            Request::Measure(reply) => {
+                let _ = reply.send(
+                    self.measure()
+                        .map_err(|error| Error::Measure(error.to_string())),
+                );
+            }
+            Request::Links(pages, reply) => {
+                let _ = reply.send(self.links(&pages));
+            }
+            Request::Markup(highlight, reply) => {
+                self.recordings.clear();
+                let _ = reply.send(highlight_in(&self.document, &highlight));
+            }
+            Request::Outline(reply) => {
+                let _ = reply.send(
+                    outline(&self.document, || {
+                        reopen(&self.path, self.password.as_deref())
+                    })
+                    .map_err(|error| Error::Outline(error.to_string())),
+                );
+            }
+            // A change to the markings changes how pages look, so the
+            // recordings are made again.
+            Request::Remove(annotations, reply) => {
+                self.recordings.clear();
+                let _ = reply.send(remove_in(&self.document, &annotations));
+            }
+            Request::Restore(markings, reply) => {
+                self.recordings.clear();
+                let _ = reply.send(restore_in(&self.document, &markings));
+            }
+            Request::SetNote(annotation, text, reply) => {
+                self.recordings.clear();
+                let _ = reply.send(set_note_in(&self.document, annotation, &text));
+            }
+            Request::Markings(reply) => {
+                let _ = reply.send(
+                    self.markings()
+                        .map_err(|error| Error::Markings(error.to_string())),
+                );
+            }
+            Request::Save(target, reply) => {
+                let _ = reply.send(save_to(&self.document, &self.path, target.as_deref()));
+            }
+            Request::Text(pages, reply) => {
+                let _ = reply.send(
+                    pages
+                        .iter()
+                        .map(|&page| Ok((page, page_text(&self.document, page)?)))
+                        .collect::<Result<_, mupdf::Error>>()
+                        .map_err(|error| Error::Text(error.to_string())),
+                );
             }
         }
     }
@@ -1483,8 +1526,25 @@ impl Worker {
         }
     }
 
-    fn render(&self, job: RenderJob) -> Result<Bitmap, Error> {
-        render(&self.document, job, LONGEST_SIDE).map_err(|error| Error::Render {
+    /// Draws a page from its recording, recording it first when it is not
+    /// among those kept.
+    fn render(&mut self, job: RenderJob) -> Result<Bitmap, Error> {
+        let kept = self
+            .recordings
+            .iter()
+            .position(|recording| recording.page == job.page)
+            .and_then(|index| self.recordings.remove(index));
+        let drawn = kept
+            .map_or_else(|| record(&self.document, job.page), Ok)
+            .and_then(|recording| {
+                let drawn = render(&recording, job, LONGEST_SIDE);
+                self.recordings.push_back(recording);
+                if self.recordings.len() > RECORDINGS_KEPT {
+                    self.recordings.pop_front();
+                }
+                drawn
+            });
+        drawn.map_err(|error| Error::Render {
             page: job.page.saturating_add(1),
             reason: error.to_string(),
         })
@@ -1571,11 +1631,14 @@ fn content_box(
     found
 }
 
-/// Renders one page, or the part of it the job asks for, to a bitmap whose
-/// longest side is at most `longest_side` pixels.
-fn render(document: &Document, job: RenderJob, longest_side: f32) -> Result<Bitmap, mupdf::Error> {
-    let page = document.load_page(page_number(job.page))?;
-    let bounds = page.bounds()?;
+/// Draws a recorded page, or the part of it the job asks for, to a bitmap
+/// whose longest side is at most `longest_side` pixels.
+fn render(
+    recording: &Recording,
+    job: RenderJob,
+    longest_side: f32,
+) -> Result<Bitmap, mupdf::Error> {
+    let bounds = recording.bounds;
     let area = job.clip.map_or(bounds, |clip| mupdf::Rect {
         x0: bounds.x0 + clip.left,
         y0: bounds.y0 + clip.top,
@@ -1599,7 +1662,10 @@ fn render(document: &Document, job: RenderJob, longest_side: f32) -> Result<Bitm
         // The device must be closed, which dropping it does, before the
         // pixels are complete.
         let device = Device::from_pixmap(&pixmap)?;
-        page.run(&device, &transform)?;
+        // Only what lands in the bitmap is drawn.
+        recording
+            .list
+            .run(&device, &transform, area.transform(&transform))?;
     }
     Ok(to_bitmap(&pixmap, job.palette))
 }
@@ -1769,6 +1835,92 @@ mod tests {
             .map(|character| character.area.left)
             .collect();
         assert!(lefts.is_sorted(), "{lefts:?}");
+    }
+
+    /// A worker for a document, answering requests put to it directly.
+    fn worker(path: &Path) -> Worker {
+        let (_, inbox) = mpsc::channel();
+        Worker {
+            document: Document::open(path.to_str().unwrap()).unwrap(),
+            path: path.to_owned(),
+            password: None,
+            inbox,
+            deferred: VecDeque::new(),
+            recordings: VecDeque::new(),
+        }
+    }
+
+    fn job(scale: f32) -> RenderJob {
+        RenderJob {
+            page: 0,
+            scale,
+            rotation: Rotation::None,
+            clip: None,
+            palette: None,
+        }
+    }
+
+    #[test]
+    fn a_page_drawn_again_from_its_recording_comes_out_the_same() {
+        let file = Scratch::new("recorded", text_pdf());
+        let mut worker = worker(&file.0);
+        let first = worker.render(job(1.5)).unwrap();
+        assert_eq!(worker.recordings.len(), 1);
+        // Another zoom, then back: the same recording, played twice.
+        worker.render(job(2.0)).unwrap();
+        let again = worker.render(job(1.5)).unwrap();
+        assert_eq!(worker.recordings.len(), 1);
+        assert_eq!(again.pixels, first.pixels);
+        // And as a page read afresh comes out.
+        let fresh = render(
+            &record(&worker.document, 0).unwrap(),
+            job(1.5),
+            LONGEST_SIDE,
+        )
+        .unwrap();
+        assert_eq!(fresh.pixels, first.pixels);
+    }
+
+    #[test]
+    fn a_new_highlight_shows_on_the_next_drawing() {
+        let file = Scratch::new("rerecorded", text_pdf());
+        let mut worker = worker(&file.0);
+        let before = worker.render(job(1.0)).unwrap();
+        let line = page_text(&worker.document, 0).unwrap()[0].chars[0].area;
+        let (reply, _answer) = oneshot::channel();
+        worker.answer(Request::Markup(
+            Markup {
+                kind: MarkupKind::Highlight,
+                pages: vec![(0, vec![line])],
+                colour: Rgb(0xff, 0x00, 0x00),
+                note: None,
+            },
+            reply,
+        ));
+        let after = worker.render(job(1.0)).unwrap();
+        assert_ne!(after.pixels, before.pixels);
+    }
+
+    #[test]
+    fn only_so_many_recordings_are_kept() {
+        let objects: Vec<String> = (0..12)
+            .map(|_| "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>".to_owned())
+            .collect();
+        let kids: Vec<String> = (0..12).map(|index| format!("{} 0 R", index + 3)).collect();
+        let pages = format!("<< /Type /Pages /Kids [{}] /Count 12 >>", kids.join(" "));
+        let mut all = vec!["<< /Type /Catalog /Pages 2 0 R >>", pages.as_str()];
+        all.extend(objects.iter().map(String::as_str));
+        let file = Scratch::new("many", pdf(&all));
+        let mut worker = worker(&file.0);
+        for page in 0..12 {
+            worker.render(RenderJob { page, ..job(0.5) }).unwrap();
+        }
+        let kept: Vec<u32> = worker
+            .recordings
+            .iter()
+            .map(|recording| recording.page)
+            .collect();
+        assert_eq!(kept, (4..12).collect::<Vec<_>>());
     }
 
     #[test]
@@ -2414,9 +2566,10 @@ mod tests {
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 3333333333333333200 200] >>",
         ]);
         let document = Document::from_bytes(&bytes, "application/pdf").unwrap();
+        let recording = record(&document, 0).unwrap();
         for rotation in [Rotation::None, Rotation::Quarter] {
             let bitmap = render(
-                &document,
+                &recording,
                 RenderJob {
                     page: 0,
                     scale: 0.25,

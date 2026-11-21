@@ -161,6 +161,8 @@ pub enum Message {
     /// The text on some pages of the document with this number was read,
     /// or could not be.
     TextFound(u64, Vec<u32>, Result<backend::PageText, backend::Error>),
+    /// A command run with `:!`, as typed, finished, or could not be run.
+    ShellRan(String, Result<crate::shell::Ran, crate::shell::Error>),
 }
 
 /// What to do once a document's changes are saved.
@@ -801,6 +803,10 @@ impl App {
                 Task::none()
             }
             Message::TextFound(id, pages, result) => self.on_text(id, &pages, result),
+            Message::ShellRan(command, result) => {
+                self.on_shell(&command, result);
+                Task::none()
+            }
             Message::Edited(id, edit, step, result) => self.on_edited(id, edit, step, result),
             Message::MarkingsFound(id, edition, wanted, result) => {
                 self.on_markings(id, edition, wanted, result)
@@ -1953,6 +1959,7 @@ impl App {
             Command::Version => self.notice = Notice::Info(crate::ABOUT.to_owned()),
             Command::Info => self.show_info(),
             Command::Note(text) => return self.add_note(text),
+            Command::Shell(line) => return self.shell(line),
             Command::ShowTheme => {
                 let theme = self.current_theme().name();
                 self.notice = Notice::Info(if self.theme.is_some() {

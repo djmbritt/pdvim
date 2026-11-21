@@ -305,6 +305,7 @@ The box at the left of the status bar always names the mode, which says what the
 | `:info`, `:f[ile]`                     | Show the document's title, author, dates, pages, format, encryption  |
 | `:note {text}`                         | Put a note with that text in the margin at the top of the window     |
 | `:noh[lsearch]`                        | Hide search highlights                                               |
+| `:!{command}`                          | Run a shell command; `%` is the document's file                      |
 | `:set recolor [true\|false\|auto]`     | Turn recoloring on or off, or follow the system's theme (default)    |
 | `:set trim [true\|false]`              | Turn margin trimming on or off                                       |
 | `:set recolor-lightcolor #rrggbb`      | Set the color white paper becomes when recolored (default: theme's)  |
@@ -349,6 +350,8 @@ The box at the left of the status bar always names the mode, which says what the
 | `:wqa[ll]`, `:xa[ll]`                  | Save every document, then quit                                       |
 
 If you name a boolean setting without a value, it is turned on.
+
+`:!` runs the rest of the line in the shell (`sh -c`, or `cmd /C` on Windows), `;` and all, with each `%` standing for the file of the document in view, quoted so that any path works; `\%` is a `%` itself. `:!xdg-open %` opens the document in your default program for it, and `:!cp % ~/papers/` copies it. pdvim goes on while the command runs, and shows the last line it printed in the status bar once it finishes, or its exit status and error if it fails.
 
 `:help` shows a cheat sheet of every action in every mode, the keys bound to it, and what it does. It shows your own bindings, including changes from the configuration file and `:map`. Scroll it with `j` / `k`, `Ctrl-d` / `Ctrl-u`, and `g` / `G`, and close it with `q` or `Esc`. To open it with a key, bind the `help` action, as in `"ctrl+h" = "help"`. `:help {topic}` opens it at a topic: a mode's name, such as `visual`, `hints` or `prompt`; a word from a heading, such as `zoom` or `tabs`; or an action's name, such as `rotate`. `:apropos {word}` shows only the actions whose name or description mentions the word, and those bound to it as a key, under their headings: `:apropos mark` lists everything about marks and markings.
 

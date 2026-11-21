@@ -330,6 +330,21 @@ Put a note with that text in the margin at the top of the window.
 .B :noh[lsearch]
 Hide search highlights.
 .TP
+.BI :! command
+Run the rest of the line in the shell,
+.B ;
+and all.
+Each
+.B %
+stands for the file of the document in view, quoted;
+.B \e%
+is a
+.B %
+itself.
+pdvim goes on while it runs, and shows the last line it printed:
+.B ":!xdg\-open %"
+opens the document in another program.
+.TP
 .BI ":set " "setting value"
 Change a setting, as listed in pdvim(5).
 A boolean setting named without a value is turned on.

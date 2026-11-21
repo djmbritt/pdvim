@@ -8,3 +8,4 @@
 /packaging/flatpak/cargo-sources.json
 /build-dir
 /.flatpak-builder
+/.rust-review-results

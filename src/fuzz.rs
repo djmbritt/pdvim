@@ -365,7 +365,7 @@ fn visual_key(selection: &mut Visual, keymaps: &Keymaps, key: Key, text: &Text) 
             assert!(!areas.is_empty(), "marked nothing");
             false
         }
-        visual::Outcome::Note(page, _) => {
+        visual::Outcome::Note(page, _) | visual::Outcome::ChangeNote(page, _) => {
             assert_eq!(page, cursor.page, "a note away from the cursor");
             false
         }

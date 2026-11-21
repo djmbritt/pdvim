@@ -8,10 +8,11 @@ use iced::{Color, Element, Fill, Font, Task};
 
 use super::{
     App, Document, HELP_ROW, LIST_TEXT_SIZE, Message, Notice, Prompt, SIDEBAR_WIDTH, Sidebar,
-    colour, current_document, document_by_id, rectangle,
+    colour, current_document, document_by_id, draw_label, label_size, rectangle,
 };
 use crate::backend::{self, Annotation, Marking, Markup, MarkupKind};
 use crate::bindings::Keymaps;
+use crate::hints::{Hints, Outcome as HintOutcome};
 use crate::input::MarkingAction;
 use crate::keymap::Pending;
 use crate::layout::Rect;
@@ -138,6 +139,10 @@ pub enum Wanted {
     DeleteCurrent,
     /// Change the note on the marking last gone to.
     ChangeCurrent,
+    /// Change the note on the marking at a character, from visual mode.
+    ChangeAt(u32, Rect),
+    /// Label the markings in view, to pick one.
+    Label,
     /// Take away the markings over these areas, each on a page.
     DeleteIn(Vec<(u32, Rect)>),
     /// List them in the sidebar.
@@ -153,6 +158,7 @@ impl App {
             MarkingAction::Step { forward, times } => Wanted::Step { forward, times },
             MarkingAction::Delete => Wanted::DeleteCurrent,
             MarkingAction::ChangeNote => Wanted::ChangeCurrent,
+            MarkingAction::Label => Wanted::Label,
             MarkingAction::List => Wanted::List,
         };
         self.with_markings(wanted)
@@ -213,6 +219,17 @@ impl App {
                 if let Some(marking) = self.picked() {
                     self.ask_to_change(&marking);
                 }
+                Task::none()
+            }
+            Wanted::ChangeAt(page, character) => {
+                match self.marking_at(page, character) {
+                    Some(marking) => self.ask_to_change(&marking),
+                    None => self.notice = Notice::Info("no marking here".to_owned()),
+                }
+                Task::none()
+            }
+            Wanted::Label => {
+                self.label_markings();
                 Task::none()
             }
             Wanted::DeleteIn(areas) => self.delete_in(&areas),
@@ -312,6 +329,63 @@ impl App {
             self.notice = Notice::Info("no marking picked here: ]h or [h picks one".to_owned());
         }
         picked
+    }
+
+    /// The marking at a character of the document in view: over it, or a
+    /// note beside its line.
+    pub(super) fn marking_at(&self, page: u32, character: Rect) -> Option<Marking> {
+        let markings = self.document()?.markings.as_ref()?;
+        let index = found::at(markings, page, character)?;
+        markings.get(index).cloned()
+    }
+
+    /// The note on the marking at visual mode's cursor, if it has one.
+    pub(super) fn note_at_cursor(&self) -> Option<String> {
+        let cursor = self.visual.as_ref()?.cursor();
+        let character = crate::visual::character(&self.document()?.text, cursor)?;
+        self.marking_at(cursor.page, character)?.kept.contents
+    }
+
+    /// Labels the markings in view, to pick one by typing its label.
+    fn label_markings(&mut self) {
+        self.pending = Pending::new();
+        let height = self.area.height;
+        let Some(document) = self.document() else {
+            return;
+        };
+        let shown: Vec<(u32, Marking)> = document
+            .markings
+            .iter()
+            .flatten()
+            .filter(|marking| in_view(&document.reader, marking, height))
+            .map(|marking| (marking.page, marking.clone()))
+            .collect();
+        self.marking_hints = Hints::new(shown);
+        if self.marking_hints.is_none() {
+            self.notice = Notice::Info("no markings in view".to_owned());
+        }
+    }
+
+    /// Picks the marking whose label was typed, as `]h` would go to it.
+    pub(super) fn on_marking_hint(&mut self, outcome: HintOutcome<Marking>) {
+        match outcome {
+            HintOutcome::Wait => return,
+            HintOutcome::Cancel => {}
+            HintOutcome::NoMatch => self.notice = Notice::Error("no such marking".to_owned()),
+            HintOutcome::Picked(hint) => {
+                if let Some(document) = current_document(&mut self.tabs, self.current) {
+                    let markings = document.markings.as_deref().unwrap_or_default();
+                    let count = markings.len();
+                    let index = markings
+                        .iter()
+                        .position(|marking| *marking == hint.item)
+                        .unwrap_or_default();
+                    document.marking = Some(hint.item.annotation());
+                    self.notice = Notice::Info(describe(&hint.item, index, count));
+                }
+            }
+        }
+        self.marking_hints = None;
     }
 
     /// Opens the prompt to change the note on a marking, with the note it
@@ -692,6 +766,12 @@ fn go_to(document: &mut Document, marking: &Marking, index: usize, count: usize)
     if let Some(area) = found::extent(marking) {
         document.reader.reveal(marking.page, area);
     }
+    describe(marking, index, count)
+}
+
+/// What the bottom line says of a marking, the one with this index of so
+/// many: its kind, its place, and its note.
+fn describe(marking: &Marking, index: usize, count: usize) -> String {
     let said = format!(
         "{} {} of {count}",
         marking.kind.noun(),
@@ -700,6 +780,27 @@ fn go_to(document: &mut Document, marking: &Marking, index: usize, count: usize)
     match &marking.kept.contents {
         Some(note) => format!("{said}: {note}"),
         None => said,
+    }
+}
+
+/// Draws the label on each marking in view, just left of its first area,
+/// so that it does not hide the marking's colour.
+pub(super) fn draw_labels(frame: &mut canvas::Frame, document: &Document, hints: &Hints<Marking>) {
+    for hint in hints.shown() {
+        let Some(area) = hint
+            .item
+            .areas
+            .first()
+            .and_then(|&area| document.reader.area_on_screen(hint.page, area))
+        else {
+            continue;
+        };
+        let width = label_size().width;
+        draw_label(
+            frame,
+            hint.label,
+            iced::Point::new(area.left - width - 2.0, area.top),
+        );
     }
 }
 

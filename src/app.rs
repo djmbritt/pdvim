@@ -424,6 +424,8 @@ pub struct App {
     sidebar: Option<Sidebar>,
     /// The labels on the links in view, while they are shown.
     hints: Option<Hints<Link>>,
+    /// The labels on the markings in view, while they are shown.
+    marking_hints: Option<Hints<Marking>>,
     /// The document whose links are being found so that they can be
     /// labelled, by its number.
     hints_wanted: Option<u64>,
@@ -526,6 +528,7 @@ impl App {
             info: None,
             sidebar: None,
             hints: None,
+            marking_hints: None,
             hints_wanted: None,
             line_hints: None,
             lines_wanted: None,
@@ -753,6 +756,10 @@ impl App {
                 } else if let Some(hints) = &mut self.hints {
                     let outcome = hints.feed(key, &self.keymaps.hints);
                     self.on_hint(outcome);
+                    Task::none()
+                } else if let Some(hints) = &mut self.marking_hints {
+                    let outcome = hints.feed(key, &self.keymaps.hints);
+                    self.on_marking_hint(outcome);
                     Task::none()
                 } else if self.sidebar.is_some() {
                     self.on_sidebar_key(key)
@@ -1032,7 +1039,10 @@ impl App {
             Outcome::Picked(hint) => {
                 self.line_hints = None;
                 self.visual = Some(Visual::new(kind, hint.item));
-                self.follow_cursor()
+                // Known, so that the bottom line can show the note at the
+                // cursor.
+                let markings = self.with_markings(Wanted::Refresh);
+                Task::batch([self.follow_cursor(), markings])
             }
         }
     }
@@ -1066,6 +1076,10 @@ impl App {
                 self.visual = None;
                 self.ask_for_note(page, area);
                 Task::none()
+            }
+            visual::Outcome::ChangeNote(page, area) => {
+                self.visual = None;
+                self.with_markings(Wanted::ChangeAt(page, area))
             }
             visual::Outcome::Copy(text) => {
                 self.visual = None;
@@ -2601,8 +2615,11 @@ impl App {
                 let keymap = &self.keymaps.visual;
                 let yank = keymap.first(visual::Binding::Yank);
                 let leave = keymap.first(visual::Binding::Leave);
+                let note = self
+                    .note_at_cursor()
+                    .map_or_else(String::new, |note| format!("    note: {note}"));
                 label(
-                    format!("{kind}{typed}    {yank} copies, {leave} leaves"),
+                    format!("{kind}{typed}    {yank} copies, {leave} leaves{note}"),
                     chrome.bar_text,
                 )
             }
@@ -3151,6 +3168,9 @@ impl canvas::Program<Message> for Marks<'_> {
             }
         }
         markings::draw_current(&mut frame, document);
+        if let Some(hints) = &self.0.marking_hints {
+            markings::draw_labels(&mut frame, document, hints);
+        }
         if let Some(visual) = &self.0.visual {
             for (page, area) in visual.areas(&document.text) {
                 if let Some(area) = document.reader.area_on_screen(page, area) {

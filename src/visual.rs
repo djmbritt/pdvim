@@ -23,6 +23,8 @@ bindable! {
         Unmark = "unmark", "Take away the markings under the selection, and leave";
         /// The text is typed at the prompt that opens.
         Note = "note", "Put a note at the cursor, and leave";
+        /// The marking under the cursor, or the note beside its line.
+        ChangeNote = "change-note", "Change the note on the marking at the cursor, and leave";
         Leave = "leave", "Leave without copying";
         OtherEnd = "other-end", "Go to the other end of the selection";
         /// The kind in force leaves; the other kind switches to it.
@@ -104,6 +106,9 @@ pub enum Outcome {
     /// Put a note at the cursor, which is this area of this page, and
     /// leave.
     Note(u32, Rect),
+    /// Change the note on the marking at the cursor, which is this area
+    /// of this page, and leave.
+    ChangeNote(u32, Rect),
     /// Leave without copying.
     Leave,
 }
@@ -204,6 +209,11 @@ impl Visual {
             Binding::Note => {
                 return character(text, self.cursor)
                     .map_or(Outcome::Leave, |area| Outcome::Note(self.cursor.page, area));
+            }
+            Binding::ChangeNote => {
+                return character(text, self.cursor).map_or(Outcome::Leave, |area| {
+                    Outcome::ChangeNote(self.cursor.page, area)
+                });
             }
             Binding::OtherEnd => std::mem::swap(&mut self.anchor, &mut self.cursor),
             Binding::Characters | Binding::Lines => {

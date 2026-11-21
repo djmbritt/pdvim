@@ -73,6 +73,22 @@ pub fn touching(markings: &[Marking], areas: &[(u32, Rect)]) -> Vec<usize> {
         .collect()
 }
 
+/// The marking at a character: one over it, or else a note beside its
+/// line, which sits in the margin.
+pub fn at(markings: &[Marking], page: u32, character: Rect) -> Option<usize> {
+    let over = touching(markings, &[(page, character)]);
+    over.first().copied().or_else(|| {
+        markings.iter().position(|marking| {
+            marking.page == page
+                && marking.kind == crate::backend::MarkupKind::Note
+                && marking
+                    .areas
+                    .first()
+                    .is_some_and(|area| area.top < character.bottom && character.top < area.bottom)
+        })
+    })
+}
+
 /// The box around every area of a marking.
 pub fn extent(marking: &Marking) -> Option<Rect> {
     marking.areas.iter().copied().reduce(|one, other| Rect {
@@ -249,6 +265,33 @@ mod tests {
     fn nothing_to_step_to_without_markings() {
         assert_eq!(step(&[], None, |_| true, true, 1), None);
         assert_eq!(step(&[], None, |_| false, false, 1), None);
+    }
+
+    #[test]
+    fn the_marking_at_a_character_is_over_it_or_a_note_beside_its_line() {
+        let mut markings = markings();
+        let mut note = marking(3, 395.0);
+        note.kind = MarkupKind::Note;
+        note.areas = vec![Rect {
+            left: 12.0,
+            top: 395.0,
+            right: 32.0,
+            bottom: 415.0,
+        }];
+        markings.push(note);
+        let character = |left: f32, top: f32| Rect {
+            left,
+            top,
+            right: left + 6.0,
+            bottom: top + 10.0,
+        };
+        // Over the highlight on page 3 at 400.
+        assert_eq!(at(&markings, 3, character(50.0, 402.0)), Some(2));
+        // Past its end, on the same line: the note beside the line.
+        assert_eq!(at(&markings, 3, character(300.0, 402.0)), Some(4));
+        // A line with neither.
+        assert_eq!(at(&markings, 3, character(50.0, 250.0)), None);
+        assert_eq!(at(&markings, 5, character(50.0, 402.0)), None);
     }
 
     #[test]

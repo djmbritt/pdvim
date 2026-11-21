@@ -21,8 +21,13 @@ run() {
         pdf) set -- "$@" -dict=dicts/pdf.dict -rss_limit_mb=4096 ;;
         # MuPDF leaks a little reading a damaged comic page (cbz_load_page
         # keeps its buffer in a variable not marked fz_var), which would
-        # stop every run.
-        formats) set -- "$@" -rss_limit_mb=4096 -detect_leaks=0 ;;
+        # stop every run: neither libFuzzer nor the sanitizer, as the
+        # process ends, looks for leaks.
+        formats)
+            set -- "$@" -rss_limit_mb=4096 -detect_leaks=0
+            ASAN_OPTIONS="${ASAN_OPTIONS:+$ASAN_OPTIONS:}detect_leaks=0"
+            export ASAN_OPTIONS
+            ;;
         config) set -- "$@" -dict=dicts/config.dict ;;
     esac
     cargo +nightly fuzz run "$target" "corpus/$target" "seeds/$target" -- "$@"

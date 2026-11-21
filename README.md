@@ -270,6 +270,8 @@ The box at the left of the status bar always names the mode, which says what the
 | `:o[pen] {file}`                       | Open a document in a new tab (`~` expands to your home directory)    |
 | `:rec[ent]`                            | Show recent documents                                                |
 | `:h[elp]`                              | Show every action and the keys bound to it                           |
+| `:h[elp] {topic}`                      | The same, scrolled to a mode, a heading or an action: `:help visual` |
+| `:apr[opos] {word}`                    | Show only the actions and keys that mention the word: `:apropos zoom` |
 | `:marks`                               | List the marks of the document in view, and `A`–`Z`                  |
 | `:delm[arks] {letters}` or `!`         | Take marks away: those letters, or with `!` all of this document's   |
 | `:ve[rsion]`                           | Show pdvim's version and where to find it on GitHub                  |
@@ -318,7 +320,7 @@ The box at the left of the status bar always names the mode, which says what the
 
 If you name a boolean setting without a value, it is turned on.
 
-`:help` shows a cheat sheet of every action in every mode, the keys bound to it, and what it does. It shows your own bindings, including changes from the configuration file and `:map`. Scroll it with `j` / `k`, `Ctrl-d` / `Ctrl-u`, and `g` / `G`, and close it with `q` or `Esc`. To open it with a key, bind the `help` action, as in `"ctrl+h" = "help"`.
+`:help` shows a cheat sheet of every action in every mode, the keys bound to it, and what it does. It shows your own bindings, including changes from the configuration file and `:map`. Scroll it with `j` / `k`, `Ctrl-d` / `Ctrl-u`, and `g` / `G`, and close it with `q` or `Esc`. To open it with a key, bind the `help` action, as in `"ctrl+h" = "help"`. `:help {topic}` opens it at a topic: a mode's name, such as `visual`, `hints` or `prompt`; a word from a heading, such as `zoom` or `tabs`; or an action's name, such as `rotate`. `:apropos {word}` shows only the actions whose name or description mentions the word, and those bound to it as a key, under their headings: `:apropos mark` lists everything about marks and markings.
 
 You can also run any [action](#actions) by name, as in `:scroll-down` or `:next-tab`. A number after it works like a count typed before a key: `:zoom-to 150` zooms to 150%, and `:first-page 12` goes to page 12.
 

@@ -205,6 +205,62 @@ impl Help {
         }
     }
 
+    /// A sheet of only the entries whose action, description or keys
+    /// mention a word, under their headings; none when nothing does. Case
+    /// is ignored.
+    pub fn matching(keymaps: &Keymaps, word: &str) -> Option<Self> {
+        let word = word.to_lowercase();
+        let all = Self::new(keymaps).lines;
+        let mut lines = Vec::new();
+        let mut heading = None;
+        for line in all {
+            if matches!(line, Line::Heading(_)) {
+                heading = Some(line);
+            } else if mentions(&line, &word) {
+                if let Some(heading) = heading.take() {
+                    if !lines.is_empty() {
+                        lines.push(Line::Blank);
+                    }
+                    lines.push(heading);
+                }
+                lines.push(line);
+            }
+        }
+        (!lines.is_empty()).then(|| Self {
+            lines,
+            top: 0,
+            pending: Pending::new(),
+        })
+    }
+
+    /// Scrolls to a topic, given this many rows: the part for the mode of
+    /// that name, the first heading that mentions it, or else the entry of
+    /// the action of that name. Returns whether it was found.
+    pub fn go_to(&mut self, topic: &str, rows: usize) -> bool {
+        let topic = topic.trim().to_lowercase();
+        let wanted = Mode::named(&topic).map(heading);
+        let found = self
+            .lines
+            .iter()
+            .position(|line| matches!(line, Line::Heading(text) if Some(*text) == wanted))
+            .or_else(|| {
+                self.lines.iter().position(
+                    |line| matches!(line, Line::Heading(text) if text.to_lowercase().contains(&topic)),
+                )
+            })
+            .or_else(|| {
+                self.lines
+                    .iter()
+                    .position(|line| matches!(line, Line::Entry { action, .. } if *action == topic))
+            });
+        let Some(found) = found else {
+            return false;
+        };
+        let bottom = self.lines.len().saturating_sub(rows);
+        self.top = found.min(bottom);
+        true
+    }
+
     /// The lines that fit in this many rows, from the top shown.
     pub fn shown(&self, rows: usize) -> &[Line] {
         let end = self.top.saturating_add(rows).min(self.lines.len());
@@ -241,6 +297,27 @@ impl Help {
         .min(bottom);
         true
     }
+}
+
+/// Whether an entry's action, description or command line mentions a
+/// word in lower case, or a key bound to it is the word.
+fn mentions(line: &Line, word: &str) -> bool {
+    let (keys, text) = match line {
+        Line::Entry {
+            keys,
+            action,
+            description,
+            ..
+        } => {
+            if action.contains(word) {
+                return true;
+            }
+            (keys, description.to_lowercase())
+        }
+        Line::Command { keys, line } => (keys, line.to_lowercase()),
+        Line::Heading(_) | Line::Blank => return false,
+    };
+    text.contains(word) || keys.split(", ").any(|key| key == word)
 }
 
 /// Adds a part of the sheet: a heading, then a line for each of these,
@@ -360,6 +437,51 @@ mod tests {
             keys: "ctrl+t".into(),
             line: "theme auto".into()
         }));
+    }
+
+    #[test]
+    fn a_topic_scrolls_to_its_part_of_the_sheet() {
+        let rows = 5;
+        let mut help = Help::new(&Keymaps::default());
+        assert!(help.go_to("visual", rows));
+        assert_eq!(
+            help.shown(rows).first(),
+            Some(&Line::Heading("Visual mode: selecting text"))
+        );
+        assert!(help.go_to("Zoom", rows));
+        assert_eq!(help.shown(rows).first(), Some(&Line::Heading("Zoom and view")));
+        assert!(help.go_to("rotate", rows));
+        assert!(matches!(
+            help.shown(rows).first(),
+            Some(Line::Entry { action: "rotate", .. })
+        ));
+        assert!(!help.go_to("nothing like it", rows));
+        // Near the end, the sheet stays full.
+        assert!(help.go_to("confirm", rows));
+        assert_eq!(help.shown(rows).len(), rows);
+    }
+
+    #[test]
+    fn apropos_keeps_only_what_mentions_the_word() {
+        let help = Help::matching(&Keymaps::default(), "ZOOM").unwrap();
+        let actions: Vec<_> = help
+            .lines
+            .iter()
+            .filter_map(|line| match line {
+                Line::Entry { action, .. } => Some(*action),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(actions, ["zoom-in", "zoom-out", "zoom-to", "zoom-reset"]);
+        assert_eq!(help.lines.first(), Some(&Line::Heading("Zoom and view")));
+        assert!(Help::matching(&Keymaps::default(), "xyzzy").is_none());
+        // A key matches whole.
+        let help = Help::matching(&Keymaps::default(), "q").unwrap();
+        assert!(
+            help.lines
+                .iter()
+                .any(|line| matches!(line, Line::Entry { action: "quit", .. }))
+        );
     }
 
     #[test]

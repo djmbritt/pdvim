@@ -2028,7 +2028,24 @@ impl App {
                     format!("theme {theme}, following the system (auto)")
                 });
             }
-            Command::Help => self.show_help(),
+            Command::Help(topic) => {
+                self.show_help();
+                let rows = self.help_rows();
+                if let Some(topic) = topic
+                    && let Some(help) = &mut self.help
+                    && !help.go_to(&topic, rows)
+                {
+                    self.notice = Notice::Error(format!("no help for {topic}"));
+                }
+            }
+            Command::Apropos(word) => {
+                self.pending = Pending::new();
+                self.picker = None;
+                self.help = Help::matching(&self.keymaps, &word);
+                if self.help.is_none() {
+                    self.notice = Notice::Error(format!("nothing mentions {word}"));
+                }
+            }
             Command::TabOpen(None) => {
                 self.tabs.push(Tab::default());
                 self.go_to_tab(self.tabs.len().saturating_sub(1));

@@ -15,8 +15,11 @@ pub enum Command {
     Open(PathBuf),
     /// Show the recently read documents, to pick one to open.
     Recent,
-    /// Show the key bindings.
-    Help,
+    /// Show the key bindings, at a topic if one is given: a mode, a
+    /// heading, or an action.
+    Help(Option<String>),
+    /// Show only the bindings that mention a word.
+    Apropos(String),
     /// Say which theme is in force.
     ShowTheme,
     /// Say which version of pdvim this is, and where it comes from.
@@ -190,7 +193,8 @@ pub enum Error {
 }
 
 /// Every command by its full name, and the shorter names it also goes by.
-const NAMES: [(&str, &[&str]); 29] = [
+const NAMES: [(&str, &[&str]); 30] = [
+    ("apropos", &["apr"]),
     ("delmarks", &["delm"]),
     ("goto", &[]),
     ("help", &["h"]),
@@ -323,7 +327,9 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
         // As `:set theme`; with nothing after it, says which is in force.
         "theme" if argument.is_empty() => Command::ShowTheme,
         "theme" => Command::Set(setting("theme", argument)?),
-        "help" => Command::Help,
+        "help" => Command::Help((!argument.is_empty()).then(|| argument.to_owned())),
+        "apropos" if argument.is_empty() => return Err(Error::MissingArgument("apropos")),
+        "apropos" => Command::Apropos(argument.to_owned()),
         "nohlsearch" => Command::NoHighlight,
         "set" => Command::Set(parse_setting(argument)?),
         "map" | "unmap" | "mapclear" => map_command(canonical, argument)?,
@@ -940,6 +946,20 @@ mod tests {
                 Bound::Normal(Binding::Visual)
             )))
         );
+    }
+
+    #[test]
+    fn help_takes_a_topic_and_apropos_a_word() {
+        assert_eq!(parse("h"), Ok(Some(Command::Help(None))));
+        assert_eq!(
+            parse("help visual"),
+            Ok(Some(Command::Help(Some("visual".into()))))
+        );
+        assert_eq!(
+            parse("apropos zoom"),
+            Ok(Some(Command::Apropos("zoom".into())))
+        );
+        assert_eq!(parse("apropos"), Err(Error::MissingArgument("apropos")));
     }
 
     #[test]

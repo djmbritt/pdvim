@@ -76,6 +76,17 @@ pub fn complete(line: &str) -> Completion {
             };
         }
         Some("set") if words_before == 0 => words(last_word, command::SETTINGS),
+        // A mode, or an action of normal mode.
+        Some("help") if words_before == 0 => {
+            let mut topics: Vec<&str> = Mode::ALL
+                .iter()
+                .map(|mode| mode.name())
+                .chain(Binding::names())
+                .collect();
+            topics.sort_unstable();
+            topics.dedup();
+            words(last_word, topics)
+        }
         Some("set") if words_before == 1 => match rest.split_whitespace().next() {
             Some(
                 "autosave" | "confirm-quit" | "confirm-tab-close" | "incsearch" | "statusbar"

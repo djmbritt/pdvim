@@ -24,7 +24,7 @@ use crate::theme::Colours;
 const NOTE_SIZE: f32 = 20.0;
 
 /// How far from the page's left edge a note goes, and how far below the
-/// top of the window when not beside visual mode's cursor, in points.
+/// top of the window, when not at visual mode's cursor, in points.
 const NOTE_MARGIN: f32 = 12.0;
 
 /// The colour of the frame around the marking last gone to.
@@ -562,15 +562,12 @@ impl App {
             return self.start_edit(id, edit, Step::Do);
         }
         let (page, left, top) = match wanted {
-            // On the sentence's line, just before its first character. It
-            // lets the text through, so what it covers can still be read.
+            // Over the sentence's first character, so that it stays inside
+            // the text when the margins are trimmed. It lets the text
+            // through, so what it covers can still be read.
             Some((id, page, area)) if id == document.id => {
                 let middle = f32::midpoint(area.top, area.bottom);
-                (
-                    page,
-                    (area.left - NOTE_SIZE).max(0.0),
-                    (middle - NOTE_SIZE / 2.0).max(0.0),
-                )
+                (page, area.left, (middle - NOTE_SIZE / 2.0).max(0.0))
             }
             _ => {
                 let place = document.reader.place();
@@ -578,11 +575,14 @@ impl App {
                     .reader
                     .page_size(place.page)
                     .map_or(0.0, |size| size.height);
-                (
-                    place.page,
-                    NOTE_MARGIN,
-                    place.down.mul_add(height, NOTE_MARGIN),
-                )
+                // At the text's left edge once the margins are measured, so
+                // that trimming them keeps it in view.
+                let left = document
+                    .contents
+                    .as_ref()
+                    .and_then(|contents| contents.get(crate::num::index(place.page)))
+                    .map_or(NOTE_MARGIN, |content| content.left + NOTE_MARGIN / 2.0);
+                (place.page, left, place.down.mul_add(height, NOTE_MARGIN))
             }
         };
         let markup = Markup {

@@ -809,7 +809,8 @@ fn page_hits(document: &Document, number: u32, needle: &str) -> Result<Vec<Hit>,
 
 /// The area of a page that holds its content, found by rendering it small
 /// and looking for what is not paper, with a margin around it. The whole
-/// page when it is blank.
+/// page when it is blank. Annotations are left out of the rendering, so
+/// that notes and highlights never change the margins.
 fn page_content(document: &Document, number: u32) -> Result<Rect, mupdf::Error> {
     let page = document.load_page(page_number(number))?;
     let bounds = page.bounds()?;
@@ -825,7 +826,7 @@ fn page_content(document: &Document, number: u32) -> Result<Rect, mupdf::Error> 
         &Matrix::new_scale(scale, scale),
         &Colorspace::device_gray(),
         false,
-        true,
+        false,
     )?;
     let stride = usize::try_from(pixmap.stride()).unwrap_or(0);
     let content = content_box(pixmap.samples(), stride, num::index(pixmap.width()));
@@ -2136,6 +2137,29 @@ mod tests {
         for (one, other) in again[0].areas.iter().zip(&marking.areas) {
             assert!((one.top - other.top).abs() < 0.01 && (one.left - other.left).abs() < 0.01);
         }
+    }
+
+    #[test]
+    fn notes_in_the_margin_leave_the_margins_as_they_were() {
+        let file = Scratch::new("trim", text_pdf());
+        let document = Document::open(file.0.to_str().unwrap()).unwrap();
+        let before = page_content(&document, 0).unwrap();
+        let markup = Markup {
+            kind: MarkupKind::Note,
+            pages: vec![(
+                0,
+                vec![Rect {
+                    left: 4.0,
+                    top: 4.0,
+                    right: 24.0,
+                    bottom: 24.0,
+                }],
+            )],
+            colour: Rgb(0, 0, 0),
+            note: Some("In the corner".to_owned()),
+        };
+        highlight_in(&document, &markup).unwrap();
+        assert_eq!(page_content(&document, 0).unwrap(), before);
     }
 
     #[test]

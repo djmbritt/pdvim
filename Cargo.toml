@@ -7,6 +7,9 @@ license = "AGPL-3.0-or-later"
 repository = "https://github.com/djmbritt/pdvim"
 
 [dependencies]
+# The clipboard, for pictures, which iced's holds only text of: see
+# src/clipboard.rs.
+arboard = { version = "3.7", default-features = false, features = ["image-data", "wayland-data-control"] }
 # Fonts installed on the system, for what documents lack: see src/fonts.rs.
 font-kit = "0.14"
 iced = { version = "0.14.0", features = ["canvas", "image"] }

@@ -1,6 +1,8 @@
 //! Labels on the links in view: `f` follows one, `F` opens an internal
 //! one in a new tab, and `;y` copies one's address. Typing `/` and some of
-//! a link's text narrows the labels to the links that hold it.
+//! a link's text narrows the labels to the links that hold it. `yi`
+//! labels the pictures and figures in view instead, to copy one as a
+//! picture.
 
 use std::path::PathBuf;
 
@@ -27,6 +29,24 @@ impl App {
         };
         let id = document.id;
         let visible: Vec<u32> = document.reader.visible_pages().collect();
+        if goal == LinkGoal::Picture {
+            let missing: Vec<u32> = visible
+                .iter()
+                .copied()
+                .filter(|page| !document.figures.contains_key(page))
+                .collect();
+            let finding = (!missing.is_empty()).then(|| document.backend.figures(missing));
+            let reading = self.read_text(visible);
+            let Some(finding) = finding else {
+                self.show_hints();
+                return reading;
+            };
+            self.hints_wanted = Some(id);
+            return Task::batch([
+                Task::perform(finding, move |result| Message::FiguresFound(id, result)),
+                reading,
+            ]);
+        }
         let missing: Vec<u32> = visible
             .iter()
             .copied()
@@ -63,16 +83,69 @@ impl App {
         }
     }
 
+    pub(super) fn on_figures(
+        &mut self,
+        id: u64,
+        result: Result<backend::PageFigures, backend::Error>,
+    ) -> Task<Message> {
+        let wanted = self.hints_wanted.take() == Some(id);
+        let Some(document) = document_by_id(&mut self.tabs, id) else {
+            return Task::none();
+        };
+        match result {
+            Ok(pages) => document.figures.extend(pages),
+            Err(error) => {
+                self.notice = Notice::Error(error.to_string());
+                return Task::none();
+            }
+        }
+        if wanted && self.document().is_some_and(|document| document.id == id) {
+            self.show_hints();
+        }
+        Task::none()
+    }
+
+    /// Says whether a picture reached the clipboard.
+    pub(super) fn on_picture_copied(&mut self, result: Result<(), String>) -> Task<Message> {
+        self.notice = match result {
+            Ok(()) => Notice::Info("copied the picture".to_owned()),
+            Err(error) => Notice::Error(format!("cannot copy the picture: {error}")),
+        };
+        Task::none()
+    }
+
     /// Labels the links that show in the window, in reading order, and
-    /// for `f` the fields and markings too.
+    /// for `f` the fields and markings too; or for `yi` the pictures and
+    /// figures.
     fn show_hints(&mut self) {
         let Some(document) = self.document() else {
             return;
         };
         let following = self.link_goal == LinkGoal::Follow;
+        let pictures = self.link_goal == LinkGoal::Picture;
         let (width, height) = (self.area.width, self.area.height);
         let reader = &document.reader;
-        let mut links: Vec<(u32, Rect, Labelled)> = reader
+        let on_screen = |page: u32, area: Rect| {
+            reader.area_on_screen(page, area).is_some_and(|area| {
+                area.right > 0.0 && area.left < width && area.bottom > 0.0 && area.top < height
+            })
+        };
+        let figures = reader.visible_pages().flat_map(|page| {
+            document
+                .figures
+                .get(&page)
+                .into_iter()
+                .flatten()
+                .map(move |area| (page, *area, Labelled::Picture(*area)))
+        });
+        let mut links: Vec<(u32, Rect, Labelled)> = if pictures {
+            figures
+                .filter(|(page, area, _)| on_screen(*page, *area))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        links.extend(reader
             .visible_pages()
             .flat_map(|page| {
                 document
@@ -82,14 +155,10 @@ impl App {
                     .flatten()
                     .map(move |link| (page, link))
             })
+            .filter(|_| !pictures)
             .filter(|(_, link)| following || !matches!(link.target, Target::Field(_)))
-            .filter(|(page, link)| {
-                reader.area_on_screen(*page, link.area).is_some_and(|area| {
-                    area.right > 0.0 && area.left < width && area.bottom > 0.0 && area.top < height
-                })
-            })
-            .map(|(page, link)| (page, link.area, Labelled::Link(link.clone())))
-            .collect();
+            .filter(|(page, link)| on_screen(*page, link.area))
+            .map(|(page, link)| (page, link.area, Labelled::Link(link.clone()))));
         if following {
             links.extend(self.markings_in_view().into_iter().filter_map(|marking| {
                 let area = *marking.areas.first()?;
@@ -110,11 +179,14 @@ impl App {
         );
         self.label_texts();
         if self.hints.is_none() {
-            self.notice = Notice::Info(if following {
-                "no links, fields or markings in view".to_owned()
-            } else {
-                "no links in view".to_owned()
-            });
+            self.notice = Notice::Info(
+                match self.link_goal {
+                    LinkGoal::Follow => "no links, fields or markings in view",
+                    LinkGoal::Picture => "no pictures or figures in view",
+                    LinkGoal::NewTab | LinkGoal::Copy => "no links in view",
+                }
+                .to_owned(),
+            );
         }
     }
 
@@ -135,6 +207,10 @@ impl App {
             hints.set_texts(|page, item| match item {
                 Labelled::Link(link) => link_text(text, page, link),
                 Labelled::Marking(marking) => marking.text.clone(),
+                Labelled::Picture(area) => text
+                    .get(&page)
+                    .map(|lines| text_within(lines, *area))
+                    .unwrap_or_default(),
             });
         }
     }
@@ -160,6 +236,7 @@ impl App {
                         self.pick_marking(&marking);
                         return Task::none();
                     }
+                    Labelled::Picture(area) => return self.copy_picture(hint.page, area),
                 }
             }
         };
@@ -182,6 +259,40 @@ impl App {
             }
             (_, Target::Field(field)) => self.fill_field(field, link.area),
         }
+    }
+
+    /// Copies a picture or figure to the clipboard, as it is printed, at
+    /// least twice as sharp as a point to a pixel, and turned as it is
+    /// shown.
+    fn copy_picture(&mut self, page: u32, area: Rect) -> Task<Message> {
+        let scale_factor = self.scale_factor;
+        let Some(document) = self.document() else {
+            return Task::none();
+        };
+        // A little room around it, as shapes are measured to their middles.
+        let room = 2.0;
+        let clip = Rect {
+            left: (area.left - room).max(0.0),
+            top: (area.top - room).max(0.0),
+            right: area.right + room,
+            bottom: area.bottom + room,
+        };
+        let rendering = document.backend.render(backend::RenderJob {
+            page,
+            scale: (document.reader.zoom() * scale_factor).max(2.0),
+            rotation: document.reader.rotation(),
+            clip: Some(clip),
+            palette: None,
+        });
+        self.notice = Notice::Info("copying the picture".to_owned());
+        Task::perform(
+            async move {
+                let picture = rendering.await.map_err(|error| error.to_string())?;
+                crate::clipboard::copy_picture(picture.width, picture.height, picture.pixels)
+                    .await
+            },
+            Message::PictureCopied,
+        )
     }
 
     /// Copies where a link goes: its address, or for a place in the

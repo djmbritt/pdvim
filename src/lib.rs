@@ -18,6 +18,7 @@
 mod app;
 mod backend;
 mod bindings;
+mod clipboard;
 mod command;
 mod complete;
 mod config;

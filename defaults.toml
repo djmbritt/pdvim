@@ -377,6 +377,8 @@ note-color = "#fdd835"
 "ctrl+u" = "clear-line"
 "tab" = "complete"
 "shift+tab" = "complete-previous"
+# ctrl+shift+v pastes too
+"ctrl+v" = "paste"
 
 [keys.confirm]
 

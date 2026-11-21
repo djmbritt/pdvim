@@ -96,6 +96,8 @@ pub enum Message {
     Resized(Size),
     /// The display's pixels per logical pixel became known.
     Scaled(f32),
+    /// The text on the clipboard, read to paste into the prompt.
+    Pasted(Option<String>),
     /// The mouse wheel turned over the pages.
     Wheel(mouse::ScrollDelta),
     /// The window was asked to close.
@@ -648,6 +650,10 @@ impl App {
                 window::latest()
                     .and_then(window::scale_factor)
                     .map(Message::Scaled)
+            }
+            Message::Pasted(text) => {
+                self.paste(text.as_deref().unwrap_or_default());
+                Task::none()
             }
             Message::Scaled(scale_factor) => {
                 if scale_factor.is_finite() && scale_factor > 0.0 {
@@ -1653,6 +1659,11 @@ impl App {
                 return Task::none();
             }
             Fed::Bound(PromptBinding::Submit, _) => return self.submit(prompt, &line),
+            Fed::Bound(PromptBinding::Paste, _) => {
+                self.completing = completing;
+                self.prompt = Some((prompt, line));
+                return iced::clipboard::read().map(Message::Pasted);
+            }
             Fed::Bound(PromptBinding::Cancel, _) => return self.left_prompt(prompt),
             Fed::Bound(PromptBinding::RubOut, _) => {
                 // Rubbing out the sigil itself leaves the prompt, as in vi.
@@ -1686,6 +1697,19 @@ impl App {
         };
         self.prompt = Some((prompt, line));
         Task::none()
+    }
+
+    /// Puts text from the clipboard at the end of the line being typed, on
+    /// one line: each run of line breaks becomes a space.
+    fn paste(&mut self, text: &str) {
+        let Some((_, line)) = &mut self.prompt else {
+            return;
+        };
+        let before = line.len();
+        append_pasted(line, text);
+        if line.len() != before && self.completing.is_some() {
+            self.completing = narrowed(line);
+        }
     }
 
     /// Runs what was typed into a prompt.
@@ -2698,6 +2722,21 @@ impl App {
     }
 }
 
+/// Puts pasted text at the end of a line, on one line: each line break
+/// or tab becomes a space, and other control characters are left out.
+fn append_pasted(line: &mut String, text: &str) {
+    for (index, part) in text.lines().map(str::trim_end).enumerate() {
+        if index > 0 && !part.is_empty() && !line.is_empty() && !line.ends_with(' ') {
+            line.push(' ');
+        }
+        line.extend(
+            part.chars()
+                .map(|character| if character == '\t' { ' ' } else { character })
+                .filter(|character| !character.is_control()),
+        );
+    }
+}
+
 /// Completes the word at the end of a command line. The first press
 /// completes as far as every candidate agrees, and lists them if there are
 /// several; the presses after go through them in turn. Returns what is
@@ -3438,6 +3477,23 @@ fn tilde(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pasted_text_goes_on_one_line() {
+        let pasted = |line: &str, text: &str| {
+            let mut line = line.to_owned();
+            append_pasted(&mut line, text);
+            line
+        };
+        assert_eq!(pasted("note ", "plain"), "note plain");
+        assert_eq!(
+            pasted("note ", "two\nlines\r\n\nand a gap\n"),
+            "note two lines and a gap"
+        );
+        assert_eq!(pasted("note ", "tab\there\u{7}"), "note tab here");
+        assert_eq!(pasted("", "\nleading"), "leading");
+        assert_eq!(pasted("note x", ""), "note x");
+    }
 
     /// Presses Tab or Shift-Tab on a line, in order, and returns the line
     /// after each press and whether a list is shown.

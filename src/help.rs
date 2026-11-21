@@ -90,6 +90,7 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
                 B::Markings,
                 B::Undo,
                 B::Redo,
+                B::Write,
             ],
         ),
         ("Tabs", &[B::NextTab, B::PreviousTab]),

@@ -164,6 +164,8 @@ squiggly-color = "#fb8c00"
 "shift+tab" = "markings"
 "u" = "undo"
 "ctrl+r" = "redo"
+# Save them into the file, like :w
+"ctrl+s" = "write"
 
 # Marks and jumps. m then a letter marks the place: a to z in this
 # document, A to Z in any, kept across restarts. ` or ' then the letter goes

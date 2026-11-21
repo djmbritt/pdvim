@@ -1794,6 +1794,7 @@ impl App {
                 return Task::none();
             }
             Action::FollowLink => return self.label_links(),
+            Action::Write => return self.write(None, false),
             Action::Undo => return self.undo(),
             Action::Redo => return self.redo(),
             Action::Marking(what) => return self.on_marking_action(what),
@@ -1848,6 +1849,7 @@ impl App {
             | Action::ShowRecent
             | Action::ShowHelp
             | Action::ShowInfo
+            | Action::Write
             | Action::ShowOutline
             | Action::Mark(_)
             | Action::JumpBack(_)

@@ -118,6 +118,8 @@ pub enum Action {
     ShowHelp,
     /// Show what the document says about itself.
     ShowInfo,
+    /// Save the changes into the file, like `:w`.
+    Write,
     /// Label the links in view, to follow one.
     FollowLink,
     /// Label the lines in view, to start selecting text at one: whole lines
@@ -215,6 +217,8 @@ bindable! {
         GoToMark = "go-to-mark", "Go to the mark typed next; ` or ' for before the last jump";
         JumpBack = "jump-back", "Go back to where the last jump left from, or n jumps";
         JumpForward = "jump-forward", "Go forward again through the jumps";
+        /// Like `:w`.
+        Write = "write", "Save the highlights and other changes into the file";
         /// Like `:info`.
         Info = "info", "Show the document's title, author, dates and more";
         Abort = "abort", "Cancel a half-typed command, hide highlights";
@@ -275,6 +279,7 @@ impl Binding {
             Self::Quit => Action::Quit,
             Self::Help => Action::ShowHelp,
             Self::Info => Action::ShowInfo,
+            Self::Write => Action::Write,
             Self::FollowLink => Action::FollowLink,
             Self::Visual => Action::Visual { lines: false },
             Self::VisualLine => Action::Visual { lines: true },

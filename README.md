@@ -184,6 +184,7 @@ A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t
 | `Shift-Tab` | List the markings in a sidebar, with their text and page   |
 | `u`         | Take back the last marking, or the last taking away of one |
 | `Ctrl-r`    | Put back what `u` took back                                |
+| `Ctrl-s`    | Save the markings into the file, like `:w`                 |
 
 These go through every highlight, underline, strike-out and squiggly underline in the document, whether pdvim or another program made it. `]h` starts from the marking it last went to while that is in view, and from the top of the view otherwise; the marking it goes to gets a frame, which `Esc` hides. In the sidebar, `j` and `k` move, `Enter` goes to the marking selected, `d` takes it away, and `q`, `Esc` or `Shift-Tab` close the list. In visual mode, `d` takes away the markings under the selection. Taking a marking away is a change like any other: `:w` saves it, and `u` puts the marking back.
 
@@ -378,6 +379,7 @@ The actions of normal mode, and their default keys:
 | `follow-link`                         | `f`                                         |
 | `visual` / `visual-line`              | `v` / `V`                                   |
 | `undo` / `redo`                       | `u` / `ctrl+r`                              |
+| `write`                               | `ctrl+s`                                    |
 | `next-marking` / `previous-marking`   | `] h` / `[ h`                               |
 | `delete-marking`                      | `d h`                                       |
 | `markings`                            | `shift+tab`                                 |

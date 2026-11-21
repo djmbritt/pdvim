@@ -598,10 +598,11 @@ mod tests {
         // In roff a hyphen is written `\-`.
         let manual = include_str!("../docs/man/pdvim.5").replace("\\-", "-");
         for (_, name, _) in Binding::ALL {
-            assert!(
-                manual.contains(&format!(".B {name}\n")),
-                "docs/man/pdvim.5 does not describe {name}"
-            );
+            // Line by line, as Windows checks the file out with \r\n.
+            let named = manual
+                .lines()
+                .any(|line| line.trim_end() == format!(".B {name}"));
+            assert!(named, "docs/man/pdvim.5 does not describe {name}");
         }
     }
 }

@@ -61,6 +61,10 @@ pub enum Error {
     Text(String),
     #[error("cannot mark the text: {0}")]
     Markup(String),
+    #[error("cannot take the marking away: {0}")]
+    Unmark(String),
+    #[error("cannot read the markings: {0}")]
+    Markings(String),
     #[error("cannot save: {0}")]
     Save(String),
     #[error("cannot read the table of contents: {0}")]
@@ -155,7 +159,15 @@ enum Request {
     Links(Vec<u32>, oneshot::Sender<Result<PageLinks, Error>>),
     Text(Vec<u32>, oneshot::Sender<Result<PageText, Error>>),
     Markup(Markup, oneshot::Sender<Result<Vec<Annotation>, Error>>),
-    Unhighlight(Vec<Annotation>, oneshot::Sender<Result<(), Error>>),
+    Remove(
+        Vec<Annotation>,
+        oneshot::Sender<Result<Vec<Marking>, Error>>,
+    ),
+    Restore(
+        Vec<Marking>,
+        oneshot::Sender<Result<Vec<Annotation>, Error>>,
+    ),
+    Markings(oneshot::Sender<Result<Vec<Marking>, Error>>),
     Save(Option<PathBuf>, oneshot::Sender<Result<(), Error>>),
     Outline(oneshot::Sender<Result<Vec<Chapter>, Error>>),
 }
@@ -188,6 +200,17 @@ pub enum MarkupKind {
 }
 
 impl MarkupKind {
+    /// The kind of marking an annotation is, if it is one.
+    const fn of(kind: mupdf::pdf::PdfAnnotationType) -> Option<Self> {
+        match kind {
+            mupdf::pdf::PdfAnnotationType::Highlight => Some(Self::Highlight),
+            mupdf::pdf::PdfAnnotationType::Underline => Some(Self::Underline),
+            mupdf::pdf::PdfAnnotationType::StrikeOut => Some(Self::StrikeOut),
+            mupdf::pdf::PdfAnnotationType::Squiggly => Some(Self::Squiggly),
+            _ => None,
+        }
+    }
+
     /// The kind of annotation in the PDF.
     const fn annotation(self) -> mupdf::pdf::PdfAnnotationType {
         match self {
@@ -215,6 +238,75 @@ impl MarkupKind {
             Self::Underline => "underlined",
             Self::StrikeOut => "struck out",
             Self::Squiggly => "underlined with a squiggle",
+        }
+    }
+}
+
+/// Text marked in the file, by pdvim or by another program: a highlight,
+/// underline, strike-out or squiggly underline.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Marking {
+    /// The page, counted from 0.
+    pub page: u32,
+    /// The number of the annotation's object in the file.
+    pub xref: i32,
+    pub kind: MarkupKind,
+    /// The areas it covers, one to a line, on the unturned page in points.
+    pub areas: Vec<Rect>,
+    /// The text it covers.
+    pub text: String,
+    /// The rest of what is needed to put it back once taken away.
+    pub kept: Kept,
+}
+
+impl Marking {
+    /// The annotation it is.
+    pub const fn annotation(&self) -> Annotation {
+        (self.page, self.xref)
+    }
+
+    /// Its colour, as near as red, green and blue come to it.
+    pub fn colour(&self) -> Option<Rgb> {
+        let channel = |value: f32| u8::try_from(num::round(value * 255.0)).unwrap_or(u8::MAX);
+        self.kept.colour.map(|colour| match colour {
+            mupdf::color::AnnotationColor::Gray(grey) => {
+                Rgb(channel(grey), channel(grey), channel(grey))
+            }
+            mupdf::color::AnnotationColor::Rgb { red, green, blue } => {
+                Rgb(channel(red), channel(green), channel(blue))
+            }
+            mupdf::color::AnnotationColor::Cmyk {
+                cyan,
+                magenta,
+                yellow,
+                key,
+            } => Rgb(
+                channel((1.0 - cyan) * (1.0 - key)),
+                channel((1.0 - magenta) * (1.0 - key)),
+                channel((1.0 - yellow) * (1.0 - key)),
+            ),
+        })
+    }
+}
+
+/// What a marking has besides its kind and areas, kept to put it back as
+/// it was.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Kept {
+    pub colour: Option<mupdf::color::AnnotationColor>,
+    pub opacity: f32,
+    /// The note written on it, if any.
+    pub contents: Option<String>,
+    pub author: Option<String>,
+}
+
+impl Default for Kept {
+    fn default() -> Self {
+        Self {
+            colour: None,
+            opacity: 1.0,
+            contents: None,
+            author: None,
         }
     }
 }
@@ -279,13 +371,32 @@ impl Backend {
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
-    /// Takes away annotations that highlighting added, in memory.
-    pub fn unhighlight(
+    /// Takes markings away, in memory. Answers with what they were, to put
+    /// them back with [`Self::restore`].
+    pub fn remove(
         &self,
         annotations: Vec<Annotation>,
-    ) -> impl Future<Output = Result<(), Error>> + use<> {
+    ) -> impl Future<Output = Result<Vec<Marking>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.requests.send(Request::Unhighlight(annotations, reply));
+        let _ = self.requests.send(Request::Remove(annotations, reply));
+        async move { answer.await.unwrap_or(Err(Error::Closed)) }
+    }
+
+    /// Puts back markings that were taken away, in memory. Answers with
+    /// the annotations they now are, in the same order.
+    pub fn restore(
+        &self,
+        markings: Vec<Marking>,
+    ) -> impl Future<Output = Result<Vec<Annotation>, Error>> + use<> {
+        let (reply, answer) = oneshot::channel();
+        let _ = self.requests.send(Request::Restore(markings, reply));
+        async move { answer.await.unwrap_or(Err(Error::Closed)) }
+    }
+
+    /// Finds every marking in the document, in reading order.
+    pub fn markings(&self) -> impl Future<Output = Result<Vec<Marking>, Error>> + use<> {
+        let (reply, answer) = oneshot::channel();
+        let _ = self.requests.send(Request::Markings(reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -644,38 +755,31 @@ fn highlight_in(document: &Document, highlight: &Markup) -> Result<Vec<Annotatio
         let page = pdf.load_page(page_number(*number)).map_err(failed)?;
         let bounds = page.bounds().map_err(failed)?;
         let mut page = mupdf::pdf::PdfPage::try_from(page).map_err(failed)?;
-        let quads: Vec<mupdf::Quad> = areas
-            .iter()
-            .map(|area| {
-                mupdf::Quad::from(mupdf::Rect {
-                    x0: bounds.x0 + area.left,
-                    y0: bounds.y0 + area.top,
-                    x1: bounds.x0 + area.right,
-                    y1: bounds.y0 + area.bottom,
-                })
-            })
-            .collect();
         let mut annotation = page
             .create_annotation(highlight.kind.annotation())
             .map_err(failed)?;
         annotation.set_color(colour).map_err(failed)?;
-        annotation.set_quad_points(quads).map_err(failed)?;
+        annotation
+            .set_quad_points(quads(areas, &bounds))
+            .map_err(failed)?;
         annotation.update().map_err(failed)?;
         added.push((*number, annotation.xref().map_err(failed)?));
     }
     Ok(added)
 }
 
-/// Takes away annotations that highlighting added. Annotations no longer
-/// there are passed over.
-fn unhighlight_in(document: &Document, annotations: &[Annotation]) -> Result<(), Error> {
-    let failed = |error: mupdf::Error| Error::Markup(error.to_string());
+/// Takes markings away. Annotations no longer there are passed over.
+/// Answers with what was taken away.
+fn remove_in(document: &Document, annotations: &[Annotation]) -> Result<Vec<Marking>, Error> {
+    let failed = |error: mupdf::Error| Error::Unmark(error.to_string());
     let pdf = editable(document)?;
     let mut pages: Vec<u32> = annotations.iter().map(|(page, _)| *page).collect();
     pages.sort_unstable();
     pages.dedup();
+    let mut removed = Vec::new();
     for number in pages {
         let page = pdf.load_page(page_number(number)).map_err(failed)?;
+        let bounds = page.bounds().map_err(failed)?;
         let mut page = mupdf::pdf::PdfPage::try_from(page).map_err(failed)?;
         let doomed: Vec<_> = page
             .annotations()
@@ -685,11 +789,156 @@ fn unhighlight_in(document: &Document, annotations: &[Annotation]) -> Result<(),
                     .is_ok_and(|xref| annotations.contains(&(number, xref)))
             })
             .collect();
+        if doomed.is_empty() {
+            continue;
+        }
+        let lines = page_text(document, number).map_err(failed)?;
         for annotation in doomed {
+            if let Some(marking) = read_marking(number, &annotation, &bounds, &lines) {
+                removed.push(marking);
+            }
             page.delete_annotation(annotation).map_err(failed)?;
         }
     }
-    Ok(())
+    Ok(removed)
+}
+
+/// Puts back markings that were taken away, as they were. Answers with
+/// the annotations they now are, in the same order.
+fn restore_in(document: &Document, markings: &[Marking]) -> Result<Vec<Annotation>, Error> {
+    let failed = |error: mupdf::Error| Error::Markup(error.to_string());
+    let pdf = editable(document)?;
+    let mut restored = Vec::new();
+    for marking in markings {
+        let page = pdf.load_page(page_number(marking.page)).map_err(failed)?;
+        let bounds = page.bounds().map_err(failed)?;
+        let mut page = mupdf::pdf::PdfPage::try_from(page).map_err(failed)?;
+        let mut annotation = page
+            .create_annotation(marking.kind.annotation())
+            .map_err(failed)?;
+        if let Some(colour) = marking.kept.colour {
+            annotation.set_color(colour).map_err(failed)?;
+        }
+        annotation
+            .set_quad_points(quads(&marking.areas, &bounds))
+            .map_err(failed)?;
+        if marking.kept.opacity < 1.0 {
+            annotation
+                .set_opacity(marking.kept.opacity)
+                .map_err(failed)?;
+        }
+        if let Some(contents) = &marking.kept.contents {
+            annotation.set_contents(contents).map_err(failed)?;
+        }
+        if let Some(author) = &marking.kept.author {
+            annotation.set_author(author).map_err(failed)?;
+        }
+        annotation.update().map_err(failed)?;
+        restored.push((marking.page, annotation.xref().map_err(failed)?));
+    }
+    Ok(restored)
+}
+
+/// The markings on a page, in the order the page lists them.
+fn page_markings(document: &Document, number: u32) -> Result<Vec<Marking>, mupdf::Error> {
+    if !document.is_pdf() {
+        return Ok(Vec::new());
+    }
+    let page = document.load_page(page_number(number))?;
+    let bounds = page.bounds()?;
+    let page = mupdf::pdf::PdfPage::try_from(page)?;
+    let annotations: Vec<_> = page
+        .annotations()
+        .filter(|annotation| {
+            annotation
+                .r#type()
+                .is_ok_and(|kind| MarkupKind::of(kind).is_some())
+        })
+        .collect();
+    if annotations.is_empty() {
+        return Ok(Vec::new());
+    }
+    let lines = page_text(document, number)?;
+    Ok(annotations
+        .iter()
+        .filter_map(|annotation| read_marking(number, annotation, &bounds, &lines))
+        .collect())
+}
+
+/// What a marking is, from its annotation, with the text under it from the
+/// lines of its page. None for an annotation that is not a marking, or
+/// cannot be read.
+fn read_marking(
+    page: u32,
+    annotation: &mupdf::pdf::PdfAnnotation,
+    bounds: &mupdf::Rect,
+    lines: &[TextLine],
+) -> Option<Marking> {
+    let kind = MarkupKind::of(annotation.r#type().ok()?)?;
+    let xref = annotation.xref().ok().filter(|&xref| xref > 0)?;
+    let areas: Vec<Rect> = annotation
+        .quad_points()
+        .ok()?
+        .iter()
+        .map(|quad| quad_area(quad, bounds))
+        .collect();
+    let owned = |text: Option<&str>| text.filter(|text| !text.is_empty()).map(str::to_owned);
+    Some(Marking {
+        page,
+        xref,
+        kind,
+        text: text_within(lines, &areas),
+        areas,
+        kept: Kept {
+            colour: annotation.color().ok().flatten(),
+            opacity: annotation.opacity().unwrap_or(1.0),
+            contents: owned(annotation.contents().ok().flatten()),
+            author: owned(annotation.author().ok().flatten()),
+        },
+    })
+}
+
+/// The text of the characters whose middles are inside any of the areas,
+/// a line's worth apart by a space.
+fn text_within(lines: &[TextLine], areas: &[Rect]) -> String {
+    let inside = |area: &Rect| {
+        let x = f32::midpoint(area.left, area.right);
+        let y = f32::midpoint(area.top, area.bottom);
+        areas.iter().any(|around| {
+            (around.left..=around.right).contains(&x) && (around.top..=around.bottom).contains(&y)
+        })
+    };
+    let mut text = String::new();
+    for line in lines {
+        let mut started = false;
+        for character in line
+            .chars
+            .iter()
+            .filter(|character| inside(&character.area))
+        {
+            if !started && !text.is_empty() {
+                text.push(' ');
+            }
+            started = true;
+            text.push(character.character);
+        }
+    }
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Areas of a page, measured from its corner, as quads on the page.
+fn quads(areas: &[Rect], bounds: &mupdf::Rect) -> Vec<mupdf::Quad> {
+    areas
+        .iter()
+        .map(|area| {
+            mupdf::Quad::from(mupdf::Rect {
+                x0: bounds.x0 + area.left,
+                y0: bounds.y0 + area.top,
+                x1: bounds.x0 + area.right,
+                y1: bounds.y0 + area.bottom,
+            })
+        })
+        .collect()
 }
 
 /// The document as a PDF that can be changed. A file MuPDF had to repair
@@ -892,8 +1141,17 @@ impl Worker {
                             .map_err(|error| Error::Outline(error.to_string())),
                     );
                 }
-                Request::Unhighlight(annotations, reply) => {
-                    let _ = reply.send(unhighlight_in(&self.document, &annotations));
+                Request::Remove(annotations, reply) => {
+                    let _ = reply.send(remove_in(&self.document, &annotations));
+                }
+                Request::Restore(markings, reply) => {
+                    let _ = reply.send(restore_in(&self.document, &markings));
+                }
+                Request::Markings(reply) => {
+                    let _ = reply.send(
+                        self.markings()
+                            .map_err(|error| Error::Markings(error.to_string())),
+                    );
                 }
                 Request::Save(target, reply) => {
                     let _ = reply.send(save_to(&self.document, &self.path, target.as_deref()));
@@ -951,6 +1209,26 @@ impl Worker {
             hits.extend(page_hits(&self.document, number, needle)?);
         }
         Ok(hits)
+    }
+
+    /// Finds the markings on every page, in reading order: by page, then
+    /// down each page.
+    fn markings(&mut self) -> Result<Vec<Marking>, mupdf::Error> {
+        let count = u32::try_from(self.document.page_count()?).unwrap_or(0);
+        let mut markings = Vec::new();
+        for number in 0..count {
+            self.render_waiting();
+            let mut on_page = page_markings(&self.document, number)?;
+            on_page.sort_by(|one, other| {
+                let top =
+                    |marking: &Marking| marking.areas.first().map(|area| (area.top, area.left));
+                top(one)
+                    .partial_cmp(&top(other))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            markings.extend(on_page);
+        }
+        Ok(markings)
     }
 
     /// Finds the content of every page.
@@ -1255,7 +1533,7 @@ mod tests {
         // Taking the first away leaves the second. MuPDF rewrites what it
         // added since the file was opened, so the file may shrink, but what
         // was there when it was opened stays as it was.
-        unhighlight_in(&document, &first).unwrap();
+        remove_in(&document, &first).unwrap();
         save_to(&document, &path, None).unwrap();
         let after = std::fs::read(&path).unwrap();
         assert!(after.len() > original.len());
@@ -1334,6 +1612,58 @@ mod tests {
         assert!(saved.can_be_saved_incrementally());
         let page = mupdf::pdf::PdfPage::try_from(saved.load_page(0).unwrap()).unwrap();
         assert_eq!(page.annotations().count(), 1);
+    }
+
+    #[test]
+    fn markings_are_found_taken_away_and_put_back_as_they_were() {
+        let file = Scratch::new("markings", text_pdf());
+        let document = Document::open(file.0.to_str().unwrap()).unwrap();
+        // Over "Hello", and not "world".
+        let hello = Rect {
+            left: 70.0,
+            top: 80.0,
+            right: 101.0,
+            bottom: 96.0,
+        };
+        let markup = Markup {
+            kind: MarkupKind::Underline,
+            pages: vec![(0, vec![hello])],
+            colour: Rgb(0x1e, 0x88, 0xe5),
+        };
+        let added = highlight_in(&document, &markup).unwrap();
+        // A note, as another program may have written on it.
+        {
+            let pdf = mupdf::pdf::PdfDocument::try_from(document.clone()).unwrap();
+            let page = mupdf::pdf::PdfPage::try_from(pdf.load_page(0).unwrap()).unwrap();
+            let mut annotation = page.annotations().next().unwrap();
+            annotation.set_contents("a note").unwrap();
+        }
+
+        let found = page_markings(&document, 0).unwrap();
+        assert_eq!(found.len(), 1);
+        let marking = &found[0];
+        assert_eq!(marking.annotation(), added[0]);
+        assert_eq!(marking.kind, MarkupKind::Underline);
+        assert_eq!(marking.text, "Hello");
+        assert_eq!(marking.colour(), Some(Rgb(0x1e, 0x88, 0xe5)));
+        assert_eq!(marking.kept.contents.as_deref(), Some("a note"));
+
+        let removed = remove_in(&document, &added).unwrap();
+        assert_eq!(removed, found);
+        assert_eq!(page_markings(&document, 0).unwrap(), []);
+        // Gone already: nothing more to take away.
+        assert_eq!(remove_in(&document, &added).unwrap(), []);
+
+        let restored = restore_in(&document, &removed).unwrap();
+        let again = page_markings(&document, 0).unwrap();
+        assert_eq!(again.len(), 1);
+        assert_eq!(again[0].annotation(), restored[0]);
+        assert_eq!(again[0].kind, marking.kind);
+        assert_eq!(again[0].text, marking.text);
+        assert_eq!(again[0].kept, marking.kept);
+        for (one, other) in again[0].areas.iter().zip(&marking.areas) {
+            assert!((one.top - other.top).abs() < 0.01 && (one.left - other.left).abs() < 0.01);
+        }
     }
 
     #[test]

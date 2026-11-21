@@ -152,6 +152,7 @@ fn bound_to(keymaps: &Keymaps, keys: &[Key], bound: Bound) -> bool {
         Bound::Visual(to) => keymaps.visual.lookup(keys) == Match::Bound(to),
         Bound::Hints(to) => keymaps.hints.lookup(keys) == Match::Bound(to),
         Bound::Outline(to) => keymaps.outline.lookup(keys) == Match::Bound(to),
+        Bound::Markings(to) => keymaps.markings.lookup(keys) == Match::Bound(to),
         Bound::Recent(to) => keymaps.recent.lookup(keys) == Match::Bound(to),
         Bound::Help(to) => keymaps.help.lookup(keys) == Match::Bound(to),
         Bound::Prompt(to) => keymaps.prompt.lookup(keys) == Match::Bound(to),
@@ -360,8 +361,8 @@ fn visual_key(selection: &mut Visual, keymaps: &Keymaps, key: Key, text: &Text) 
             assert_eq!(copied, selected);
             false
         }
-        visual::Outcome::Mark(_, areas) => {
-            assert!(!areas.is_empty(), "highlighted nothing");
+        visual::Outcome::Mark(_, areas) | visual::Outcome::Unmark(areas) => {
+            assert!(!areas.is_empty(), "marked nothing");
             false
         }
         visual::Outcome::Leave => false,

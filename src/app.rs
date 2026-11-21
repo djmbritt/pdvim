@@ -11,7 +11,7 @@ use iced::{
 };
 
 use crate::backend::{
-    self, Annotation, Backend, Hit, Link, Markup, MarkupKind, Opened, RenderJob, Target,
+    self, Annotation, Backend, Hit, Link, Marking, Markup, MarkupKind, Opened, RenderJob, Target,
 };
 use crate::bindings::{self, Keymaps};
 use crate::command::{self, Command, Recolor, Setting};
@@ -31,6 +31,10 @@ use crate::recent::{self, Choice, Picker};
 use crate::recolor::{Palette, Rgb};
 use crate::theme::{self, Colours};
 use crate::visual::{self, Kind, Spot, Visual};
+
+mod markings;
+
+use markings::{Edit, Step, Wanted};
 
 /// The colour laid over every search result.
 const HIT: Color = Color::from_rgba8(0xff, 0xd0, 0x00, 0.35);
@@ -113,12 +117,13 @@ pub enum Message {
     /// The table of contents of the document with this number was read, or
     /// could not be.
     OutlineFound(u64, Result<Vec<backend::Chapter>, backend::Error>),
-    /// Text in the document with this number was highlighted and the file
-    /// saved, or not; done afresh, or redone.
-    Highlighted(u64, Markup, Result<Vec<Annotation>, backend::Error>, Redone),
-    /// A highlight in the document with this number was taken back and
-    /// the file saved, or not.
-    Unhighlighted(u64, Edit, Result<(), backend::Error>),
+    /// A change to the markings of the document with this number was
+    /// made, taken back or put back, or failed to be: the change as it was
+    /// asked for, and as it is once made.
+    Edited(u64, Edit, Step, Result<Edit, backend::Error>),
+    /// The markings of the document with this number were found, as it
+    /// was at this edition, or could not be; and what they were wanted for.
+    MarkingsFound(u64, u32, Wanted, Result<Vec<Marking>, backend::Error>),
     /// The changes to the document with this number were saved, or not:
     /// into its own file or as another, the number of changes made by then,
     /// and what to do next.
@@ -134,14 +139,6 @@ pub enum Message {
     TextFound(u64, Vec<u32>, Result<backend::PageText, backend::Error>),
 }
 
-/// A change made to a document's file, to take back and put back.
-#[derive(Debug, Clone)]
-pub struct Edit {
-    highlight: Markup,
-    /// The annotations the highlight added.
-    annotations: Vec<Annotation>,
-}
-
 /// What to do once a document's changes are saved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AfterSave {
@@ -150,13 +147,6 @@ pub enum AfterSave {
     Close,
     /// Close the program, once every document being saved is.
     Quit,
-}
-
-/// Whether a highlight was made afresh or put back by redo.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Redone {
-    No,
-    Yes,
 }
 
 /// What a rendered page was rendered for. A cached page whose key differs
@@ -216,6 +206,10 @@ struct Document {
     edition: u32,
     /// The changes made to the file, the last made last, to undo.
     undo: Vec<Edit>,
+    /// The markings, once found, until the next change.
+    markings: Option<Vec<Marking>>,
+    /// The marking last gone to, which `dh` takes away.
+    marking: Option<Annotation>,
     /// The changes undone, the last undone last, to redo.
     redo: Vec<Edit>,
     /// The rendered pages, and what each was rendered for.
@@ -367,6 +361,14 @@ enum Question {
     DiscardAll,
 }
 
+/// What a sidebar over the left of the pages lists.
+enum Sidebar {
+    /// The table of contents.
+    Outline(Outline),
+    /// The highlights and other markings.
+    Markings(crate::markings::List),
+}
+
 /// What the bottom line says when nothing is being typed.
 enum Notice {
     None,
@@ -401,8 +403,8 @@ pub struct App {
     picker: Option<Picker>,
     /// The cheat sheet, while it is shown.
     help: Option<Help>,
-    /// The table of contents sidebar, while it is shown.
-    sidebar: Option<Outline>,
+    /// The sidebar, while it is shown.
+    sidebar: Option<Sidebar>,
     /// The labels on the links in view, while they are shown.
     hints: Option<Hints<Link>>,
     /// The document whose links are being found so that they can be
@@ -654,10 +656,10 @@ impl App {
                 self.on_text(id, &pages, result);
                 Task::none()
             }
-            Message::Highlighted(id, highlight, result, redone) => {
-                self.on_highlighted(id, highlight, result, redone)
+            Message::Edited(id, edit, step, result) => self.on_edited(id, edit, step, result),
+            Message::MarkingsFound(id, edition, wanted, result) => {
+                self.on_markings(id, edition, wanted, result)
             }
-            Message::Unhighlighted(id, edit, result) => self.on_unhighlighted(id, edit, result),
             Message::Saved(id, target, changes, result, after) => {
                 self.on_saved(id, target.as_deref(), changes, result, after)
             }
@@ -721,8 +723,7 @@ impl App {
                     self.on_hint(outcome);
                     Task::none()
                 } else if self.sidebar.is_some() {
-                    self.on_sidebar_key(key);
-                    Task::none()
+                    self.on_sidebar_key(key)
                 } else if self.help.is_some() {
                     let rows = self.help_rows();
                     if let Some(help) = &mut self.help
@@ -1025,6 +1026,10 @@ impl App {
                 self.visual = None;
                 self.highlight(kind, areas)
             }
+            visual::Outcome::Unmark(areas) => {
+                self.visual = None;
+                self.with_markings(Wanted::DeleteIn(areas))
+            }
             visual::Outcome::Copy(text) => {
                 self.visual = None;
                 let count = text.chars().count();
@@ -1055,69 +1060,20 @@ impl App {
             return Task::none();
         }
         let id = document.id;
-        let highlight = Markup {
+        let markup = Markup {
             kind,
             pages,
             colour,
         };
-        let saving = document.backend.highlight(highlight.clone());
-        self.notice = Notice::Info("highlighting".to_owned());
-        Task::perform(saving, move |result| {
-            Message::Highlighted(id, highlight, result, Redone::No)
-        })
-    }
-
-    fn on_highlighted(
-        &mut self,
-        id: u64,
-        highlight: Markup,
-        result: Result<Vec<Annotation>, backend::Error>,
-        redone: Redone,
-    ) -> Task<Message> {
-        let Some(document) = document_by_id(&mut self.tabs, id) else {
-            return Task::none();
-        };
-        match result {
-            Ok(annotations) => {
-                let kind = highlight.kind;
-                // A state that was saved and then undone is gone for good
-                // once something new is done in its place.
-                if redone == Redone::No
-                    && document
-                        .saved
-                        .is_some_and(|saved| saved > document.undo.len())
-                {
-                    document.saved = None;
-                }
-                document.undo.push(Edit {
-                    highlight,
-                    annotations,
-                });
-                // A new change ends what could be redone.
-                if redone == Redone::No {
-                    document.redo.clear();
-                }
-                // Every page is rendered afresh to show the change.
-                document.edition = document.edition.saturating_add(1);
-                let done = if redone == Redone::Yes {
-                    format!("{} put back", kind.noun())
-                } else {
-                    kind.done().to_owned()
-                };
-                return self.changed(id, &done);
-            }
-            Err(error) => {
-                // What failed to be redone can be tried again.
-                if redone == Redone::Yes {
-                    document.redo.push(Edit {
-                        highlight,
-                        annotations: Vec::new(),
-                    });
-                }
-                self.notice = Notice::Error(error.to_string());
-            }
-        }
-        Task::none()
+        self.notice = Notice::Info("marking".to_owned());
+        self.start_edit(
+            id,
+            Edit::Marked {
+                markup,
+                annotations: Vec::new(),
+            },
+            Step::Do,
+        )
     }
 
     /// Says that a document changed, and saves it if that is wanted.
@@ -1265,66 +1221,6 @@ impl App {
         Task::none()
     }
 
-    /// Takes back the last highlight of the document in view.
-    fn undo(&mut self) -> Task<Message> {
-        let Some(document) = self.document_mut() else {
-            return Task::none();
-        };
-        let Some(edit) = document.undo.pop() else {
-            self.notice = Notice::Info("nothing to undo".to_owned());
-            return Task::none();
-        };
-        let id = document.id;
-        let saving = document.backend.unhighlight(edit.annotations.clone());
-        self.notice = Notice::Info("undoing".to_owned());
-        Task::perform(saving, move |result| {
-            Message::Unhighlighted(id, edit, result)
-        })
-    }
-
-    fn on_unhighlighted(
-        &mut self,
-        id: u64,
-        edit: Edit,
-        result: Result<(), backend::Error>,
-    ) -> Task<Message> {
-        let Some(document) = document_by_id(&mut self.tabs, id) else {
-            return Task::none();
-        };
-        match result {
-            Ok(()) => {
-                let taken = format!("{} taken back", edit.highlight.kind.noun());
-                document.redo.push(edit);
-                document.edition = document.edition.saturating_add(1);
-                self.changed(id, &taken)
-            }
-            Err(error) => {
-                // Still there, so still to undo.
-                document.undo.push(edit);
-                self.notice = Notice::Error(error.to_string());
-                Task::none()
-            }
-        }
-    }
-
-    /// Puts back the last highlight taken back in the document in view.
-    fn redo(&mut self) -> Task<Message> {
-        let Some(document) = self.document_mut() else {
-            return Task::none();
-        };
-        let Some(edit) = document.redo.pop() else {
-            self.notice = Notice::Info("nothing to redo".to_owned());
-            return Task::none();
-        };
-        let id = document.id;
-        let highlight = edit.highlight;
-        let saving = document.backend.highlight(highlight.clone());
-        self.notice = Notice::Info("redoing".to_owned());
-        Task::perform(saving, move |result| {
-            Message::Highlighted(id, highlight, result, Redone::Yes)
-        })
-    }
-
     /// Keeps the cursor in view, and reads the pages it may move into next.
     fn follow_cursor(&mut self) -> Task<Message> {
         let Some(cursor) = self.visual.as_ref().map(Visual::cursor) else {
@@ -1358,7 +1254,7 @@ impl App {
         };
         if let Some(chapters) = &document.chapters {
             let page = document.reader.current_page();
-            self.sidebar = Outline::new(chapters, page);
+            self.sidebar = Outline::new(chapters, page).map(Sidebar::Outline);
             if self.sidebar.is_none() {
                 self.notice = Notice::Info("this document has no table of contents".to_owned());
             }
@@ -1594,11 +1490,17 @@ impl App {
         }
     }
 
-    /// Moves through the table of contents, or goes to a chapter.
-    fn on_sidebar_key(&mut self, key: Key) {
+    /// Moves through the table of contents, or goes to a chapter; or
+    /// through the markings.
+    fn on_sidebar_key(&mut self, key: Key) -> Task<Message> {
         let rows = self.sidebar_rows();
-        let Some(sidebar) = &mut self.sidebar else {
-            return;
+        let sidebar = match &mut self.sidebar {
+            Some(Sidebar::Outline(sidebar)) => sidebar,
+            Some(Sidebar::Markings(list)) => {
+                let outcome = list.feed(key, &self.keymaps.markings, rows);
+                return self.on_marking_list(outcome);
+            }
+            None => return Task::none(),
         };
         match sidebar.feed(key, &self.keymaps.outline, rows) {
             outline::Outcome::Stay => {}
@@ -1611,6 +1513,7 @@ impl App {
                 }
             }
         }
+        Task::none()
     }
 
     /// How many entries of the table of contents fit in the window.
@@ -1864,6 +1767,7 @@ impl App {
             Action::FollowLink => return self.label_links(),
             Action::Undo => return self.undo(),
             Action::Redo => return self.redo(),
+            Action::Marking(what) => return self.on_marking_action(what),
             Action::Visual { lines } => {
                 let kind = if lines { Kind::Lines } else { Kind::Characters };
                 return self.label_lines(kind);
@@ -1913,7 +1817,7 @@ impl App {
             Action::FitPage => reader.fit(Fit::Page),
             Action::Rotate => reader.rotate(),
             Action::ToggleRecolor => document.recolor = !document.recolor,
-            Action::Abort => document.results.shown = false,
+            Action::Abort => hide_marks(document),
             Action::Quit
             | Action::OpenPrompt(_)
             | Action::ShowRecent
@@ -1926,6 +1830,7 @@ impl App {
             | Action::Visual { .. }
             | Action::Undo
             | Action::Redo
+            | Action::Marking(_)
             | Action::NextTab
             | Action::PreviousTab(_)
             | Action::GotoTab(_)
@@ -2063,6 +1968,8 @@ impl App {
             returning,
             edition: 0,
             undo: Vec::new(),
+            markings: None,
+            marking: None,
             redo: Vec::new(),
             pages: HashMap::new(),
             rendering: HashMap::new(),
@@ -2528,13 +2435,24 @@ impl App {
         if let Some(completing) = &self.completing {
             layers = layers.push(completions(completing, chrome));
         }
-        if let Some(sidebar) = &self.sidebar {
-            layers = layers.push(contents(
-                sidebar,
-                &self.keymaps,
-                chrome,
-                self.sidebar_rows(),
-            ));
+        match &self.sidebar {
+            Some(Sidebar::Outline(sidebar)) => {
+                layers = layers.push(contents(
+                    sidebar,
+                    &self.keymaps,
+                    chrome,
+                    self.sidebar_rows(),
+                ));
+            }
+            Some(Sidebar::Markings(list)) => {
+                layers = layers.push(markings::list(
+                    list,
+                    &self.keymaps,
+                    chrome,
+                    self.sidebar_rows(),
+                ));
+            }
+            None => {}
         }
         if let Some(help) = &self.help {
             layers = layers.push(cheat_sheet(help, &self.keymaps, chrome, self.help_rows()));
@@ -3169,6 +3087,7 @@ impl canvas::Program<Message> for Marks<'_> {
                 frame.fill_rectangle(area.position(), area.size(), fill);
             }
         }
+        markings::draw_current(&mut frame, document);
         if let Some(visual) = &self.0.visual {
             for (page, area) in visual.areas(&document.text) {
                 if let Some(area) = document.reader.area_on_screen(page, area) {
@@ -3314,6 +3233,12 @@ fn jump_to(document: &mut Document, index: Option<usize>, notice: &mut Notice) {
             document.results.hits.len()
         ));
     }
+}
+
+/// Hides the search results and the frame around the marking gone to.
+const fn hide_marks(document: &mut Document) {
+    document.results.shown = false;
+    document.marking = None;
 }
 
 /// Goes to the top of a page, noting where it left from in the jump list.

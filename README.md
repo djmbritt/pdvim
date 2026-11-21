@@ -166,13 +166,26 @@ After `v` or `V`, each line of text in view gets a label of two letters. Type a 
 | `U`                       | Underline the selection, and leave                         |
 | `S`                       | Strike out the selection, and leave                        |
 | `W`                       | Underline the selection with a squiggle, and leave         |
+| `d`                       | Take away the markings under the selection, and leave      |
 | `Esc`, `Ctrl-c`           | Leave without copying                                      |
 
-`H`, `U`, `S` and `W` add the marking to the document as a standard PDF annotation (a highlight, underline, strike-out or squiggly underline), which other PDF readers show too once it is saved. Each has its color setting: `highlight-color`, `underline-color`, `strikeout-color` and `squiggly-color`. Nothing is written until you save with `:w`; until then the tab, the status bar and the window title show `[+]`, and closing the document asks first. `:w` saves into the file incrementally: everything that was in it when pdvim opened it stays byte for byte as it was, and the changes are written after it. `:w copy.pdf` writes the whole document with its highlights to a new file instead, and leaves the original alone. Set `autosave` to save every change into the file as it is made. pdvim can't highlight a PDF that MuPDF had to repair to open, and says so instead.
+`H`, `U`, `S` and `W` add the marking to the document as a standard PDF annotation (a highlight, underline, strike-out or squiggly underline), which other PDF readers show too once it is saved. Each has its color setting: `highlight-color`, `underline-color`, `strikeout-color` and `squiggly-color`. Nothing is written until you save with `:w`; until then the tab, the status bar and the window title show `[+]`, and closing the document asks first. `:w` saves into the file incrementally: everything that was in it when pdvim opened it stays byte for byte as it was, and the changes are written after it. `:w copy.pdf` writes the whole document with its highlights to a new file instead, and leaves the original alone. Set `autosave` to save every change into the file as it is made. Many downloaded PDFs are slightly damaged, and MuPDF repairs them as it opens them; such a file can't be added to, so `:w` writes it whole, beside the original, and then puts it in the original's place. That repairs the file too.
 
-Press `u` to take back the last highlight, and `Ctrl-r` to put back the last one taken back. Taking back everything since the last save leaves nothing to save. pdvim remembers what to undo for each open document until you close it.
+Press `u` to take back the last marking, or the last taking away of one, and `Ctrl-r` to put back what `u` took back. Taking back everything since the last save leaves nothing to save. pdvim remembers what to undo for each open document until you close it.
 
 A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t`, and `T` look along the cursor's line only, and the cursor stays put if the character isn't there. These are the default keys; the `[keys.visual]` table of the [configuration](#configuration) changes them.
+
+### Highlights and other markings
+
+| Key         | Action                                                     |
+| ----------- | ---------------------------------------------------------- |
+| `]h` / `[h` | Go to the next / previous marking; `{n}]h` goes n on       |
+| `dh`        | Take away the marking `]h` or `[h` went to                 |
+| `Shift-Tab` | List the markings in a sidebar, with their text and page   |
+| `u`         | Take back the last marking, or the last taking away of one |
+| `Ctrl-r`    | Put back what `u` took back                                |
+
+These go through every highlight, underline, strike-out and squiggly underline in the document, whether pdvim or another program made it. `]h` starts from the marking it last went to while that is in view, and from the top of the view otherwise; the marking it goes to gets a frame, which `Esc` hides. In the sidebar, `j` and `k` move, `Enter` goes to the marking selected, `d` takes it away, and `q`, `Esc` or `Shift-Tab` close the list. In visual mode, `d` takes away the markings under the selection. Taking a marking away is a change like any other: `:w` saves it, and `u` puts the marking back.
 
 ### Tabs
 
@@ -298,16 +311,17 @@ theme = "catppuccin-macchiato"
 
 `[keys.<mode>]` binds keys to that mode's actions, on top of the default keys. Bind keys to `"none"` to remove a default. Keys put straight in `[keys]` are bound in normal mode, as before modes could be configured. The modes are:
 
-| Mode      | When                                                          |
-| --------- | ------------------------------------------------------------- |
-| `normal`  | Reading: the [actions](#actions) below                        |
-| `visual`  | Selecting text after `v` or `V`                               |
-| `hints`   | Labels on links or lines; letters not bound type a label      |
-| `outline` | The table of contents                                         |
-| `recent`  | The recent-documents list; digits not bound open that entry   |
-| `help`    | The cheat sheet                                               |
-| `prompt`  | Typing after `:`, `/` or `?`; keys not bound type themselves  |
-| `confirm` | Questions such as `quit pdvim? (y/n)`; keys not bound mean no |
+| Mode       | When                                                          |
+| ---------- | ------------------------------------------------------------- |
+| `normal`   | Reading: the [actions](#actions) below                        |
+| `visual`   | Selecting text after `v` or `V`                               |
+| `hints`    | Labels on links or lines; letters not bound type a label      |
+| `outline`  | The table of contents                                         |
+| `markings` | The list of highlights and other markings                     |
+| `recent`   | The recent-documents list; digits not bound open that entry   |
+| `help`     | The cheat sheet                                               |
+| `prompt`   | Typing after `:`, `/` or `?`; keys not bound type themselves  |
+| `confirm`  | Questions such as `quit pdvim? (y/n)`; keys not bound mean no |
 
 `defaults.toml` and `:help` list every mode's actions.
 
@@ -354,6 +368,9 @@ The actions of normal mode, and their default keys:
 | `follow-link`                         | `f`                                         |
 | `visual` / `visual-line`              | `v` / `V`                                   |
 | `undo` / `redo`                       | `u` / `ctrl+r`                              |
+| `next-marking` / `previous-marking`   | `] h` / `[ h`                               |
+| `delete-marking`                      | `d h`                                       |
+| `markings`                            | `shift+tab`                                 |
 | `outline`                             | `tab`                                       |
 | `set-mark` / `go-to-mark`             | `m` / `` ` ``, `'`                          |
 | `jump-back` / `jump-forward`          | `ctrl+o` / `ctrl+i`                         |

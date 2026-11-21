@@ -31,6 +31,7 @@ mod input;
 mod jumps;
 mod keymap;
 mod layout;
+mod markings;
 mod num;
 mod outline;
 mod reader;

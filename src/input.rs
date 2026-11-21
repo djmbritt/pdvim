@@ -63,6 +63,17 @@ pub enum MarkVerb {
     Go,
 }
 
+/// What to do with the highlights and other markings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarkingAction {
+    /// Go to the next marking, or the previous, a number of times over.
+    Step { forward: bool, times: u32 },
+    /// Take away the marking last gone to.
+    Delete,
+    /// List them in a sidebar.
+    List,
+}
+
 /// Something the reader can be told to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
@@ -117,9 +128,11 @@ pub enum Action {
     JumpBack(u32),
     /// Go forward again, a number of times.
     JumpForward(u32),
-    /// Take back the last highlight.
+    /// Go between the markings, take one away, or list them.
+    Marking(MarkingAction),
+    /// Take back the last change to the markings.
     Undo,
-    /// Put back the last highlight taken back.
+    /// Put back the last change taken back.
     Redo,
     /// Go to the next tab, or the first after the last.
     NextTab,
@@ -179,10 +192,15 @@ bindable! {
         Visual = "visual", "Select text from a line picked by label";
         /// Label the lines in view, to start selecting whole lines at one.
         VisualLine = "visual-line", "Select whole lines from a line picked by label";
-        /// Take back the last highlight.
-        Undo = "undo", "Take back the last highlight";
-        /// Put back the last highlight taken back.
-        Redo = "redo", "Put back the last highlight taken back";
+        NextMarking = "next-marking", "Go to the next highlight or other marking";
+        PreviousMarking = "previous-marking", "Go to the previous highlight or other marking";
+        /// The marking last gone to with next-marking or previous-marking.
+        DeleteMarking = "delete-marking", "Take away the marking last gone to";
+        Markings = "markings", "List the highlights and other markings, to go to one";
+        /// Take back the last change to the markings.
+        Undo = "undo", "Take back the last marking, or taking one away";
+        /// Put back the last change taken back.
+        Redo = "redo", "Put back what undo took back";
         /// The next tab, or the tab given by a count.
         NextTab = "next-tab", "Go to the next tab, or tab n";
         PreviousTab = "previous-tab", "Go to the previous tab";
@@ -252,6 +270,16 @@ impl Binding {
             Self::FollowLink => Action::FollowLink,
             Self::Visual => Action::Visual { lines: false },
             Self::VisualLine => Action::Visual { lines: true },
+            Self::NextMarking => Action::Marking(MarkingAction::Step {
+                forward: true,
+                times: count.unwrap_or(1),
+            }),
+            Self::PreviousMarking => Action::Marking(MarkingAction::Step {
+                forward: false,
+                times: count.unwrap_or(1),
+            }),
+            Self::DeleteMarking => Action::Marking(MarkingAction::Delete),
+            Self::Markings => Action::Marking(MarkingAction::List),
             Self::Undo => Action::Undo,
             Self::Redo => Action::Redo,
             Self::Outline => Action::ShowOutline,

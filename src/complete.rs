@@ -270,7 +270,10 @@ mod tests {
         assert_eq!(texts(&complete("map j")), Vec::<&str>::new());
         let completion = complete("map g x next-");
         assert_eq!(completion.start, 8);
-        assert_eq!(texts(&completion), ["next-page", "next-tab"]);
+        assert_eq!(
+            texts(&completion),
+            ["next-page", "next-marking", "next-tab"]
+        );
         assert_eq!(
             texts(&complete("map ctrl+n ")).len(),
             Binding::names().count()

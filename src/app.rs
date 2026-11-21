@@ -1718,6 +1718,37 @@ impl App {
         Task::none()
     }
 
+    /// What can be done next in visual mode, each with its key: `y copy
+    /// H highlight ...`. Taking markings away and changing a note are
+    /// offered where there is a marking.
+    fn visual_actions(&self) -> String {
+        use visual::Binding as B;
+        let mut actions = vec![
+            (B::Yank, "copy"),
+            (B::Highlight, "highlight"),
+            (B::Underline, "underline"),
+            (B::StrikeOut, "strike out"),
+            (B::Squiggly, "squiggle"),
+            (B::Note, "note"),
+        ];
+        if self.selection_marked() {
+            actions.push((B::Unmark, "unmark"));
+        }
+        if self.marking_at_cursor().is_some() {
+            actions.push((B::ChangeNote, "change note"));
+        }
+        actions.extend([(B::OtherEnd, "other end"), (B::Leave, "leave")]);
+        let keymap = &self.keymaps.visual;
+        actions
+            .into_iter()
+            .filter_map(|(binding, what)| {
+                let key = keymap.first(binding);
+                (key != "-").then(|| format!("{key} {what}"))
+            })
+            .collect::<Vec<_>>()
+            .join("  ")
+    }
+
     /// Puts text from the clipboard at the end of the line being typed, on
     /// one line: each run of line breaks becomes a space.
     fn paste(&mut self, text: &str) {
@@ -2548,8 +2579,16 @@ impl App {
         }
         if let Some(completing) = &self.completing {
             layers = layers.push(completions(completing, chrome));
-        } else if let Some(note) = self.picked_note().filter(|_| self.prompt.is_none()) {
-            layers = layers.push(markings::note_band(note, chrome));
+        } else if self.prompt.is_none() {
+            // The note on the marking picked, or at visual mode's cursor.
+            let note = if self.visual.is_some() {
+                self.note_at_cursor()
+            } else {
+                self.picked_note().map(str::to_owned)
+            };
+            if let Some(note) = note {
+                layers = layers.push(markings::note_band(note, chrome));
+            }
         }
         match &self.sidebar {
             Some(Sidebar::Outline(sidebar)) => {
@@ -2664,14 +2703,8 @@ impl App {
                 } else {
                     format!("  {typed}")
                 };
-                let keymap = &self.keymaps.visual;
-                let yank = keymap.first(visual::Binding::Yank);
-                let leave = keymap.first(visual::Binding::Leave);
-                let note = self
-                    .note_at_cursor()
-                    .map_or_else(String::new, |note| format!("    note: {note}"));
                 label(
-                    format!("{kind}{typed}    {yank} copies, {leave} leaves{note}"),
+                    format!("{kind}{typed}    {}", self.visual_actions()),
                     chrome.bar_text,
                 )
             }

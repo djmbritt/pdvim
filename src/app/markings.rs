@@ -356,11 +356,31 @@ impl App {
         markings.get(index).cloned()
     }
 
-    /// The note on the marking at visual mode's cursor, if it has one.
-    pub(super) fn note_at_cursor(&self) -> Option<String> {
+    /// The marking at visual mode's cursor: over it, or a note beside its
+    /// line.
+    pub(super) fn marking_at_cursor(&self) -> Option<Marking> {
         let cursor = self.visual.as_ref()?.cursor();
         let character = crate::visual::character(&self.document()?.text, cursor)?;
-        self.marking_at(cursor.page, character)?.kept.contents
+        self.marking_at(cursor.page, character)
+    }
+
+    /// The note on the marking at visual mode's cursor, if it has one.
+    pub(super) fn note_at_cursor(&self) -> Option<String> {
+        self.marking_at_cursor()?
+            .kept
+            .contents
+            .filter(|note| !note.trim().is_empty())
+    }
+
+    /// Whether there is a marking for visual mode to take away or change:
+    /// under the selection, or at the cursor.
+    pub(super) fn selection_marked(&self) -> bool {
+        let (Some(visual), Some(document)) = (self.visual.as_ref(), self.document()) else {
+            return false;
+        };
+        let markings = document.markings.as_deref().unwrap_or_default();
+        !found::touching(markings, &visual.areas(&document.text)).is_empty()
+            || self.marking_at_cursor().is_some()
     }
 
     /// Labels the markings in view, to pick one by typing its label.
@@ -800,7 +820,7 @@ fn describe(marking: &Marking, index: usize, count: usize) -> String {
 
 /// The band over the bottom of the pages that shows the whole note on the
 /// marking picked, wrapped to fit.
-pub(super) fn note_band(note: &str, chrome: Colours) -> Element<'_, Message> {
+pub(super) fn note_band(note: String, chrome: Colours) -> Element<'static, Message> {
     let band = container(
         text(note)
             .size(LIST_TEXT_SIZE)

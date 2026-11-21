@@ -29,13 +29,13 @@ jobs:
         include:
           # The oldest Ubuntu still offered, so that the program runs on
           # distributions with an older glibc.
-          - { target: x86_64-unknown-linux-gnu, os: ubuntu-22.04, deb: true }
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-22.04, deb: true, rpm: true }
           - { target: aarch64-apple-darwin, os: macos-15 }
           - { target: x86_64-apple-darwin, os: macos-15-intel }
           - { target: x86_64-pc-windows-msvc, os: windows-2022 }
           # Arm Linux runners are free only for public repositories. Once
           # this one is public, add:
-          # - { target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm, deb: true }
+          # - { target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm, deb: true, rpm: true }
     defaults:
       run:
         shell: bash
@@ -84,6 +84,16 @@ jobs:
         run: |
           cargo install cargo-deb --locked
           cargo deb --no-build --no-strip --target ${{ matrix.target }} --output dist/
+
+      # For Fedora, openSUSE and the other distributions that install .rpm
+      # packages. Built from the same binary as the .deb, so it needs a
+      # glibc no newer than Ubuntu 22.04's.
+      - name: Package as .rpm
+        if: matrix.rpm
+        run: |
+          cargo install cargo-generate-rpm --locked
+          cargo generate-rpm --target ${{ matrix.target }} --output dist/
+          ls -l dist/*.rpm
 
       - uses: actions/upload-artifact@v4
         with:

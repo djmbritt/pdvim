@@ -43,6 +43,7 @@ Each [release](https://github.com/djmbritt/pdvim/releases) has packages for:
 | -------------------- | ----------------------------------------------------------------------------------------------- |
 | Linux, x86-64        | `pdvim_VERSION-1_amd64.deb`, or `pdvim-VERSION-x86_64-unknown-linux-gnu.tar.gz`                 |
 | Linux, x86-64        | `pdvim-VERSION-x86_64.AppImage`, or `pdvim-VERSION-x86_64.flatpak` for `flatpak install --user` |
+| Fedora, openSUSE     | `pdvim-VERSION-1.x86_64.rpm`, for `sudo dnf install ./pdvim-VERSION-1.x86_64.rpm`               |
 | Arch Linux           | `yay -S pdvim` or `paru -S pdvim` from the AUR, or `makepkg -si` in [`packaging/`](packaging/)  |
 | macOS, Apple silicon | `pdvim-VERSION-aarch64-apple-darwin.dmg`, or the `.tar.gz` for the terminal                     |
 | macOS, Intel         | `pdvim-VERSION-x86_64-apple-darwin.dmg`, or the `.tar.gz`                                       |

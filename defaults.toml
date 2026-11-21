@@ -4,7 +4,7 @@
 # To change something, copy this file to ~/.config/pdvim/config.toml (or
 # $XDG_CONFIG_HOME/pdvim/) and edit it. You only need the entries you
 # change: anything left out keeps its default here. pdvim reads your file
-# when it starts.
+# when it starts, and again with :source.
 
 [settings]
 

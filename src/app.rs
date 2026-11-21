@@ -502,6 +502,9 @@ pub struct App {
     fields_wanted: Option<(u64, forms::FieldGoal)>,
     /// Whether the next key is the letter of a mark to set, or to go to.
     awaiting_mark: Option<MarkVerb>,
+    /// Whether a configuration is being read, when settings for documents
+    /// only set what new ones start with.
+    sourcing: bool,
     /// The marks A to Z: a document and a place in it. Kept in the history
     /// too, when there is one.
     global_marks: HashMap<char, (PathBuf, Place)>,
@@ -578,6 +581,7 @@ impl App {
             system_dark: None,
             asking: None,
             awaiting_mark: None,
+            sourcing: false,
             chapter_wanted: None,
             note_at: None,
             note_editing: None,
@@ -618,24 +622,36 @@ impl App {
     /// Carries out the built-in configuration, then the configuration file
     /// over it, and shows the file's first problem.
     fn configure(&mut self) {
+        self.read_configuration(None);
+    }
+
+    /// Carries out the built-in configuration, then a configuration file
+    /// over it: the usual one, or one named. The bindings start again from
+    /// nothing, so that bindings taken out of the file go. Shows the file's
+    /// first problem; returns whether the file could be read.
+    fn read_configuration(&mut self, named: Option<&Path>) -> bool {
+        self.keymaps = Keymaps::empty();
+        self.sourcing = true;
         // The built-in configuration is tested to have no problems.
         let (defaults, _) = config::parse(bindings::DEFAULTS);
         for command in defaults {
-            // No document is open yet, so nothing here starts a task.
+            // Settings for documents only set what new ones start with,
+            // so nothing here starts a task.
             let _ = self.run_command(command);
         }
-        let text = match config::read() {
+        let text = match named.map_or_else(config::read, config::read_from) {
             Ok(text) => text,
             Err(error) => {
+                self.sourcing = false;
                 self.notice = Notice::Error(error.to_string());
-                return;
+                return false;
             }
         };
         let (commands, problems) = config::parse(&text);
         for command in commands {
-            // No document is open yet, so nothing here starts a task.
             let _ = self.run_command(command);
         }
+        self.sourcing = false;
         for problem in &problems {
             eprintln!("pdvim: config.toml: {problem}");
         }
@@ -645,6 +661,19 @@ impl App {
                 count => format!(" (and {} more)", count.saturating_sub(1)),
             };
             self.notice = Notice::Error(format!("config.toml: {first}{more}"));
+        }
+        true
+    }
+
+    /// Reads the configuration again, as `:source` asks, and says so.
+    fn source(&mut self, named: Option<&Path>) {
+        let path = named.map(Path::to_owned).or_else(config::path);
+        if self.read_configuration(named) && matches!(self.notice, Notice::None | Notice::Info(_))
+        {
+            self.notice = Notice::Info(path.map_or_else(
+                || "read the built-in configuration".to_owned(),
+                |path| format!("read {}", tilde(&path)),
+            ));
         }
     }
 
@@ -1952,6 +1981,7 @@ impl App {
             Command::WriteQuitAll => return self.write_all(AfterSave::Quit),
             Command::Open(path) | Command::TabOpen(Some(path)) => return self.open_in_tab(path),
             Command::Recent => self.show_recent(),
+            Command::Source(path) => self.source(path.as_deref()),
             Command::Marks => self.list_marks(),
             Command::DeleteMarks(names) => self.delete_marks(names),
             Command::Version => self.notice = Notice::Info(crate::ABOUT.to_owned()),
@@ -2013,13 +2043,14 @@ impl App {
                 Setting::Recolor(recolor) => {
                     self.recolor_auto = false;
                     let recolor = recolor == Recolor::On;
-                    match self.document_mut() {
+                    let sourcing = self.sourcing;
+                    match self.document_mut().filter(|_| !sourcing) {
                         Some(document) => document.recolor = recolor,
                         None => self.fresh.recolor = recolor,
                     }
                 }
                 Setting::Trim(trim) => {
-                    if self.document().is_some() {
+                    if self.document().is_some() && !self.sourcing {
                         return self.set_trim(self.current, trim);
                     }
                     self.fresh.trim = trim;

@@ -57,6 +57,9 @@ pub enum Command {
     /// Do what a key binding does, as if its keys were pressed after a
     /// count.
     Run(Binding, Option<u32>),
+    /// Read the configuration file again, or another file written the same
+    /// way, over the built-in configuration.
+    Source(Option<PathBuf>),
     /// Close the tab in view, and the program with its last tab.
     Quit,
     /// Close every tab and the program.
@@ -158,7 +161,7 @@ pub enum Error {
 }
 
 /// Every command by its full name, and the shorter names it also goes by.
-const NAMES: [(&str, &[&str]); 26] = [
+const NAMES: [(&str, &[&str]); 27] = [
     ("delmarks", &["delm"]),
     ("goto", &[]),
     ("help", &["h"]),
@@ -173,6 +176,7 @@ const NAMES: [(&str, &[&str]); 26] = [
     ("quit", &["q"]),
     ("recent", &["rec"]),
     ("set", &[]),
+    ("source", &["so"]),
     ("tabclose", &["tabc"]),
     ("tabedit", &["tabe"]),
     ("tabnew", &[]),
@@ -263,21 +267,9 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
         "wall" => Command::WriteAll,
         "wqall" => Command::WriteQuitAll,
         "qall" => Command::QuitAll,
-        "tabedit" | "tabnew" => {
-            Command::TabOpen((!argument.is_empty()).then(|| expand_home(argument)))
+        "tabedit" | "tabnew" | "tabclose" | "tabnext" | "tabprevious" => {
+            tab_command(canonical, argument)?
         }
-        "tabclose" => Command::TabClose,
-        "tabnext" => {
-            if argument.is_empty() {
-                Command::TabNext(None)
-            } else {
-                match argument.parse::<u32>() {
-                    Ok(tab) if tab > 0 => Command::TabNext(Some(tab)),
-                    _ => return Err(Error::NotPositive(argument.to_owned())),
-                }
-            }
-        }
-        "tabprevious" => Command::TabPrevious,
         "open" => {
             if argument.is_empty() {
                 return Err(Error::MissingArgument("open"));
@@ -285,6 +277,7 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
             Command::Open(expand_home(argument))
         }
         "recent" => Command::Recent,
+        "source" => Command::Source((!argument.is_empty()).then(|| expand_home(argument))),
         "version" => Command::Version,
         "info" => Command::Info,
         "note" if argument.is_empty() => return Err(Error::MissingArgument("note")),
@@ -299,6 +292,29 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
         "help" => Command::Help,
         "nohlsearch" => Command::NoHighlight,
         "set" => Command::Set(parse_setting(argument)?),
+        "map" | "unmap" | "mapclear" => map_command(canonical, argument)?,
+        _ => return Err(Error::Unknown(name.to_owned())),
+    };
+    Ok(Some(command))
+}
+
+/// Parses a command about tabs, given by its full name.
+fn tab_command(name: &str, argument: &str) -> Result<Command, Error> {
+    Ok(match name {
+        "tabclose" => Command::TabClose,
+        "tabprevious" => Command::TabPrevious,
+        "tabnext" if argument.is_empty() => Command::TabNext(None),
+        "tabnext" => match argument.parse::<u32>() {
+            Ok(tab) if tab > 0 => Command::TabNext(Some(tab)),
+            _ => return Err(Error::NotPositive(argument.to_owned())),
+        },
+        _ => Command::TabOpen((!argument.is_empty()).then(|| expand_home(argument))),
+    })
+}
+
+/// Parses `:map`, `:unmap` or `:mapclear`, given by its full name.
+fn map_command(name: &str, argument: &str) -> Result<Command, Error> {
+    let command = match name {
         // The keys may have spaces between them, so the action is the
         // last word.
         "map" => {
@@ -318,15 +334,14 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
             }
             Command::Unmap(mode, keymap::parse_keys(argument)?)
         }
-        "mapclear" => match argument {
+        _ => match argument {
             "" => Command::MapClear(Mode::Normal),
             name => Command::MapClear(
                 Mode::named(name).ok_or_else(|| keymap::Error::UnknownMode(name.to_owned()))?,
             ),
         },
-        _ => return Err(Error::Unknown(name.to_owned())),
     };
-    Ok(Some(command))
+    Ok(command)
 }
 
 /// The mode named at the start of the arguments to `:map` and `:unmap`,
@@ -765,6 +780,15 @@ mod tests {
                 vec![Key::Char('v')],
                 Bound::Normal(Binding::Visual)
             )))
+        );
+    }
+
+    #[test]
+    fn source_takes_a_file_or_none() {
+        assert_eq!(parse("source"), Ok(Some(Command::Source(None))));
+        assert_eq!(
+            parse("so /tmp/other.toml"),
+            Ok(Some(Command::Source(Some(PathBuf::from("/tmp/other.toml")))))
         );
     }
 

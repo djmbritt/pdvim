@@ -288,6 +288,7 @@ The box at the left of the status bar always names the mode, which says what the
 | `:map [mode] {keys} {action}`          | Bind keys to an action (see [Keys](#keys-1))                         |
 | `:unmap [mode] {keys}`                 | Remove a key binding                                                 |
 | `:mapclear [mode]`                     | Remove every key binding of a mode                                   |
+| `:so[urce] [file]`                     | Read the configuration file again, or another file like it           |
 | `:tabe[dit] {file}`, `:tabnew [file]`  | Open a document in a new tab, or open an empty tab                   |
 | `:tabn[ext] [n]`                       | Go to the next tab, or to tab _n_                                    |
 | `:tabp[revious]`                       | Go to the previous tab                                               |
@@ -325,7 +326,7 @@ Press `Up` or `Ctrl-p` at `:`, `/` or `?` to bring back an earlier command or se
 
 ## Configuration
 
-pdvim reads `$XDG_CONFIG_HOME/pdvim/config.toml` when it starts. If `XDG_CONFIG_HOME` is not set, it reads `~/.config/pdvim/config.toml`. You don't need the file.
+pdvim reads `$XDG_CONFIG_HOME/pdvim/config.toml` when it starts. If `XDG_CONFIG_HOME` is not set, it reads `~/.config/pdvim/config.toml`. You don't need the file. After editing it, `:source` reads it again without a restart: the key bindings start again from the defaults and the file, so a binding taken out of the file goes, and bindings made with `:map` go too. `recolor` and `trim` then only change how documents opened afterwards start, not the ones open. `:source {file}` reads another file written the same way.
 
 pdvim's own defaults are a configuration file too: [`defaults.toml`](defaults.toml), built into pdvim and read before yours. It lists every setting and every key binding of every mode. To start from it, copy it into place and change what you like:
 

@@ -53,6 +53,11 @@ pub fn read() -> Result<String, Unreadable> {
     }
 }
 
+/// Reads a configuration file named by hand, which must be there.
+pub fn read_from(path: &std::path::Path) -> Result<String, Unreadable> {
+    std::fs::read_to_string(path).map_err(|error| Unreadable(path.to_owned(), error))
+}
+
 /// The commands the text of a configuration file amounts to, settings
 /// first, and the parts that could not be used. A file that is not valid
 /// TOML is used not at all.

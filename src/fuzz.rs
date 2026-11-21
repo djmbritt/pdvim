@@ -239,7 +239,14 @@ pub fn modes(data: &[u8]) {
     let keymaps = Keymaps::default();
     let mut pending = Pending::new();
     let mut help = Help::new(&keymaps);
-    let mut hints = Hints::new((0..num::len(labels)).map(|item| (item, item)).collect());
+    let letters: Vec<char> = crate::hints::HOME_ROW.chars().collect();
+    let mut hints = Hints::new(
+        (0..num::len(labels)).map(|item| (item, item)).collect(),
+        &letters,
+    );
+    if let Some(hints) = &mut hints {
+        hints.set_texts(|page, _| page.to_string());
+    }
     let mut picker = Picker::new(
         (0..recent)
             .map(|entry| Entry {

@@ -72,6 +72,17 @@ pub enum FieldPick {
     Again,
 }
 
+/// What to do with the link picked by its label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkGoal {
+    /// Follow it; fields and markings are labelled too.
+    Follow,
+    /// Open a place in the document in a new tab.
+    NewTab,
+    /// Copy where it goes.
+    Copy,
+}
+
 /// What to copy about the document in view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CopyWhat {
@@ -162,8 +173,9 @@ pub enum Action {
         forward: bool,
         times: u32,
     },
-    /// Label the links in view, to follow one.
-    FollowLink,
+    /// Label the links in view, to follow one, open it in a new tab, or
+    /// copy it.
+    FollowLink(LinkGoal),
     /// Label the lines in view, to start selecting text at one: whole lines
     /// or characters.
     Visual {
@@ -253,6 +265,10 @@ bindable! {
         Help = "help", "Show this list";
         /// Label the links in view, to follow one by typing its label.
         FollowLink = "follow-link", "Label the links and markings in view; type a label to follow or pick one";
+        /// As Tridactyl's `F`.
+        FollowLinkTab = "follow-link-tab", "Label the links in view; type a label to open its place in a new tab";
+        /// As Tridactyl's `;y`.
+        YankLink = "yank-link", "Label the links in view; type a label to copy where it goes";
         /// Label the lines in view, to start selecting characters at one.
         Visual = "visual", "Select text from a line picked by label";
         /// Label the lines in view, to start selecting whole lines at one.
@@ -372,7 +388,9 @@ impl Binding {
                 forward: false,
                 times: count.unwrap_or(1),
             },
-            Self::FollowLink => Action::FollowLink,
+            Self::FollowLink => Action::FollowLink(LinkGoal::Follow),
+            Self::FollowLinkTab => Action::FollowLink(LinkGoal::NewTab),
+            Self::YankLink => Action::FollowLink(LinkGoal::Copy),
             Self::Visual => Action::Visual { lines: false },
             Self::VisualLine => Action::Visual { lines: true },
             Self::Flash => Action::Flash,

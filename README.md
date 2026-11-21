@@ -128,11 +128,17 @@ With the status bar hidden, by `zb` or `:set statusbar false`, it still comes ba
 | Key | Action                   |
 | --- | ------------------------ |
 | `f` | Label every link, form field, highlight and note in view |
+| `F` | Label the links; type a label to open its place in a new tab |
+| `;y` | Label the links; type a label to copy where it goes |
 | `gi` | Fill in the first form field in view; `Tab` goes on to the next |
 | `gI` | Fill in the last form field in view |
 | `g;` | Go back to the form field you were in last |
 
 After `f`, each link in view is highlighted and gets a label of two letters. Type a label to follow its link. A link to another place in the document goes there. A web or mail link (`http`, `https`, `mailto`) opens in your default program; links to anything else, such as files, are not followed. Highlights, notes and the other markings get labels too, just left of them; typing one picks that marking as `]h` would, so its note shows and `d` and `c` work on it. `Backspace` takes back the first letter, and `Esc` puts the labels away.
+
+`F` and `;y` label the links only. After `F`, typing a label opens the place in the document that the link goes to in a new tab, next to this one, and leaves this tab where it was; a web or mail link opens in your default program, as with `f`. The new tab has the document to itself, so markings made in one tab don't show in the other until you save them and open the document again. After `;y`, typing a label copies where the link goes: its address, or for a place in the document, the file's path followed by `#page=` and the page, as browsers open it.
+
+After `f`, `F`, `;y`, `v` or `gh`, press `/` and type some text to narrow the labels to what holds it, ignoring case: the words of a link and its address, a field's name, a marking's text, or a line's text. The labels start again from the first, so they stay short. `Enter` picks the only label left, or stops typing text when several are left, so you can type a label; `Backspace` rubs out a character of the text. `:set hintchars` sets the letters labels are made of, as in `:set hintchars hjklasdf`; the first ones are used most, and more of the alphabet is added when there are too many things for two letters to label.
 
 The fields of a PDF form get labels too, so `f` is also how you fill one in. Picking a checkbox ticks or unticks it, and picking a radio button picks it. Picking a text field lets you type into it where it is on the page: `Left` / `Right` and `Home` / `End` move the cursor, `Backspace`, `Ctrl-w` and `Ctrl-u` rub out a character, a word or everything, `Ctrl-v` pastes, `Enter` or `Esc` fills it in and leaves it. Picking a list or a drop-down opens its options under the field, starting at the one it holds: type to narrow them, `Down` / `Up` (or `Ctrl-n` / `Ctrl-p`) to move, and `Enter` or `Esc` to pick the one highlighted. Read-only fields, buttons and signatures get no label. The form's scripts are not run. Filling in a field is a change like a highlight: `u` takes it back, `:w` saves it into the file, and pdvim asks before quitting with it unsaved.
 
@@ -289,6 +295,7 @@ The box at the left of the status bar always names the mode, which says what the
 | `:set theme-dark {name}`               | Set the theme followed while the system is dark                      |
 | `:set theme-light {name}`              | Set the theme followed while the system is light                     |
 | `:set scroll-step {pixels}`            | Set how far one `j` or `k` scrolls                                   |
+| `:set hintchars {letters}`             | Set the letters labels are made of (default `asdfghjkl`)             |
 | `:set incsearch [true\|false]`         | Highlight the matches in view while a search is typed (default on)   |
 | `:set tabbar [true\|false]`            | Show the tab bar when more than one tab is open (default on)         |
 | `:set statusbar [true\|false]`         | Show the status bar while reading (default on)                       |
@@ -461,6 +468,7 @@ The actions of normal mode, and their default keys:
 | `quit`                                | `q`                                         |
 | `help`                                | none                                        |
 | `follow-link`                         | `f`                                         |
+| `follow-link-tab` / `yank-link`       | `F` / `; y`                                 |
 | `visual` / `visual-line`              | `v` / `V`                                   |
 | `flash`                               | `s`                                         |
 | `undo` / `redo`                       | `u` / `ctrl+r`                              |

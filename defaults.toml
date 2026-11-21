@@ -57,6 +57,11 @@ confirm-tab-close = true
 # instead), and pdvim asks before closing a document with unsaved ones.
 autosave = false
 
+# The letters the labels on links and lines are made of, the first ones
+# used most; more of the alphabet is added when there are too many links
+# for two letters to label. Lower-case letters or digits, each once.
+hintchars = "asdfghjkl"
+
 # Highlight the matches in view while a search is typed after / or ?.
 incsearch = true
 
@@ -175,6 +180,11 @@ note-color = "#fdd835"
 # Links: label every link in view, and every highlight and note, then type
 # a label's two letters to follow the link or pick the marking
 "f" = "follow-link"
+# Label the links only: F opens the place a link goes to in a new tab, and
+# ; y copies where a link goes. After any of these, / then some of a
+# link's text narrows the labels to the links that hold it
+"F" = "follow-link-tab"
+"; y" = "yank-link"
 # Forms: go to the first or last field in view to fill it in, or back to
 # the one last gone to; tab goes on to the next field, and shift+tab back
 "g i" = "first-field"
@@ -294,6 +304,9 @@ note-color = "#fdd835"
 "ctrl+[" = "cancel"
 "backspace" = "back"
 "ctrl+h" = "back"
+# Then type some of a link's text to label only the links that hold it;
+# enter picks the only one left, or lets you type a label
+"/" = "filter"
 
 [keys.outline]
 

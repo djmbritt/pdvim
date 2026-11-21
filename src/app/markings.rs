@@ -251,7 +251,7 @@ impl App {
                 self.label_markings();
                 Task::none()
             }
-            Wanted::Follow => self.label_links(),
+            Wanted::Follow => self.label_links(crate::input::LinkGoal::Follow),
             Wanted::DeleteIn(areas) => self.delete_in(&areas),
             Wanted::List => {
                 self.list_markings();
@@ -426,7 +426,10 @@ impl App {
             .into_iter()
             .map(|marking| (marking.page, marking))
             .collect();
-        self.marking_hints = Hints::new(shown);
+        self.marking_hints = Hints::new(shown, &self.hint_chars);
+        if let Some(hints) = &mut self.marking_hints {
+            hints.set_texts(|_, marking| marking.text.clone());
+        }
         if self.marking_hints.is_none() {
             self.notice = Notice::Info("no markings in view".to_owned());
         }

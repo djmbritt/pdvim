@@ -108,7 +108,7 @@ pub enum TabPlace {
 }
 
 /// A setting and its new value.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Setting {
     /// Whether pages are recoloured.
     Recolor(Recolor),
@@ -150,6 +150,9 @@ pub enum Setting {
     TabBar(bool),
     /// Whether matches are highlighted while a search is typed.
     Incsearch(bool),
+    /// The letters labels on links and lines are made of, the first used
+    /// most.
+    HintChars(Vec<char>),
     /// Whether the status bar shows while reading; off, it shows only
     /// while something is typed or said.
     StatusBar(bool),
@@ -184,6 +187,8 @@ pub enum Error {
     UnknownTheme(String),
     #[error("`{0}` is not a positive number")]
     NotPositive(String),
+    #[error("`{0}` is not two or more different lower-case letters or digits")]
+    NotHintChars(String),
     #[error("commands can only be bound to keys in normal mode")]
     CommandOutsideNormal,
     #[error(transparent)]
@@ -240,11 +245,12 @@ pub fn canonical(name: &str) -> Option<&'static str> {
 }
 
 /// The names of the settings `:set` knows.
-pub const SETTINGS: [&str; 19] = [
+pub const SETTINGS: [&str; 20] = [
     "autosave",
     "confirm-quit",
     "confirm-tab-close",
     "highlight-color",
+    "hintchars",
     "incsearch",
     "note-color",
     "recolor",
@@ -536,6 +542,7 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
         "confirm-tab-close" => parse_switch(value).map(Setting::ConfirmTabClose),
         "tabbar" => parse_switch(value).map(Setting::TabBar),
         "incsearch" => parse_switch(value).map(Setting::Incsearch),
+        "hintchars" => hint_chars(value).map(Setting::HintChars),
         "statusbar" => parse_switch(value).map(Setting::StatusBar),
         "highlight-color" => Ok(Setting::HighlightColour(value.parse()?)),
         "underline-color" => Ok(Setting::UnderlineColour(value.parse()?)),
@@ -548,6 +555,22 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
         },
         other => Err(Error::UnknownSetting(other.to_owned())),
     }
+}
+
+/// Parses the letters labels are made of: two or more lower-case letters
+/// or digits, each once.
+fn hint_chars(value: &str) -> Result<Vec<char>, Error> {
+    let letters: Vec<char> = value.chars().collect();
+    let mut unique = letters.clone();
+    unique.sort_unstable();
+    unique.dedup();
+    let typable = letters
+        .iter()
+        .all(|letter| letter.is_ascii_lowercase() || letter.is_ascii_digit());
+    if letters.len() < 2 || unique.len() != letters.len() || !typable {
+        return Err(Error::NotHintChars(value.to_owned()));
+    }
+    Ok(letters)
 }
 
 /// Parses a colour, or `theme` for the theme's.
@@ -672,6 +695,21 @@ mod tests {
             parse("set scroll-step 60"),
             Ok(Some(Command::Set(Setting::ScrollStep(60.0))))
         );
+    }
+
+    #[test]
+    fn hint_letters_are_lower_case_and_different() {
+        assert_eq!(
+            parse("set hintchars hjkl"),
+            Ok(Some(Command::Set(Setting::HintChars(vec!['h', 'j', 'k', 'l']))))
+        );
+        for bad in ["a", "aa", "aB", "a;", ""] {
+            assert_eq!(
+                setting("hintchars", bad),
+                Err(Error::NotHintChars(bad.into())),
+                "{bad}"
+            );
+        }
     }
 
     #[test]

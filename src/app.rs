@@ -11,7 +11,7 @@ use iced::{
 };
 
 use crate::backend::{
-    self, Annotation, Backend, Hit, Link, Marking, Markup, MarkupKind, Opened, RenderJob, Target,
+    self, Annotation, Backend, Hit, Link, Marking, Markup, MarkupKind, Opened, RenderJob,
 };
 use crate::bindings::{self, Keymaps};
 use crate::command::{Command, Recolor, Setting};
@@ -20,7 +20,9 @@ use crate::config;
 use crate::help::{Help, Line};
 use crate::hints::{Hints, Outcome};
 use crate::history::{Fit, History, View};
-use crate::input::{self, Action, ConfirmBinding, Key, MarkVerb, Prompt, PromptBinding};
+use crate::input::{
+    self, Action, ConfirmBinding, Key, LinkGoal, MarkVerb, Prompt, PromptBinding,
+};
 use crate::jumps::Jumps;
 use crate::keymap::{self, Counts, Fed, Match, Pending};
 use crate::layout::Rect;
@@ -41,6 +43,7 @@ mod flash;
 mod forms;
 mod incsearch;
 mod info;
+mod links;
 mod markings;
 mod mode;
 mod tabs;
@@ -458,6 +461,10 @@ pub struct App {
     /// The document whose links are being found so that they can be
     /// labelled, by its number.
     hints_wanted: Option<u64>,
+    /// What to do with the link picked.
+    link_goal: LinkGoal,
+    /// The letters labels are made of.
+    hint_chars: Vec<char>,
     /// The labels on the lines in view, while they are shown, and how text
     /// will be selected from the line picked.
     line_hints: Option<(Kind, Hints<Spot>)>,
@@ -583,6 +590,8 @@ impl App {
             hints: None,
             marking_hints: None,
             hints_wanted: None,
+            link_goal: LinkGoal::Follow,
+            hint_chars: crate::hints::HOME_ROW.chars().collect(),
             line_hints: None,
             lines_wanted: None,
             flash: None,
@@ -907,130 +916,6 @@ impl App {
         }
     }
 
-    /// Labels the links in view. The links on pages not seen before are
-    /// found first, which takes a moment.
-    pub(super) fn label_links(&mut self) -> Task<Message> {
-        self.pending = Pending::new();
-        let Some(document) = self.document() else {
-            return Task::none();
-        };
-        let id = document.id;
-        let missing: Vec<u32> = document
-            .reader
-            .visible_pages()
-            .filter(|page| !document.links.contains_key(page))
-            .collect();
-        if missing.is_empty() {
-            self.show_hints();
-            return Task::none();
-        }
-        let finding = document.backend.links(missing);
-        self.hints_wanted = Some(id);
-        Task::perform(finding, move |result| Message::LinksFound(id, result))
-    }
-
-    fn on_links(&mut self, id: u64, result: Result<backend::PageLinks, backend::Error>) {
-        let wanted = self.hints_wanted.take() == Some(id);
-        let Some(document) = document_by_id(&mut self.tabs, id) else {
-            return;
-        };
-        match result {
-            Ok(pages) => document.links.extend(pages),
-            Err(error) => {
-                self.notice = Notice::Error(error.to_string());
-                return;
-            }
-        }
-        // Only if the document is still the one in view.
-        if wanted && self.document().is_some_and(|document| document.id == id) {
-            self.show_hints();
-        }
-    }
-
-    /// Labels the links and the markings that show in the window, in
-    /// reading order.
-    fn show_hints(&mut self) {
-        let Some(document) = self.document() else {
-            return;
-        };
-        let (width, height) = (self.area.width, self.area.height);
-        let reader = &document.reader;
-        let mut links: Vec<(u32, Rect, Labelled)> = reader
-            .visible_pages()
-            .flat_map(|page| {
-                document
-                    .links
-                    .get(&page)
-                    .into_iter()
-                    .flatten()
-                    .map(move |link| (page, link))
-            })
-            .filter(|(page, link)| {
-                reader.area_on_screen(*page, link.area).is_some_and(|area| {
-                    area.right > 0.0 && area.left < width && area.bottom > 0.0 && area.top < height
-                })
-            })
-            .map(|(page, link)| (page, link.area, Labelled::Link(link.clone())))
-            .collect();
-        links.extend(self.markings_in_view().into_iter().filter_map(|marking| {
-            let area = *marking.areas.first()?;
-            Some((marking.page, area, Labelled::Marking(marking)))
-        }));
-        links.sort_by(|(page, area, _), (other_page, other, _)| {
-            page.cmp(other_page)
-                .then(area.top.total_cmp(&other.top))
-                .then(area.left.total_cmp(&other.left))
-        });
-        self.hints = Hints::new(
-            links
-                .into_iter()
-                .map(|(page, _, item)| (page, item))
-                .collect(),
-        );
-        if self.hints.is_none() {
-            self.notice = Notice::Info("no links, fields or markings in view".to_owned());
-        }
-    }
-
-    /// Acts on a key typed while the links are labelled.
-    fn on_hint(&mut self, outcome: Outcome<Labelled>) -> Task<Message> {
-        match outcome {
-            Outcome::Wait => {}
-            Outcome::Cancel => self.hints = None,
-            Outcome::NoMatch => {
-                self.hints = None;
-                self.notice = Notice::Error("no such label".to_owned());
-            }
-            Outcome::Picked(hint) => {
-                self.hints = None;
-                let link = match hint.item {
-                    Labelled::Link(link) => link,
-                    Labelled::Marking(marking) => {
-                        self.pick_marking(&marking);
-                        return Task::none();
-                    }
-                };
-                let area = link.area;
-                match link.target {
-                    Target::Page { page, top } => {
-                        if let Some(document) = self.document_mut() {
-                            document.jumps.record(document.reader.place());
-                            document.reader.go_to_spot(page, top);
-                        }
-                    }
-                    Target::Uri(uri) => {
-                        self.notice = match open_externally(&uri) {
-                            Ok(()) => Notice::Info(format!("opening {uri}")),
-                            Err(error) => Notice::Error(format!("cannot open {uri}: {error}")),
-                        };
-                    }
-                    Target::Field(field) => return self.fill_field(field, area),
-                }
-            }
-        }
-        Task::none()
-    }
-
     /// Starts selecting whole lines, or characters, at a line picked by
     /// label.
     fn start_visual(&mut self, lines: bool) -> Task<Message> {
@@ -1095,6 +980,9 @@ impl App {
                 return Task::none();
             }
         }
+        if self.hints.is_some() && self.document().is_some_and(|document| document.id == id) {
+            self.label_texts();
+        }
         if let Some((wanted, then)) = self.lines_wanted
             && wanted == id
             && self.document().is_some_and(|document| document.id == id)
@@ -1154,8 +1042,13 @@ impl App {
                     }),
             );
         }
-        match Hints::new(spots) {
-            Some(hints) => self.line_hints = Some((kind, hints)),
+        match Hints::new(spots, &self.hint_chars) {
+            Some(mut hints) => {
+                if let Some(document) = self.document() {
+                    hints.set_texts(|page, spot| line_from(&document.text, page, *spot));
+                }
+                self.line_hints = Some((kind, hints));
+            }
             None => self.notice = Notice::Info("no text in view".to_owned()),
         }
     }
@@ -2149,6 +2042,7 @@ impl App {
             Setting::ConfirmTabClose(confirm) => self.care.confirm_tab_close = confirm,
             Setting::TabBar(shown) => self.bars.tabs = shown,
             Setting::Incsearch(on) => self.incsearch = on,
+            Setting::HintChars(letters) => self.hint_chars = letters,
             Setting::StatusBar(shown) => self.bars.status = shown,
         }
         Task::none()
@@ -2183,7 +2077,8 @@ impl App {
                 self.show_panel(action);
                 return Task::none();
             }
-            Action::FollowLink => return self.with_markings(Wanted::Follow),
+            Action::FollowLink(LinkGoal::Follow) => return self.with_markings(Wanted::Follow),
+            Action::FollowLink(goal) => return self.label_links(goal),
             Action::Write => return self.write(None, false),
             Action::Chapter { forward, times } => return self.step_chapter(forward, times),
             Action::Undo => return self.undo(),
@@ -2968,23 +2863,29 @@ impl App {
                 };
                 label(format!("{typed}{}", self.visual_actions()), chrome.bar_text)
             }
-            _ if self.line_hints.is_some() => {
-                let typed = self
-                    .line_hints
-                    .as_ref()
-                    .and_then(|(_, hints)| hints.typed())
-                    .map(String::from)
+            _ if let Some((_, hints)) = &self.line_hints => {
+                let typed = hints.typed().map(String::from).unwrap_or_default();
+                let filter = hints
+                    .filter()
+                    .map(|filter| format!("/{filter}  "))
                     .unwrap_or_default();
-                label(format!("select from: {typed}\u{2588}"), chrome.bar_text)
+                label(
+                    format!("select from: {filter}{typed}\u{2588}"),
+                    chrome.bar_text,
+                )
             }
-            _ if self.hints.is_some() => {
-                let typed = self
-                    .hints
-                    .as_ref()
-                    .and_then(Hints::typed)
-                    .map(String::from)
+            _ if let Some(hints) = &self.hints => {
+                let verb = match self.link_goal {
+                    LinkGoal::Follow => "follow",
+                    LinkGoal::NewTab => "open in a new tab",
+                    LinkGoal::Copy => "copy",
+                };
+                let typed = hints.typed().map(String::from).unwrap_or_default();
+                let filter = hints
+                    .filter()
+                    .map(|filter| format!("/{filter}  "))
                     .unwrap_or_default();
-                label(format!("follow: {typed}\u{2588}"), chrome.bar_text)
+                label(format!("{verb}: {filter}{typed}\u{2588}"), chrome.bar_text)
             }
             (Some((Prompt::Password, line)), _) => {
                 label(self.password_prompt(line), chrome.bar_text)
@@ -3048,6 +2949,21 @@ fn append_pasted(line: &mut String, text: &str) {
                 .filter(|character| !character.is_control()),
         );
     }
+}
+
+/// The text of a line from a spot on it to its end, to narrow the labels
+/// on lines by.
+fn line_from(text: &visual::Text, page: u32, spot: Spot) -> String {
+    text.get(&page)
+        .and_then(|lines| lines.get(spot.line))
+        .map(|line| {
+            line.chars
+                .iter()
+                .skip(spot.index)
+                .map(|glyph| glyph.character)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// What to do once the text in view is read.
@@ -3777,7 +3693,7 @@ fn move_view(document: &mut Document, action: Action, step: f32) {
         | Action::Mark(_)
         | Action::JumpBack(_)
         | Action::JumpForward(_)
-        | Action::FollowLink
+        | Action::FollowLink(_)
         | Action::Visual { .. }
         | Action::Flash
         | Action::Field(_)

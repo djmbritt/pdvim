@@ -116,6 +116,9 @@ squiggly-color = "#fb8c00"
 # The table of contents, in a sidebar: j/k to move, l/h to open and close
 # a chapter's sections, enter to go there
 "tab" = "outline"
+# The start of the next or previous chapter or section in it
+"] ]" = "next-chapter"
+"[ [" = "previous-chapter"
 
 # Zoom and view
 "+" = "zoom-in"

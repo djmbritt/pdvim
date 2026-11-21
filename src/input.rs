@@ -120,6 +120,12 @@ pub enum Action {
     ShowInfo,
     /// Save the changes into the file, like `:w`.
     Write,
+    /// Go to the start of the next chapter or section, or the previous, a
+    /// number of times over.
+    Chapter {
+        forward: bool,
+        times: u32,
+    },
     /// Label the links in view, to follow one.
     FollowLink,
     /// Label the lines in view, to start selecting text at one: whole lines
@@ -172,6 +178,8 @@ bindable! {
         LastPage = "last-page", "Go to the last page, or page n";
         PageTop = "page-top", "Go to the top of the page";
         PageBottom = "page-bottom", "Go to the bottom of the page";
+        NextChapter = "next-chapter", "Go to the next chapter or section";
+        PreviousChapter = "previous-chapter", "Go to the previous chapter or section";
         /// Show the table of contents in a sidebar.
         Outline = "outline", "Show the table of contents, to go to a chapter";
         ZoomIn = "zoom-in", "Zoom in";
@@ -280,6 +288,14 @@ impl Binding {
             Self::Help => Action::ShowHelp,
             Self::Info => Action::ShowInfo,
             Self::Write => Action::Write,
+            Self::NextChapter => Action::Chapter {
+                forward: true,
+                times: count.unwrap_or(1),
+            },
+            Self::PreviousChapter => Action::Chapter {
+                forward: false,
+                times: count.unwrap_or(1),
+            },
             Self::FollowLink => Action::FollowLink,
             Self::Visual => Action::Visual { lines: false },
             Self::VisualLine => Action::Visual { lines: true },

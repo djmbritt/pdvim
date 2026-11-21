@@ -276,9 +276,141 @@ fn flatten(chapters: &[Chapter], depth: usize, parent: Option<usize>, entries: &
     }
 }
 
+/// Where a chapter or section starts, for going from one to the next.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Start {
+    pub title: String,
+    /// The page, counted from 0.
+    pub page: u32,
+    /// How far down that page, in points, when the entry says.
+    pub top: Option<f32>,
+}
+
+/// Where every chapter and section that leads somewhere starts, in reading
+/// order.
+pub fn starts(chapters: &[Chapter]) -> Vec<Start> {
+    let mut entries = Vec::new();
+    flatten(chapters, 0, None, &mut entries);
+    let mut starts: Vec<Start> = entries
+        .into_iter()
+        .filter_map(|entry| {
+            Some(Start {
+                page: entry.page?,
+                top: entry.top,
+                title: entry.title,
+            })
+        })
+        .collect();
+    starts.sort_by(|one, other| {
+        (one.page, one.top.unwrap_or(0.0))
+            .partial_cmp(&(other.page, other.top.unwrap_or(0.0)))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    starts
+}
+
+/// How far, in pixels, a start must be from the top of the window to count
+/// as after it or before it, rather than where the window is.
+const HERE: f32 = 2.0;
+
+/// The start a number of chapters on from the top of the window, or back,
+/// given how far below the top of the window each start is, in reading
+/// order; starts above it are less than 0. Starts at the same place count
+/// once, as the first of them. None past either end.
+pub fn step(offsets: &[f32], forward: bool, times: u32) -> Option<usize> {
+    let wanted = |offset: f32| {
+        if forward {
+            offset > HERE
+        } else {
+            offset < -HERE
+        }
+    };
+    let mut candidates: Vec<(usize, f32)> = Vec::new();
+    for (index, &offset) in offsets.iter().enumerate() {
+        if !wanted(offset) {
+            continue;
+        }
+        if candidates
+            .last()
+            .is_some_and(|&(_, last)| (offset - last).abs() <= HERE)
+        {
+            continue;
+        }
+        candidates.push((index, offset));
+    }
+    let times = usize::try_from(times.max(1)).unwrap_or(usize::MAX);
+    let picked = if forward {
+        candidates.get(times.saturating_sub(1))
+    } else {
+        candidates
+            .len()
+            .checked_sub(times)
+            .and_then(|at| candidates.get(at))
+    };
+    picked.map(|&(index, _)| index)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chapters_start_in_reading_order() {
+        let chapters = vec![
+            Chapter {
+                title: "Two".into(),
+                page: Some(5),
+                top: Some(100.0),
+                sections: vec![Chapter {
+                    title: "Two, first".into(),
+                    page: Some(5),
+                    top: Some(400.0),
+                    sections: Vec::new(),
+                }],
+            },
+            Chapter {
+                title: "Nowhere".into(),
+                page: None,
+                top: None,
+                sections: Vec::new(),
+            },
+            Chapter {
+                title: "One".into(),
+                page: Some(1),
+                top: None,
+                sections: Vec::new(),
+            },
+        ];
+        let titles: Vec<_> = starts(&chapters)
+            .into_iter()
+            .map(|start| start.title)
+            .collect();
+        assert_eq!(titles, ["One", "Two", "Two, first"]);
+    }
+
+    #[test]
+    fn steps_go_from_the_top_of_the_window() {
+        // Two chapters above the window, one at its top, and two below.
+        let offsets = [-900.0, -300.0, 0.5, 200.0, 1500.0];
+        assert_eq!(step(&offsets, true, 1), Some(3));
+        assert_eq!(step(&offsets, true, 2), Some(4));
+        assert_eq!(step(&offsets, true, 3), None);
+        assert_eq!(step(&offsets, false, 1), Some(1));
+        assert_eq!(step(&offsets, false, 2), Some(0));
+        assert_eq!(step(&offsets, false, 3), None);
+        assert_eq!(step(&[], true, 1), None);
+    }
+
+    #[test]
+    fn starts_at_the_same_place_count_once() {
+        // A chapter and its first section, on the same spot.
+        let offsets = [100.0, 100.0, 500.0];
+        assert_eq!(step(&offsets, true, 1), Some(0));
+        assert_eq!(step(&offsets, true, 2), Some(2));
+        let offsets = [-500.0, -100.0, -100.0];
+        assert_eq!(step(&offsets, false, 1), Some(1));
+        assert_eq!(step(&offsets, false, 2), Some(0));
+    }
 
     fn keymap() -> Keymap<Binding> {
         crate::bindings::Keymaps::default().outline

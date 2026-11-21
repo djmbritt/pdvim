@@ -272,7 +272,7 @@ mod tests {
         assert_eq!(completion.start, 8);
         assert_eq!(
             texts(&completion),
-            ["next-page", "next-marking", "next-tab"]
+            ["next-page", "next-chapter", "next-marking", "next-tab"]
         );
         assert_eq!(
             texts(&complete("map ctrl+n ")).len(),

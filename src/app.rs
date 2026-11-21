@@ -32,6 +32,7 @@ use crate::recolor::{Palette, Rgb};
 use crate::theme::{self, Colours};
 use crate::visual::{self, Kind, Spot, Visual};
 
+mod chapters;
 mod info;
 mod markings;
 mod unlock;
@@ -459,6 +460,9 @@ pub struct App {
     system_dark: Option<bool>,
     /// What the bottom line is asking, waiting for `y` or anything else.
     asking: Option<Question>,
+    /// A step through the chapters waiting for the table of contents to
+    /// be read: forward or back, and how many.
+    chapter_wanted: Option<(bool, u32)>,
     /// Whether the next key is the letter of a mark to set, or to go to.
     awaiting_mark: Option<MarkVerb>,
     /// The marks A to Z: a document and a place in it. Kept in the history
@@ -532,6 +536,7 @@ impl App {
             system_dark: None,
             asking: None,
             awaiting_mark: None,
+            chapter_wanted: None,
             global_marks: HashMap::new(),
             arriving: None,
         };
@@ -1294,7 +1299,10 @@ impl App {
         }
         // Only if the document is still the one in view.
         if self.document().is_some_and(|document| document.id == id) {
-            let _ = self.show_outline();
+            let _ = match self.chapter_wanted.take() {
+                Some((forward, times)) => self.step_chapter(forward, times),
+                None => self.show_outline(),
+            };
         }
     }
 
@@ -1795,6 +1803,7 @@ impl App {
             }
             Action::FollowLink => return self.label_links(),
             Action::Write => return self.write(None, false),
+            Action::Chapter { forward, times } => return self.step_chapter(forward, times),
             Action::Undo => return self.undo(),
             Action::Redo => return self.redo(),
             Action::Marking(what) => return self.on_marking_action(what),
@@ -1850,6 +1859,7 @@ impl App {
             | Action::ShowHelp
             | Action::ShowInfo
             | Action::Write
+            | Action::Chapter { .. }
             | Action::ShowOutline
             | Action::Mark(_)
             | Action::JumpBack(_)

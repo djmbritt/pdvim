@@ -46,6 +46,8 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
                 B::LastPage,
                 B::PageTop,
                 B::PageBottom,
+                B::NextChapter,
+                B::PreviousChapter,
                 B::Outline,
             ],
         ),

@@ -93,16 +93,17 @@ Put a count before a key to repeat it, as in vi. For example, `3j` scrolls three
 
 ### Movement
 
-| Key                                         | Action                                     |
-| ------------------------------------------- | ------------------------------------------ |
-| `j` / `k` / `h` / `l`, arrow keys           | Scroll down / up / left / right            |
-| `Ctrl-d` / `Ctrl-u`                         | Scroll half a screen down / up             |
-| `Ctrl-f`, `Space` / `Ctrl-b`, `Shift-Space` | Scroll a full screen down / up             |
-| `J`, `PageDown` / `K`, `PageUp`             | Go to the next / previous page             |
-| `gg`, `Home` / `G`, `End`                   | Go to the first / last page                |
-| `{n}G`, `{n}gg`                             | Go to page _n_                             |
-| `H` / `L`                                   | Go to the top / bottom of the current page |
-| `Tab`                                       | Show the table of contents                 |
+| Key                                         | Action                                                          |
+| ------------------------------------------- | --------------------------------------------------------------- |
+| `j` / `k` / `h` / `l`, arrow keys           | Scroll down / up / left / right                                 |
+| `Ctrl-d` / `Ctrl-u`                         | Scroll half a screen down / up                                  |
+| `Ctrl-f`, `Space` / `Ctrl-b`, `Shift-Space` | Scroll a full screen down / up                                  |
+| `J`, `PageDown` / `K`, `PageUp`             | Go to the next / previous page                                  |
+| `gg`, `Home` / `G`, `End`                   | Go to the first / last page                                     |
+| `{n}G`, `{n}gg`                             | Go to page _n_                                                  |
+| `H` / `L`                                   | Go to the top / bottom of the current page                      |
+| `Tab`                                       | Show the table of contents                                      |
+| `]]` / `[[`                                 | Go to the next / previous chapter or section; `{n}]]` goes n on |
 
 The mouse wheel also scrolls.
 
@@ -384,6 +385,7 @@ The actions of normal mode, and their default keys:
 | `delete-marking`                      | `d h`                                       |
 | `markings`                            | `shift+tab`                                 |
 | `outline`                             | `tab`                                       |
+| `next-chapter` / `previous-chapter`   | `] ]` / `[ [`                               |
 | `set-mark` / `go-to-mark`             | `m` / `` ` ``, `'`                          |
 | `jump-back` / `jump-forward`          | `ctrl+o` / `ctrl+i`                         |
 

@@ -33,7 +33,7 @@ impl Document {
 
     /// The label printed on a page, counted from 0, if the document gives
     /// labels.
-    fn label(&self, page: u32) -> Option<&str> {
+    pub(super) fn label(&self, page: u32) -> Option<&str> {
         self.labels
             .as_ref()?
             .get(num::index(page))

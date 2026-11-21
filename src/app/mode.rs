@@ -30,6 +30,8 @@ pub(super) enum Mode {
     /// A question on the bottom line, waiting for yes.
     Confirm,
     Contents,
+    /// Every page small, from `g o`.
+    Overview,
     Markings,
     Help,
     Recent,
@@ -53,6 +55,7 @@ impl Mode {
             Self::Password => "PASSWORD",
             Self::Confirm => "CONFIRM",
             Self::Contents => "CONTENTS",
+            Self::Overview => "OVERVIEW",
             Self::Markings => "MARKINGS",
             Self::Help => "HELP",
             Self::Recent => "RECENT",
@@ -70,6 +73,7 @@ impl Mode {
             Self::Command | Self::Search | Self::Password | Self::Confirm => modes.command,
             Self::Follow | Self::Pick => modes.label,
             Self::Contents
+            | Self::Overview
             | Self::Markings
             | Self::Help
             | Self::Recent
@@ -102,6 +106,8 @@ impl App {
             Mode::Follow
         } else if self.marking_hints.is_some() {
             Mode::Pick
+        } else if self.overview().is_some() {
+            Mode::Overview
         } else if let Some(sidebar) = &self.sidebar {
             match sidebar {
                 Sidebar::Outline(_) => Mode::Contents,

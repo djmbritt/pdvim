@@ -37,6 +37,7 @@ mod layout;
 mod markings;
 mod num;
 mod outline;
+mod overview;
 mod paths;
 mod reader;
 mod shell;

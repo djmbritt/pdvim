@@ -25,6 +25,7 @@ use crate::num;
 use crate::outline::{self, Outline};
 use crate::reader::Reader;
 use crate::picker::{Choice, Entry, Picker};
+use crate::overview::Overview;
 use crate::visual::{self, Kind, Spot, Text, Visual};
 
 /// The keys the reader tells apart that type no character.
@@ -161,6 +162,7 @@ fn bound_to(keymaps: &Keymaps, keys: &[Key], bound: Bound) -> bool {
         Bound::Visual(to) => keymaps.visual.lookup(keys) == Match::Bound(to),
         Bound::Hints(to) => keymaps.hints.lookup(keys) == Match::Bound(to),
         Bound::Outline(to) => keymaps.outline.lookup(keys) == Match::Bound(to),
+        Bound::Overview(to) => keymaps.overview.lookup(keys) == Match::Bound(to),
         Bound::Markings(to) => keymaps.markings.lookup(keys) == Match::Bound(to),
         Bound::Recent(to) => keymaps.recent.lookup(keys) == Match::Bound(to),
         Bound::Help(to) => keymaps.help.lookup(keys) == Match::Bound(to),
@@ -244,6 +246,10 @@ pub fn modes(data: &[u8]) {
     } else {
         Kind::Lines
     };
+    // The overview: its pages, and how many fit across and down.
+    let pages = num::len(bytes.below(2000));
+    let across = num::len(bytes.below(12));
+    let down = num::len(bytes.below(8));
 
     let keymaps = Keymaps::default();
     let mut pending = Pending::new();
@@ -265,6 +271,7 @@ pub fn modes(data: &[u8]) {
             .collect(),
     );
     let mut sidebar = Outline::new(&chapters, page);
+    let mut overview = Overview::new(pages, page);
     let mut selecting = lines
         .get(start)
         .map(|&(page, line)| Visual::new(kind, Spot::line_start(page, line)));
@@ -288,6 +295,7 @@ pub fn modes(data: &[u8]) {
         {
             sidebar = None;
         }
+        overview_key(&mut overview, &keymaps, key, (pages, across, down));
         if let Some(selection) = &mut selecting
             && !visual_key(selection, &keymaps, key, &text)
         {
@@ -364,6 +372,29 @@ fn outline_key(sidebar: &mut Outline, keymaps: &Keymaps, key: Key, rows: usize) 
     let (top, count) = sidebar.position(rows);
     assert!(top < count, "the sidebar is scrolled past its end");
     !matches!(outcome, outline::Outcome::Go(..) | outline::Outcome::Close)
+}
+
+/// Moves through the overview: the page selected is always one there is,
+/// and among those shown, however few fit.
+fn overview_key(overview: &mut Overview, keymaps: &Keymaps, key: Key, shape: (u32, u32, u32)) {
+    let (pages, across, down) = shape;
+    let outcome = overview.feed(key, &keymaps.overview, across, down);
+    let selected = overview.selected();
+    let shown = overview.shown(across, down);
+    if pages > 0 {
+        assert!(selected < pages, "page {selected} of {pages} is selected");
+        assert!(shown.contains(&selected), "{selected} is not among {shown:?}");
+    } else {
+        assert!(shown.is_empty(), "pages are shown of none");
+    }
+    let most = across.max(1).saturating_mul(down.max(1));
+    assert!(
+        shown.end.saturating_sub(shown.start) <= most,
+        "{shown:?} is more than {across} by {down}"
+    );
+    if let crate::overview::Outcome::Go(page) = outcome {
+        assert_eq!(page, selected, "it goes to a page other than the one selected");
+    }
 }
 
 /// Returns whether visual mode goes on.

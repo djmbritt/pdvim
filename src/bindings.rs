@@ -10,7 +10,7 @@ use crate::command::Command;
 use crate::config;
 use crate::input::{self, ConfirmBinding, Key, PromptBinding};
 use crate::keymap::{Bindable, Keymap};
-use crate::{help, hints, markings, outline, picker, visual};
+use crate::{help, hints, markings, outline, overview, picker, visual};
 
 /// The built-in configuration: every setting and key binding at its
 /// default.
@@ -146,6 +146,8 @@ modes! {
     Hints, hints, "hints": hints::Binding;
     /// The table of contents, in a sidebar.
     Outline, outline, "outline": outline::Binding;
+    /// Every page small, side by side, to pick one.
+    Overview, overview, "overview": overview::Binding;
     /// The list of highlights and other markings, in a sidebar.
     Markings, markings, "markings": markings::Binding;
     /// The lists of recent documents and of open tabs.

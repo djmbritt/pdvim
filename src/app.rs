@@ -33,6 +33,7 @@ use crate::theme::{self, Colours};
 use crate::visual::{self, Kind, Spot, Visual};
 
 mod chapters;
+mod flash;
 mod info;
 mod markings;
 mod unlock;
@@ -436,7 +437,9 @@ pub struct App {
     line_hints: Option<(Kind, Hints<Spot>)>,
     /// The document whose text is being read so that its lines can be
     /// labelled, by its number, and how text will be selected.
-    lines_wanted: Option<(u64, Kind)>,
+    lines_wanted: Option<(u64, TextFor)>,
+    /// Text being typed to jump to, as flash.nvim's `s`.
+    flash: Option<crate::flash::Flash>,
     /// The selection, in visual mode.
     visual: Option<Visual>,
     notice: Notice,
@@ -534,6 +537,7 @@ impl App {
             hints_wanted: None,
             line_hints: None,
             lines_wanted: None,
+            flash: None,
             visual: None,
             notice,
             paper: None,
@@ -643,6 +647,7 @@ impl App {
                 // The labels were placed for the old size.
                 self.hints = None;
                 self.line_hints = None;
+                self.flash = None;
                 for document in self.tabs.iter_mut().filter_map(|tab| tab.document.as_mut()) {
                     document.reader.set_window((area.width, area.height));
                 }
@@ -665,6 +670,7 @@ impl App {
                 // The labels stay where the links were.
                 self.hints = None;
                 self.line_hints = None;
+                self.flash = None;
                 self.on_wheel(delta);
                 Task::none()
             }
@@ -753,6 +759,8 @@ impl App {
                 } else if self.info.take().is_some() {
                     // Any key puts it away.
                     Task::none()
+                } else if self.flash.is_some() {
+                    self.on_flash_key(key)
                 } else if self.visual.is_some() {
                     self.on_visual_key(key)
                 } else if let Some((kind, hints)) = &mut self.line_hints {
@@ -932,6 +940,13 @@ impl App {
         }
     }
 
+    /// Starts selecting whole lines, or characters, at a line picked by
+    /// label.
+    fn start_visual(&mut self, lines: bool) -> Task<Message> {
+        let kind = if lines { Kind::Lines } else { Kind::Characters };
+        self.label_lines(kind)
+    }
+
     /// Labels the lines in view, to start selecting text at one. The text
     /// of pages not read before is read first.
     fn label_lines(&mut self, kind: Kind) -> Task<Message> {
@@ -945,7 +960,7 @@ impl App {
             self.show_line_hints(kind);
             return Task::none();
         }
-        self.lines_wanted = Some((id, kind));
+        self.lines_wanted = Some((id, TextFor::Lines(kind)));
         self.read_text(pages)
     }
 
@@ -989,7 +1004,7 @@ impl App {
                 return;
             }
         }
-        if let Some((wanted, kind)) = self.lines_wanted
+        if let Some((wanted, then)) = self.lines_wanted
             && wanted == id
             && self.document().is_some_and(|document| document.id == id)
             && let Some(document) = self.document()
@@ -999,7 +1014,10 @@ impl App {
                 .all(|page| document.text.contains_key(&page))
         {
             self.lines_wanted = None;
-            self.show_line_hints(kind);
+            match then {
+                TextFor::Lines(kind) => self.show_line_hints(kind),
+                TextFor::Flash => self.flash = Some(crate::flash::Flash::new()),
+            }
         }
     }
 
@@ -1009,13 +1027,49 @@ impl App {
         let Some(document) = self.document() else {
             return;
         };
+        let mut spots = Vec::new();
+        let mut sentences: Option<(u32, Vec<(usize, usize)>)> = None;
+        for (page, index) in self.lines_in_view() {
+            if sentences.as_ref().is_none_or(|(known, _)| *known != page) {
+                let page_lines = document.text.get(&page).map(Vec::as_slice).unwrap_or_default();
+                sentences = Some((page, visual::sentence_starts(page_lines)));
+            }
+            spots.push((page, Spot::line_start(page, index)));
+            let starts = sentences.as_ref().map(|(_, starts)| starts.as_slice());
+            spots.extend(
+                starts
+                    .unwrap_or_default()
+                    .iter()
+                    .filter(|(row, _)| *row == index)
+                    .map(|&(_, place)| {
+                        (
+                            page,
+                            Spot {
+                                page,
+                                line: index,
+                                index: place,
+                            },
+                        )
+                    }),
+            );
+        }
+        match Hints::new(spots) {
+            Some(hints) => self.line_hints = Some((kind, hints)),
+            None => self.notice = Notice::Info("no text in view".to_owned()),
+        }
+    }
+
+    /// The lines of text that show in the window, each as its page and its
+    /// place on the page, in reading order.
+    fn lines_in_view(&self) -> Vec<(u32, usize)> {
+        let Some(document) = self.document() else {
+            return Vec::new();
+        };
         let (width, height) = (self.area.width, self.area.height);
         let reader = &document.reader;
-        let mut lines: Vec<(Rect, Spot)> = Vec::new();
+        let mut lines: Vec<(Rect, u32, usize)> = Vec::new();
         for page in reader.visible_pages() {
-            let page_lines = document.text.get(&page).map(Vec::as_slice).unwrap_or_default();
-            let sentences = visual::sentence_starts(page_lines);
-            for (index, line) in page_lines.iter().enumerate() {
+            for (index, line) in document.text.get(&page).into_iter().flatten().enumerate() {
                 let Some(first) = line.chars.first() else {
                     continue;
                 };
@@ -1029,40 +1083,19 @@ impl App {
                     area.right > 0.0 && area.left < width && area.bottom > 0.0 && area.top < height
                 });
                 if shows {
-                    lines.push((area, Spot::line_start(page, index)));
-                    lines.extend(
-                        sentences
-                            .iter()
-                            .filter(|(row, _)| *row == index)
-                            .map(|&(_, place)| {
-                                (
-                                    area,
-                                    Spot {
-                                        page,
-                                        line: index,
-                                        index: place,
-                                    },
-                                )
-                            }),
-                    );
+                    lines.push((area, page, index));
                 }
             }
         }
-        lines.sort_by(|(area, spot), (other_area, other)| {
-            spot.page
-                .cmp(&other.page)
+        lines.sort_by(|(area, page, _), (other_area, other_page, _)| {
+            page.cmp(other_page)
                 .then(area.top.total_cmp(&other_area.top))
                 .then(area.left.total_cmp(&other_area.left))
-                .then(spot.index.cmp(&other.index))
         });
-        let spots = lines
+        lines
             .into_iter()
-            .map(|(_, spot)| (spot.page, spot))
-            .collect();
-        match Hints::new(spots) {
-            Some(hints) => self.line_hints = Some((kind, hints)),
-            None => self.notice = Notice::Info("no text in view".to_owned()),
-        }
+            .map(|(_, page, index)| (page, index))
+            .collect()
     }
 
     /// Acts on a key typed while the lines are labelled.
@@ -1106,6 +1139,7 @@ impl App {
                 self.visual = None;
                 Task::none()
             }
+            visual::Outcome::Flash => self.start_flash(),
             visual::Outcome::Mark(kind, areas) => {
                 self.visual = None;
                 self.highlight(kind, areas)
@@ -1936,10 +1970,8 @@ impl App {
             Action::Undo => return self.undo(),
             Action::Redo => return self.redo(),
             Action::Marking(what) => return self.on_marking_action(what),
-            Action::Visual { lines } => {
-                let kind = if lines { Kind::Lines } else { Kind::Characters };
-                return self.label_lines(kind);
-            }
+            Action::Visual { lines } => return self.start_visual(lines),
+            Action::Flash => return self.start_flash(),
             Action::ShowOutline => return self.show_outline(),
             Action::Mark(verb) => {
                 self.awaiting_mark = Some(verb);
@@ -1995,6 +2027,7 @@ impl App {
             | Action::JumpForward(_)
             | Action::FollowLink
             | Action::Visual { .. }
+            | Action::Flash
             | Action::Undo
             | Action::Redo
             | Action::Marking(_)
@@ -2708,6 +2741,10 @@ impl App {
             _ if let Some(question) = self.asking => {
                 label(self.question(question), chrome.bar_error)
             }
+            _ if let Some(flash) = &self.flash => label(
+                format!("jump to: {}\u{2588}", flash.typed()),
+                chrome.bar_text,
+            ),
             _ if self.visual.is_some() => {
                 let visual = self.visual.as_ref();
                 let kind = match visual.map(|visual| visual.kind) {
@@ -2806,6 +2843,15 @@ fn append_pasted(line: &mut String, text: &str) {
                 .filter(|character| !character.is_control()),
         );
     }
+}
+
+/// What to do once the text in view is read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TextFor {
+    /// Label the lines, to start selecting this way at one.
+    Lines(Kind),
+    /// Ask for text to jump to.
+    Flash,
 }
 
 /// What `f` labels: a link to follow, or a marking to pick.
@@ -3333,6 +3379,9 @@ impl canvas::Program<Message> for Marks<'_> {
                 draw_label(&mut frame, hint.label, Point::new(area.x, area.y));
             }
         }
+        if let Some(flash) = &self.0.flash {
+            flash::draw(&mut frame, document, flash);
+        }
         if let Some((_, hints)) = &self.0.line_hints {
             for hint in hints.shown() {
                 let Some(area) = visual::character(&document.text, hint.item)
@@ -3361,11 +3410,17 @@ const fn label_size() -> Size {
 /// Draws a label of two letters with its top-left corner at a point, kept
 /// inside the window.
 fn draw_label(frame: &mut canvas::Frame, label: [char; 2], at: Point) {
+    draw_text_label(frame, &label.iter().collect::<String>(), at);
+}
+
+/// Draws a label of a letter or two with its top-left corner at a point,
+/// kept inside the window.
+fn draw_text_label(frame: &mut canvas::Frame, label: &str, at: Point) {
     let corner = Point::new(at.x.max(0.0), at.y.max(0.0));
     let size = label_size();
     frame.fill_rectangle(corner, size, LABEL);
     frame.fill_text(canvas::Text {
-        content: label.iter().collect(),
+        content: label.to_owned(),
         position: Point::new(corner.x + size.width / 2.0, corner.y + size.height / 2.0),
         color: LABEL_TEXT,
         size: LABEL_SIZE.into(),

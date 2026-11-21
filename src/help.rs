@@ -82,7 +82,7 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
             "Marks and jumps",
             &[B::SetMark, B::GoToMark, B::JumpBack, B::JumpForward],
         ),
-        ("Selecting text", &[B::Visual, B::VisualLine]),
+        ("Selecting text", &[B::Visual, B::VisualLine, B::Flash]),
         (
             "Highlights and other markings",
             &[

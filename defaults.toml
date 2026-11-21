@@ -132,7 +132,6 @@ note-color = "#fdd835"
 "z z" = "zoom-to"
 "z Z" = "zoom-to"
 "z 0" = "zoom-reset"
-"s" = "fit-width"
 "z w" = "fit-width"
 "z p" = "fit-page"
 "r" = "rotate"
@@ -158,6 +157,9 @@ note-color = "#fdd835"
 # move with h j k l, w b e, 0 $, and press y to copy
 "v" = "visual"
 "V" = "visual-line"
+# As flash.nvim's s: type some of the text in view, and each match gets a
+# label; type a label to start selecting there, or enter for the nearest
+"s" = "flash"
 
 # Highlights and other markings: go to the next or previous one, take away
 # the one gone to, or list them all in a sidebar. u takes back the last
@@ -218,6 +220,8 @@ note-color = "#fdd835"
 "ctrl+c" = "leave"
 "ctrl+[" = "leave"
 "o" = "other-end"
+# Type some of the text in view, then a match's label, to move there
+"s" = "flash"
 "v" = "characters"
 "V" = "lines"
 "j" = "down"

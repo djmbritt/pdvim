@@ -140,7 +140,7 @@ The mouse wheel also scrolls.
 | `+`, `zi` / `-`, `zo` | Zoom in / out                    |
 | `=`, `z0`             | Zoom to 100%                     |
 | `{n}=`, `{n}zz`       | Zoom to _n_%                     |
-| `s`, `zw`             | Fit the page width to the window |
+| `zw`                  | Fit the page width to the window |
 | `zp`                  | Fit the whole page in the window |
 | `r`                   | Rotate                           |
 | `R`                   | Turn recoloring on or off        |
@@ -171,8 +171,11 @@ A jump is `gg`, `G`, `{n}G`, `:{n}`, a search match, a chapter from the table of
 | Key       | Action                                  |
 | --------- | --------------------------------------- |
 | `v` / `V` | Select characters / whole lines of text |
+| `s`       | Jump to text you type, and select from there |
 
 After `v` or `V`, each line of text in view gets a label of two letters, and so does each sentence that starts partway along a line. Type a label to put the cursor there, and start selecting from there. The status bar then lists what you can do next, each with its key; `d` and `c` show there when there is a marking to take away or change.
+
+`s` jumps by what you type, as [flash.nvim](https://github.com/folke/flash.nvim) does. Type some of the text in view: each match is highlighted and gets a label just after it, the nearest first. Keep typing to narrow the matches, or type a label to start selecting there; `Enter` goes to the nearest match, `Backspace` takes back a letter, and `Esc` gives up. Labels never start with a letter that could carry on what you typed, so a letter is always one or the other. While there are few matches the labels are one letter, and two when there are more. Lowercase matches either case; a capital makes the case count. In visual mode, `s` moves the cursor the same way, and the selection stretches to it.
 
 | Key in visual mode        | Action                                                     |
 | ------------------------- | ---------------------------------------------------------- |
@@ -184,6 +187,7 @@ After `v` or `V`, each line of text in view gets a label of two letters, and so 
 | `f` / `F` + a character   | Move to the next / previous such character on the line     |
 | `t` / `T` + a character   | Move to just before / just after it                        |
 | `;` / `,`                 | Repeat the last `f`, `F`, `t`, or `T` / the other way      |
+| `s`                       | Jump the cursor to text you type, by its label             |
 | `o`                       | Move the cursor to the other end of the selection          |
 | `v` / `V`                 | Switch to selecting characters / lines, or leave           |
 | `y`                       | Copy the selection to the clipboard, and leave             |
@@ -397,7 +401,7 @@ The actions of normal mode, and their default keys:
 | `zoom-in` / `zoom-out`                | `+`, `z i`, `z I` / `-`, `z o`, `z O`       |
 | `zoom-to`                             | `=`, `z z`, `z Z`                           |
 | `zoom-reset`                          | `z 0`                                       |
-| `fit-width` / `fit-page`              | `s`, `z w` / `z p`                          |
+| `fit-width` / `fit-page`              | `z w` / `z p`                               |
 | `rotate`                              | `r`                                         |
 | `toggle-recolor`                      | `R`                                         |
 | `toggle-trim`                         | `t`                                         |
@@ -412,6 +416,7 @@ The actions of normal mode, and their default keys:
 | `help`                                | none                                        |
 | `follow-link`                         | `f`                                         |
 | `visual` / `visual-line`              | `v` / `V`                                   |
+| `flash`                               | `s`                                         |
 | `undo` / `redo`                       | `u` / `ctrl+r`                              |
 | `write`                               | `ctrl+s`                                    |
 | `next-marking` / `previous-marking`   | `] h` / `[ h`                               |

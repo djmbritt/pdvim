@@ -26,6 +26,8 @@ bindable! {
         /// The marking under the cursor, or the note beside its line.
         ChangeNote = "change-note", "Change the note on the marking at the cursor, and leave";
         Leave = "leave", "Leave without copying";
+        /// As flash.nvim's `s`: type some text, then a match's label.
+        Flash = "flash", "Jump the cursor to text typed next, by its label";
         OtherEnd = "other-end", "Go to the other end of the selection";
         /// The kind in force leaves; the other kind switches to it.
         Characters = "characters", "Select characters; leave if already";
@@ -111,6 +113,8 @@ pub enum Outcome {
     ChangeNote(u32, Rect),
     /// Leave without copying.
     Leave,
+    /// Ask for text to jump the cursor to.
+    Flash,
 }
 
 /// The selection: where it started, where the cursor is, and how.
@@ -146,6 +150,13 @@ impl Visual {
 
     pub const fn cursor(&self) -> Spot {
         self.cursor
+    }
+
+    /// Puts the cursor at a spot; the selection runs from where it started
+    /// to there.
+    pub const fn move_to(&mut self, spot: Spot) {
+        self.cursor = spot;
+        self.goal = None;
     }
 
     /// What has been typed so far, for the status bar.
@@ -200,6 +211,7 @@ impl Visual {
     fn act(&mut self, binding: Binding, times: u32, text: &Text) -> Outcome {
         match binding {
             Binding::Leave => return Outcome::Leave,
+            Binding::Flash => return Outcome::Flash,
             Binding::Yank => return Outcome::Copy(self.text(text)),
             Binding::Highlight => return Outcome::Mark(MarkupKind::Highlight, self.areas(text)),
             Binding::Underline => return Outcome::Mark(MarkupKind::Underline, self.areas(text)),

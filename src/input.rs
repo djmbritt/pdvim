@@ -139,6 +139,8 @@ pub enum Action {
     Visual {
         lines: bool,
     },
+    /// Ask for text in view to start selecting at, as flash.nvim's `s`.
+    Flash,
     /// Show the table of contents in a sidebar.
     ShowOutline,
     /// Wait for a letter, then put a mark there, or go to it.
@@ -213,6 +215,8 @@ bindable! {
         Visual = "visual", "Select text from a line picked by label";
         /// Label the lines in view, to start selecting whole lines at one.
         VisualLine = "visual-line", "Select whole lines from a line picked by label";
+        /// As flash.nvim's `s`.
+        Flash = "flash", "Type text in view, then its label, to start selecting there";
         NextMarking = "next-marking", "Go to the next highlight or other marking";
         PreviousMarking = "previous-marking", "Go to the previous highlight or other marking";
         /// The marking last gone to with next-marking or previous-marking.
@@ -311,6 +315,7 @@ impl Binding {
             Self::FollowLink => Action::FollowLink,
             Self::Visual => Action::Visual { lines: false },
             Self::VisualLine => Action::Visual { lines: true },
+            Self::Flash => Action::Flash,
             Self::NextMarking => Action::Marking(MarkingAction::Step {
                 forward: true,
                 times: count.unwrap_or(1),

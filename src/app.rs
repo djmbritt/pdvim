@@ -34,6 +34,7 @@ use crate::visual::{self, Kind, Spot, Visual};
 
 mod info;
 mod markings;
+mod unlock;
 
 use markings::{Edit, Step, Wanted};
 
@@ -400,6 +401,10 @@ pub struct App {
     pending: Pending<input::Binding>,
     /// What has been typed of a sequence bound in the prompt.
     prompt_pending: Pending<PromptBinding>,
+    /// The locked documents waiting for a password, by the request that
+    /// opens each, the first asked for now; and whether the last password
+    /// given for it was wrong.
+    locked: std::collections::VecDeque<(u64, PathBuf, bool)>,
     /// The prompt being typed into, and the text so far.
     prompt: Option<(Prompt, String)>,
     /// The completions shown above the prompt, while there are any.
@@ -500,6 +505,7 @@ impl App {
             keymaps: Keymaps::empty(),
             pending: Pending::new(),
             prompt_pending: Pending::new(),
+            locked: std::collections::VecDeque::new(),
             prompt: None,
             completing: None,
             picker: None,
@@ -1608,11 +1614,11 @@ impl App {
                 return Task::none();
             }
             Fed::Bound(PromptBinding::Submit, _) => return self.submit(prompt, &line),
-            Fed::Bound(PromptBinding::Cancel, _) => return Task::none(),
+            Fed::Bound(PromptBinding::Cancel, _) => return self.left_prompt(prompt),
             Fed::Bound(PromptBinding::RubOut, _) => {
                 // Rubbing out the sigil itself leaves the prompt, as in vi.
                 if line.pop().is_none() {
-                    return Task::none();
+                    return self.left_prompt(prompt);
                 }
             }
             Fed::Bound(PromptBinding::ClearLine, _) => line.clear(),
@@ -1656,6 +1662,7 @@ impl App {
             },
             Prompt::SearchForward => self.search(line, true),
             Prompt::SearchBackward => self.search(line, false),
+            Prompt::Password => self.unlock(line.to_owned()),
         }
     }
 
@@ -1900,7 +1907,7 @@ impl App {
         };
         tab.opening = Some((request, path.clone()));
         self.notice = Notice::Info(format!("opening {}", tilde(&path)));
-        Task::perform(backend::open(path.clone()), move |result| {
+        Task::perform(backend::open(path.clone(), None), move |result| {
             Message::Opened(request, path, result)
         })
     }
@@ -1922,14 +1929,7 @@ impl App {
         let opened = match result {
             Ok(opened) => opened,
             Err(error) => {
-                self.notice = Notice::Error(error.to_string());
-                if let Some(tab) = self.tabs.get_mut(index) {
-                    tab.opening = None;
-                }
-                // A tab opened for this document alone has no use now.
-                if self.tabs.len() > 1 && self.tabs.get(index).is_some_and(Tab::is_empty) {
-                    self.remove_tab(index);
-                }
+                self.not_opened(request, path, error);
                 return Task::none();
             }
         };
@@ -2590,6 +2590,9 @@ impl App {
                     .map(String::from)
                     .unwrap_or_default();
                 label(format!("follow link: {typed}\u{2588}"), chrome.bar_text)
+            }
+            (Some((Prompt::Password, line)), _) => {
+                label(self.password_prompt(line), chrome.bar_text)
             }
             (Some((prompt, line)), _) => {
                 label(format!("{}{line}\u{2588}", prompt.sigil()), chrome.bar_text)

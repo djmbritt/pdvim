@@ -47,8 +47,10 @@ const HITS_PER_PAGE: u32 = 500;
 pub enum Error {
     #[error("cannot open {path}: {reason}")]
     Open { path: String, reason: String },
-    #[error("{0} is password-protected, which is not supported yet")]
+    #[error("{0} is password-protected")]
     Encrypted(String),
+    #[error("wrong password for {0}")]
+    WrongPassword(String),
     #[error("cannot render page {page}: {reason}")]
     Render { page: u32, reason: String },
     #[error("cannot measure the margins: {0}")]
@@ -553,15 +555,19 @@ impl Backend {
     }
 }
 
-/// Opens a document on a new worker thread.
-pub fn open(path: PathBuf) -> impl Future<Output = Result<Opened, Error>> {
+/// Opens a document on a new worker thread, unlocking it with the
+/// password if it is locked.
+pub fn open(
+    path: PathBuf,
+    password: Option<String>,
+) -> impl Future<Output = Result<Opened, Error>> {
     let (reply, answer) = oneshot::channel();
     let (requests, inbox) = mpsc::channel();
     let name = path.display().to_string();
     let spawned = thread::Builder::new()
         .name("pdvim-document".to_owned())
         .spawn(move || {
-            let document = match load(&path) {
+            let document = match load(&path, password.as_deref()) {
                 Ok((document, sizes)) => {
                     let backend = Backend { requests };
                     let info = Box::new(read_info(&document));
@@ -587,6 +593,7 @@ pub fn open(path: PathBuf) -> impl Future<Output = Result<Opened, Error>> {
             Worker {
                 document,
                 path,
+                password,
                 inbox,
                 deferred: VecDeque::new(),
             }
@@ -616,19 +623,56 @@ fn file_path(path: &Path) -> Result<&str, mupdf::Error> {
     path.to_str().ok_or(mupdf::Error::InvalidUtf8)
 }
 
-/// Opens the file and measures every page.
-fn load(path: &Path) -> Result<(Document, Vec<PageSize>), Error> {
+/// Opens the file, unlocking it with the password if it is locked, and
+/// measures every page.
+fn load(path: &Path, password: Option<&str>) -> Result<(Document, Vec<PageSize>), Error> {
     let name = path.display().to_string();
     let failed = |error: mupdf::Error| Error::Open {
         path: name.clone(),
         reason: reason(&error, &name),
     };
-    let document = Document::open(file_path(path).map_err(failed)?).map_err(failed)?;
-    if document.needs_password().map_err(failed)? {
-        return Err(Error::Encrypted(name));
-    }
+    let document = match unlocked(path, password).map_err(failed)? {
+        Unlocked::Open(document) => document,
+        Unlocked::Locked => return Err(Error::Encrypted(name)),
+        Unlocked::Wrong => return Err(Error::WrongPassword(name)),
+    };
     let sizes = page_sizes(&document).map_err(failed)?;
     Ok((document, sizes))
+}
+
+/// A document opened, or still locked.
+enum Unlocked {
+    Open(Document),
+    /// It needs a password, and none was given.
+    Locked,
+    /// The password given does not unlock it.
+    Wrong,
+}
+
+/// Opens a file, unlocking it with the password if it needs one.
+fn unlocked(path: &Path, password: Option<&str>) -> Result<Unlocked, mupdf::Error> {
+    let mut document = Document::open(file_path(path)?)?;
+    if !document.needs_password()? {
+        return Ok(Unlocked::Open(document));
+    }
+    let Some(password) = password else {
+        return Ok(Unlocked::Locked);
+    };
+    Ok(if document.authenticate(password)? {
+        Unlocked::Open(document)
+    } else {
+        Unlocked::Wrong
+    })
+}
+
+/// Opens a file again, unlocked as it was the first time.
+fn reopen(path: &Path, password: Option<&str>) -> Result<Document, mupdf::Error> {
+    match unlocked(path, password)? {
+        Unlocked::Open(document) => Ok(document),
+        Unlocked::Locked | Unlocked::Wrong => Err(mupdf::Error::InvalidArgument(
+            "the document is locked".to_owned(),
+        )),
+    }
 }
 
 /// The unturned size of every page, in points.
@@ -1232,6 +1276,8 @@ struct Worker {
     /// The file the document was opened from, which highlights are saved
     /// to.
     path: PathBuf,
+    /// The password that unlocked it, to open it again with.
+    password: Option<String>,
     inbox: mpsc::Receiver<Request>,
     /// Long requests that arrived while another was under way.
     deferred: VecDeque<Request>,
@@ -1273,8 +1319,10 @@ impl Worker {
                 }
                 Request::Outline(reply) => {
                     let _ = reply.send(
-                        outline(&self.document, || Document::open(file_path(&self.path)?))
-                            .map_err(|error| Error::Outline(error.to_string())),
+                        outline(&self.document, || {
+                            reopen(&self.path, self.password.as_deref())
+                        })
+                        .map_err(|error| Error::Outline(error.to_string())),
                     );
                 }
                 Request::Remove(annotations, reply) => {
@@ -1710,6 +1758,58 @@ mod tests {
         let saved = Document::open(copy.0.to_str().unwrap()).unwrap();
         let page = mupdf::pdf::PdfPage::try_from(saved.load_page(0).unwrap()).unwrap();
         assert_eq!(page.annotations().count(), 1);
+    }
+
+    /// A one-page PDF saying "Hello world", locked with the password
+    /// `secret` by AES-256.
+    const LOCKED: &[u8] = include_bytes!("../fuzz/seeds/pdf/encrypted.pdf");
+
+    #[test]
+    fn a_locked_document_opens_only_with_its_password() {
+        let file = Scratch::new("locked", LOCKED);
+        assert!(matches!(load(&file.0, None), Err(Error::Encrypted(_))));
+        assert!(matches!(
+            load(&file.0, Some("guess")),
+            Err(Error::WrongPassword(_))
+        ));
+        let (document, sizes) = load(&file.0, Some("secret")).unwrap();
+        assert_eq!(sizes.len(), 1);
+        let text: String = page_text(&document, 0).unwrap()[0]
+            .chars
+            .iter()
+            .map(|character| character.character)
+            .collect();
+        assert_eq!(text, "Hello world");
+        assert!(reopen(&file.0, Some("secret")).is_ok());
+        assert!(reopen(&file.0, None).is_err());
+    }
+
+    #[test]
+    fn a_locked_document_stays_locked_when_marked_and_saved() {
+        let file = Scratch::new("locked-saved", LOCKED);
+        let copy = Scratch::new("locked-copy", b"");
+        let (document, _) = load(&file.0, Some("secret")).unwrap();
+        let markup = Markup {
+            kind: MarkupKind::Highlight,
+            pages: vec![(
+                0,
+                vec![Rect {
+                    left: 70.0,
+                    top: 80.0,
+                    right: 140.0,
+                    bottom: 96.0,
+                }],
+            )],
+            colour: Rgb(0xff, 0xff, 0x00),
+        };
+        highlight_in(&document, &markup).unwrap();
+        save_to(&document, &file.0, None).unwrap();
+        save_to(&document, &file.0, Some(&copy.0)).unwrap();
+        for saved in [&file.0, &copy.0] {
+            assert!(matches!(load(saved, None), Err(Error::Encrypted(_))));
+            let (document, _) = load(saved, Some("secret")).unwrap();
+            assert_eq!(page_markings(&document, 0).unwrap().len(), 1);
+        }
     }
 
     #[test]

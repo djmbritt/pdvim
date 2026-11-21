@@ -43,6 +43,8 @@ pub enum Prompt {
     SearchForward,
     /// A search towards the start of the document, after `?`.
     SearchBackward,
+    /// The password to unlock a document, shown as dots.
+    Password,
 }
 
 impl Prompt {
@@ -52,6 +54,7 @@ impl Prompt {
             Self::Command => ':',
             Self::SearchForward => '/',
             Self::SearchBackward => '?',
+            Self::Password => ' ',
         }
     }
 }

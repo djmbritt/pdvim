@@ -194,6 +194,8 @@ These go through every highlight, underline, strike-out and squiggly underline i
 | `gt`, `Ctrl-Tab` / `gT`, `Ctrl-Shift-Tab` | Go to the next / previous tab |
 | `{n}gt`, `{n}Ctrl-Tab`                    | Go to tab _n_                 |
 
+A password-protected PDF asks for its password in the status bar when it opens, showing a dot for each character typed. A wrong password asks again; `Esc` gives up and closes its tab. pdvim keeps the password only while the document is open, and a locked PDF stays locked with the same password when you save markings into it or save a copy with `:w copy.pdf`.
+
 When a book numbers its pages differently from their place in the file, as with roman numerals for the front matter, the status bar shows the printed number first: `xii (14/300)`. `:{n}` goes to the page at place _n_, and `:goto {label}` to the page with that number printed on it; a number printed on no page is taken as a place.
 
 A tab, and the window while its tab is in view, goes by the document's title when the PDF gives one, and by the file name otherwise. Titles that are only the name of the file the PDF was made from, such as `Microsoft Word - report.docx` or `untitled`, are passed over.
@@ -397,10 +399,6 @@ pdvim saves where you left each document in `$XDG_DATA_HOME/pdvim/history.sqlite
 cargo install cargo-fuzz
 fuzz/run.sh pdf 600     # fuzz PDF loading for ten minutes
 ```
-
-## Limitations
-
-Password-protected PDFs are not supported yet.
 
 ## License
 

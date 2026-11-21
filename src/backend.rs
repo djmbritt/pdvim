@@ -1092,7 +1092,10 @@ fn outline(
         }
         _ => document.outlines()?,
     };
-    Ok(outlines.into_iter().map(chapter).collect())
+    Ok(outlines
+        .into_iter()
+        .map(|outline| chapter(outline, 0))
+        .collect())
 }
 
 /// Reads every object of a PDF. MuPDF rebuilds its record of where the
@@ -1650,17 +1653,28 @@ fn save_to(document: &Document, path: &Path, target: Option<&Path>) -> Result<()
             .save_with_options(writable(path)?, options)
             .map_err(failed);
     }
-    let beside = rewrite_path(path);
-    if let Err(error) =
-        pdf.save_with_options(writable(&beside)?, mupdf::pdf::PdfWriteOptions::default())
-    {
+    let (beside, file) = rewrite_file(path).map_err(|error| Error::Save(error.to_string()))?;
+    let written = write_whole(&pdf, file).and_then(|()| {
+        std::fs::rename(&beside, path).map_err(|error| Error::Save(error.to_string()))
+    });
+    if written.is_err() {
         let _ = std::fs::remove_file(&beside);
-        return Err(failed(error));
     }
-    std::fs::rename(&beside, path).map_err(|error| {
-        let _ = std::fs::remove_file(&beside);
-        Error::Save(error.to_string())
-    })
+    written
+}
+
+/// Writes a whole PDF into a file pdvim has just made, and makes sure it
+/// reached the disk. MuPDF is handed the open file, not its name, so it
+/// cannot be led by a link put in its place to write somewhere else.
+fn write_whole(pdf: &mupdf::pdf::PdfDocument, file: std::fs::File) -> Result<(), Error> {
+    let mut writer = std::io::BufWriter::new(file);
+    pdf.write_to_with_options(&mut writer, mupdf::pdf::PdfWriteOptions::default())
+        .map_err(|error| Error::Save(error.to_string()))?;
+    let file = writer
+        .into_inner()
+        .map_err(|error| Error::Save(error.error().to_string()))?;
+    file.sync_all()
+        .map_err(|error| Error::Save(error.to_string()))
 }
 
 /// A path as MuPDF takes it, to write to.
@@ -1675,11 +1689,39 @@ fn writable(path: &Path) -> Result<&str, Error> {
 
 /// Where a file being rewritten whole is written first: beside it, hidden,
 /// so that putting it in place is a rename on the same disk.
-fn rewrite_path(path: &Path) -> PathBuf {
+fn rewrite_path(path: &Path, attempt: u32) -> PathBuf {
     let mut name = std::ffi::OsString::from(".");
     name.push(path.file_name().unwrap_or_default());
-    name.push(".pdvim-save");
+    name.push(format!(".{}-{attempt}.pdvim-save", std::process::id()));
     path.with_file_name(name)
+}
+
+/// A new file beside a document, to write it whole into, made by pdvim
+/// alone: where a file or link of that name is there already, another name
+/// is tried. It takes the permissions of the document, which it replaces.
+fn rewrite_file(path: &Path) -> std::io::Result<(PathBuf, std::fs::File)> {
+    let permissions = std::fs::metadata(path)?.permissions();
+    let mut attempt = 0_u32;
+    loop {
+        let beside = rewrite_path(path, attempt);
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&beside)
+        {
+            Ok(file) => {
+                if let Err(error) = file.set_permissions(permissions) {
+                    let _ = std::fs::remove_file(&beside);
+                    return Err(error);
+                }
+                return Ok((beside, file));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists && attempt < 100 => {
+                attempt = attempt.saturating_add(1);
+            }
+            Err(error) => return Err(error),
+        }
+    }
 }
 
 /// The box around a quad, measured from the corner of the page.
@@ -1986,15 +2028,41 @@ fn figures(pictures: &[Rect], shapes: &[Rect], page: Rect) -> Vec<Rect> {
         .collect()
 }
 
-/// An entry of MuPDF's outline as pdvim's own.
-fn chapter(outline: mupdf::Outline) -> Chapter {
+/// How deep a table of contents goes, chapter in chapter, before what is
+/// deeper still is left out. Real documents go a handful deep; a document
+/// made to go far deeper would otherwise overflow the stack of whatever
+/// walks it, as each level is a call.
+const CHAPTER_DEPTH: usize = 64;
+
+/// An entry of MuPDF's outline as pdvim's own, at a depth in it, counted
+/// from 0.
+fn chapter(outline: mupdf::Outline, depth: usize) -> Chapter {
+    let sections = if depth < CHAPTER_DEPTH {
+        let deeper = depth.saturating_add(1);
+        outline
+            .down
+            .into_iter()
+            .map(|section| chapter(section, deeper))
+            .collect()
+    } else {
+        discard(outline.down);
+        Vec::new()
+    };
     Chapter {
         title: outline.title.trim().to_owned(),
         page: outline.dest.map(|destination| destination.loc.page_number),
         top: outline
             .dest
             .and_then(|destination| destination_top(destination.kind)),
-        sections: outline.down.into_iter().map(chapter).collect(),
+        sections,
+    }
+}
+
+/// Lets go of entries of an outline one at a time, rather than each in the
+/// one above it, so that however deep they go they take no more stack.
+fn discard(mut outlines: Vec<mupdf::Outline>) {
+    while let Some(mut outline) = outlines.pop() {
+        outlines.append(&mut outline.down);
     }
 }
 
@@ -3223,7 +3291,7 @@ mod tests {
         };
         highlight_in(&document, &markup).unwrap();
         save_to(&document, &file.0, None).unwrap();
-        assert!(!rewrite_path(&file.0).exists());
+        assert!(!rewrite_path(&file.0, 0).exists());
 
         let saved = mupdf::pdf::PdfDocument::open(file.0.to_str().unwrap()).unwrap();
         assert!(saved.can_be_saved_incrementally());
@@ -3441,6 +3509,41 @@ mod tests {
         assert!(chapters[1].sections.is_empty());
     }
 
+    #[test]
+    fn a_table_of_contents_is_read_only_so_deep() {
+        let depth = CHAPTER_DEPTH.saturating_add(20);
+        let mut objects = vec![
+            "<< /Type /Catalog /Pages 2 0 R /Outlines 4 0 R >>".to_owned(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>".to_owned(),
+            "<< /Type /Outlines /First 5 0 R /Last 5 0 R >>".to_owned(),
+        ];
+        for level in 0..depth {
+            let number = level.saturating_add(5);
+            let under = if level.saturating_add(1) < depth {
+                format!("/First {0} 0 R /Last {0} 0 R", number.saturating_add(1))
+            } else {
+                String::new()
+            };
+            objects.push(format!(
+                "<< /Title (Level {level}) /Parent {} 0 R {under} /Dest [3 0 R /Fit] >>",
+                number.saturating_sub(1)
+            ));
+        }
+        let objects: Vec<&str> = objects.iter().map(String::as_str).collect();
+        let file = Scratch::new("deep-outline", pdf(&objects));
+        let document = Document::open(file.0.to_str().unwrap()).unwrap();
+        let chapters = outline(&document, || panic!("nothing to mend")).unwrap();
+
+        let mut levels = 0;
+        let mut here = chapters.as_slice();
+        while let [chapter] = here {
+            levels += 1;
+            here = &chapter.sections;
+        }
+        assert_eq!(levels, CHAPTER_DEPTH + 1);
+    }
+
     /// Found by fuzzing: the mupdf crate crashes on an outline entry
     /// without a title.
     #[test]
@@ -3506,6 +3609,10 @@ mod tests {
             outline(&document, || Document::from_bytes(bytes, "application/pdf")).unwrap();
         let titles: Vec<_> = chapters
             .iter()
+
+
+
+
             .map(|chapter| chapter.title.as_str())
             .collect();
         assert_eq!(titles, ["Chapter 1", ""]);
@@ -3609,7 +3716,3 @@ mod tests {
         assert_eq!(content_box(&[255, 250, 244, 255], 4, 4), Some((2, 0, 3, 1)));
     }
 }
-
-
-
-

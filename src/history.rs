@@ -165,6 +165,9 @@ impl History {
     /// Puts a mark at a place in a document. A capital mark leaves any
     /// other document it was in.
     pub fn set_mark(&self, path: &Path, name: char, place: Place) -> Result<(), Error> {
+        let Some(key) = key(path) else {
+            return Ok(());
+        };
         let name = name.to_string();
         if name.chars().all(char::is_uppercase) {
             self.connection
@@ -173,18 +176,21 @@ impl History {
         self.connection.execute(
             "INSERT INTO mark (path, name, page, down) VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT (path, name) DO UPDATE SET page = excluded.page, down = excluded.down",
-            params![path.to_string_lossy(), name, place.page, place.down],
+            params![key, name, place.page, place.down],
         )?;
         Ok(())
     }
 
     /// The marks in a document, small and capital, by letter.
     pub fn marks(&self, path: &Path) -> Result<Vec<(char, Place)>, Error> {
+        let Some(key) = key(path) else {
+            return Ok(Vec::new());
+        };
         let mut statement = self
             .connection
             .prepare("SELECT name, page, down FROM mark WHERE path = ?1 ORDER BY name")?;
         let marks = statement
-            .query_map(params![path.to_string_lossy()], |row| {
+            .query_map(params![key], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     Place {
@@ -250,10 +256,10 @@ impl History {
             if name.chars().all(char::is_uppercase) {
                 self.connection
                     .execute("DELETE FROM mark WHERE name = ?1", params![name])?;
-            } else {
+            } else if let Some(key) = key(path) {
                 self.connection.execute(
                     "DELETE FROM mark WHERE path = ?1 AND name = ?2",
-                    params![path.to_string_lossy(), name],
+                    params![key, name],
                 )?;
             }
         }
@@ -262,11 +268,14 @@ impl History {
 
     /// The view a document was left in, if it has been opened before.
     pub fn load(&self, path: &Path) -> Result<Option<View>, Error> {
+        let Some(key) = key(path) else {
+            return Ok(None);
+        };
         let view = self
             .connection
             .query_row(
                 "SELECT x, y, zoom, fit, rotation, recolor, trim, extent, columns FROM view WHERE path = ?1",
-                params![path.to_string_lossy()],
+                params![key],
                 |row| {
                     Ok(View {
                         x: row.get(0)?,
@@ -294,6 +303,9 @@ impl History {
     /// Records the view a document was left in, and when, in seconds since
     /// the Unix epoch.
     fn save_at(&self, path: &Path, view: View, left_at: i64) -> Result<(), Error> {
+        let Some(key) = key(path) else {
+            return Ok(());
+        };
         self.connection.execute(
             "INSERT INTO view
                 (path, x, y, zoom, fit, rotation, recolor, trim, left_at, extent, columns)
@@ -305,7 +317,7 @@ impl History {
                 left_at = excluded.left_at, extent = excluded.extent,
                 columns = excluded.columns",
             params![
-                path.to_string_lossy(),
+                key,
                 view.x,
                 view.y,
                 view.zoom,
@@ -369,6 +381,13 @@ impl History {
     }
 }
 
+/// What a document is known by in the database: its path. The database
+/// holds paths as text, so a path that is not Unicode is not remembered at
+/// all: written with replacement characters, it could be taken for another.
+fn key(path: &Path) -> Option<&str> {
+    path.to_str()
+}
+
 /// The time now, in whole seconds since the Unix epoch. A clock set before
 /// 1970 reads as the epoch itself.
 fn now() -> i64 {
@@ -387,6 +406,21 @@ fn data_directory() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn documents_whose_names_are_not_unicode_are_not_taken_for_each_other() {
+        use std::os::unix::ffi::OsStrExt;
+        let history = memory();
+        let one = Path::new(std::ffi::OsStr::from_bytes(b"/tmp/\xff.pdf"));
+        let two = Path::new(std::ffi::OsStr::from_bytes(b"/tmp/\xfe.pdf"));
+        let place = Place { page: 3, down: 0.5 };
+        history.set_mark(one, 'a', place).unwrap();
+        assert_eq!(history.marks(one).unwrap(), []);
+        assert_eq!(history.marks(two).unwrap(), []);
+        history.delete_marks(two, &['a']).unwrap();
+        assert_eq!(history.load(two).unwrap(), None);
+    }
 
     #[test]
     fn marks_are_kept_by_document_and_capitals_across_them() {

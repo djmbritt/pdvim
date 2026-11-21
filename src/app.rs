@@ -1855,8 +1855,7 @@ impl App {
             }
             Fed::Bound(PromptBinding::ClearLine, _) => line.clear(),
             Fed::Bound(PromptBinding::RubOutWord, _) => {
-                let kept = line.trim_end().rfind(char::is_whitespace);
-                line.truncate(kept.map_or(0, |index| index.saturating_add(1)));
+                rub_out_word(&mut line);
             }
             // Keys bound to nothing type themselves.
             Fed::Unbound(keys) => {
@@ -3998,9 +3997,40 @@ fn tilde(path: &Path) -> String {
         )
 }
 
+/// Takes the last word off a line typed at a prompt, and the spaces after
+/// it, as Ctrl-W does in a shell. What is kept goes up to and with the space
+/// before the word, which may take more than one byte, as a no-break space
+/// does.
+fn rub_out_word(line: &mut String) {
+    let kept = line
+        .trim_end()
+        .char_indices()
+        .rev()
+        .find(|&(_, character)| character.is_whitespace())
+        .map_or(0, |(index, space)| index.saturating_add(space.len_utf8()));
+    line.truncate(kept);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_word_is_rubbed_out_after_any_space() {
+        for (typed, kept) in [
+            ("open some file", "open some "),
+            ("open some file  ", "open some "),
+            ("word", ""),
+            ("", ""),
+            ("open\u{a0}file", "open\u{a0}"),
+            ("open\u{3000}file", "open\u{3000}"),
+            ("caf\u{e9} cr\u{e8}me", "caf\u{e9} "),
+        ] {
+            let mut line = typed.to_owned();
+            rub_out_word(&mut line);
+            assert_eq!(line, kept, "{typed:?}");
+        }
+    }
 
     #[test]
     fn pasted_text_goes_on_one_line() {

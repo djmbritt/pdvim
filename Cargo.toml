@@ -2,6 +2,8 @@
 name = "pdvim"
 version = "0.1.28"
 edition = "2024"
+# The oldest Rust that builds pdvim and the locked versions of its crates.
+rust-version = "1.90"
 description = "A minimal, keyboard-driven PDF reader"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/djmbritt/pdvim"
@@ -34,6 +36,9 @@ assets = [
     ["docs/man/pdvim.1", "usr/share/man/man1/", "644"],
     ["docs/man/pdvim.5", "usr/share/man/man5/", "644"],
 ]
+
+[lints.rust]
+unsafe_code = "forbid"
 
 [lints.clippy]
 pedantic = { level = "deny", priority = -1 }   # UM, ACTUALLY

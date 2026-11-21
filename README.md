@@ -4,6 +4,8 @@ A minimal, keyboard-driven PDF reader with vi key bindings.
 
 pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.rs/) to draw the window. Pages are laid out in one continuous column. It also remembers where you stopped reading each document.
 
+![pdvim showing a graph from the Graphviz manual, with two tabs open](docs/screenshots/reading.png)
+
 ## Features
 
 - vi-style movement with counts (`12j`, `5J`, `42G`)
@@ -22,6 +24,28 @@ pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.r
 - A cheat sheet of the key bindings in force, with `:help`
 - `Tab` completion of commands, settings, and file paths in the command prompt
 - Tabs, with vim's `gt` / `gT`, `Ctrl-Tab` / `Ctrl-Shift-Tab`, and `:tabedit`
+- Highlighting, underlining, striking out and squiggling text into the PDF, saved with `:w` or `Ctrl-s`, with undo
+- Going through the markings with `]h` / `[h`, and listing them in a sidebar
+- Chapter by chapter with `]]` / `[[`, and the printed page numbers (`xii`, `A-3`) in the status bar and `:goto`
+- Password-protected PDFs, and `:info` for the title, author and dates
+
+## Screenshots
+
+The table of contents, in the Catppuccin Mocha theme, with the page recolored to match:
+
+![The table of contents sidebar over a recolored page of the Ghostscript manual](docs/screenshots/contents.png)
+
+Visual mode starts from a line picked by its label, then moves like vim:
+
+![Two-letter labels on each line of text, to start selecting from](docs/screenshots/labels.png)
+
+A highlight, an underline, a squiggly underline, and a selection in progress:
+
+![Lines highlighted, underlined and squiggled, with a selection in progress](docs/screenshots/visual.png)
+
+`:help` lists every key binding in force:
+
+![The cheat sheet of key bindings](docs/screenshots/help.png)
 
 ## Installing
 

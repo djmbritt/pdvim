@@ -172,7 +172,7 @@ A jump is `gg`, `G`, `{n}G`, `:{n}`, a search match, a chapter from the table of
 | --------- | --------------------------------------- |
 | `v` / `V` | Select characters / whole lines of text |
 
-After `v` or `V`, each line of text in view gets a label of two letters. Type a label to put the cursor at the start of that line, and start selecting from there.
+After `v` or `V`, each line of text in view gets a label of two letters, and so does each sentence that starts partway along a line. Type a label to put the cursor there, and start selecting from there.
 
 | Key in visual mode        | Action                                                     |
 | ------------------------- | ---------------------------------------------------------- |

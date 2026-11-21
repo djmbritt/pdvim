@@ -458,6 +458,62 @@ impl Visual {
     }
 }
 
+/// Where sentences start partway along the lines of a page, as each line
+/// and the place in it: after `.`, `!` or `?`, perhaps closed by a quote
+/// or bracket, then a space or a line break, at a capital, a digit or an
+/// opening quote. A full stop after a common abbreviation, such as `Mr.`,
+/// or after an initial does not end a sentence. Sentences that start a
+/// line are left out, as the line's start is labelled already.
+pub fn sentence_starts(lines: &[TextLine]) -> Vec<(usize, usize)> {
+    const ENDS: &[char] = &['.', '!', '?', '\u{2026}'];
+    const CLOSERS: &[char] = &['"', '\'', ')', ']', '\u{201d}', '\u{2019}', '\u{bb}'];
+    const OPENERS: &[char] = &['"', '\'', '(', '[', '\u{201c}', '\u{2018}', '\u{ab}'];
+    const ABBREVIATIONS: &[&str] = &[
+        "mr", "mrs", "ms", "dr", "st", "prof", "sr", "jr", "vs", "cf", "fig", "no", "vol", "pp",
+        "e.g", "i.e", "etc", "al", "approx", "ch", "sec", "eq",
+    ];
+    let mut starts = Vec::new();
+    // The word so far, to tell an abbreviation's full stop from a
+    // sentence's.
+    let mut word = String::new();
+    // Whether the text so far ends a sentence, and whether a space or a
+    // line break has come since.
+    let mut ended = false;
+    let mut gap = false;
+    for (row, line) in lines.iter().enumerate() {
+        if ended {
+            gap = true;
+        }
+        for (index, text) in line.chars.iter().enumerate() {
+            let character = text.character;
+            if character.is_whitespace() {
+                gap = gap || ended;
+                word.clear();
+                continue;
+            }
+            let opens = character.is_uppercase()
+                || character.is_ascii_digit()
+                || OPENERS.contains(&character);
+            if ended && gap && opens && index > 0 {
+                starts.push((row, index));
+            }
+            let shortened = character == '.'
+                && (word.chars().count() == 1
+                    || ABBREVIATIONS.contains(&word.to_lowercase().as_str()));
+            if ENDS.contains(&character) && !shortened {
+                ended = true;
+                gap = false;
+            } else if !(ended && !gap && CLOSERS.contains(&character)) {
+                ended = false;
+                gap = false;
+            }
+            word.push(character);
+        }
+        word.clear();
+    }
+    starts
+}
+
 /// A line of a page.
 fn line(text: &Text, page: u32, line: usize) -> Option<&TextLine> {
     text.get(&page)?.get(line)
@@ -579,6 +635,21 @@ fn previous_line(text: &Text, (page, line): (u32, usize)) -> Option<(u32, usize)
 mod tests {
     use super::*;
     use crate::backend::TextChar;
+
+    #[test]
+    fn sentences_are_found_where_they_start() {
+        let lines = page(&[
+            "Down the hole. She fell! Was it",
+            "far? \u{201c}Yes,\u{201d} said Mr. Rabbit. e.g. no J. Smith",
+            "More. (Aside.) Then",
+            "end.",
+            "Next line",
+        ]);
+        assert_eq!(
+            sentence_starts(&lines),
+            vec![(0, 15), (0, 25), (1, 5), (2, 6), (2, 15)]
+        );
+    }
 
     /// Lines of text, each character ten points wide and each line twenty
     /// points below the last.

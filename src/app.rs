@@ -986,7 +986,8 @@ impl App {
         }
     }
 
-    /// Labels the lines that show in the window, in reading order.
+    /// Labels the lines that show in the window, and the sentences that
+    /// start partway along them, in reading order.
     fn show_line_hints(&mut self, kind: Kind) {
         let Some(document) = self.document() else {
             return;
@@ -995,7 +996,9 @@ impl App {
         let reader = &document.reader;
         let mut lines: Vec<(Rect, Spot)> = Vec::new();
         for page in reader.visible_pages() {
-            for (index, line) in document.text.get(&page).into_iter().flatten().enumerate() {
+            let page_lines = document.text.get(&page).map(Vec::as_slice).unwrap_or_default();
+            let sentences = visual::sentence_starts(page_lines);
+            for (index, line) in page_lines.iter().enumerate() {
                 let Some(first) = line.chars.first() else {
                     continue;
                 };
@@ -1010,6 +1013,21 @@ impl App {
                 });
                 if shows {
                     lines.push((area, Spot::line_start(page, index)));
+                    lines.extend(
+                        sentences
+                            .iter()
+                            .filter(|(row, _)| *row == index)
+                            .map(|&(_, place)| {
+                                (
+                                    area,
+                                    Spot {
+                                        page,
+                                        line: index,
+                                        index: place,
+                                    },
+                                )
+                            }),
+                    );
                 }
             }
         }
@@ -1018,6 +1036,7 @@ impl App {
                 .cmp(&other.page)
                 .then(area.top.total_cmp(&other_area.top))
                 .then(area.left.total_cmp(&other_area.left))
+                .then(spot.index.cmp(&other.index))
         });
         let spots = lines
             .into_iter()
@@ -2664,7 +2683,7 @@ impl App {
                     .map(String::from)
                     .unwrap_or_default();
                 label(
-                    format!("select from line: {typed}\u{2588}"),
+                    format!("select from: {typed}\u{2588}"),
                     chrome.bar_text,
                 )
             }

@@ -206,7 +206,7 @@ bindable! {
         /// Show the key bindings.
         Help = "help", "Show this list";
         /// Label the links in view, to follow one by typing its label.
-        FollowLink = "follow-link", "Label the links in view; type a label to follow it";
+        FollowLink = "follow-link", "Label the links and markings in view; type a label to follow or pick one";
         /// Label the lines in view, to start selecting characters at one.
         Visual = "visual", "Select text from a line picked by label";
         /// Label the lines in view, to start selecting whole lines at one.

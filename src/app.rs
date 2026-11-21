@@ -425,7 +425,7 @@ pub struct App {
     /// The sidebar, while it is shown.
     sidebar: Option<Sidebar>,
     /// The labels on the links in view, while they are shown.
-    hints: Option<Hints<Link>>,
+    hints: Option<Hints<Labelled>>,
     /// The labels on the markings in view, while they are shown.
     marking_hints: Option<Hints<Marking>>,
     /// The document whose links are being found so that they can be
@@ -813,7 +813,7 @@ impl App {
 
     /// Labels the links in view. The links on pages not seen before are
     /// found first, which takes a moment.
-    fn label_links(&mut self) -> Task<Message> {
+    pub(super) fn label_links(&mut self) -> Task<Message> {
         self.pending = Pending::new();
         let Some(document) = self.document() else {
             return Task::none();
@@ -851,14 +851,15 @@ impl App {
         }
     }
 
-    /// Labels the links that show in the window, in reading order.
+    /// Labels the links and the markings that show in the window, in
+    /// reading order.
     fn show_hints(&mut self) {
         let Some(document) = self.document() else {
             return;
         };
         let (width, height) = (self.area.width, self.area.height);
         let reader = &document.reader;
-        let mut links: Vec<(u32, Link)> = reader
+        let mut links: Vec<(u32, Rect, Labelled)> = reader
             .visible_pages()
             .flat_map(|page| {
                 document
@@ -873,31 +874,47 @@ impl App {
                     area.right > 0.0 && area.left < width && area.bottom > 0.0 && area.top < height
                 })
             })
-            .map(|(page, link)| (page, link.clone()))
+            .map(|(page, link)| (page, link.area, Labelled::Link(link.clone())))
             .collect();
-        links.sort_by(|(page, link), (other_page, other)| {
+        links.extend(self.markings_in_view().into_iter().filter_map(|marking| {
+            let area = *marking.areas.first()?;
+            Some((marking.page, area, Labelled::Marking(marking)))
+        }));
+        links.sort_by(|(page, area, _), (other_page, other, _)| {
             page.cmp(other_page)
-                .then(link.area.top.total_cmp(&other.area.top))
-                .then(link.area.left.total_cmp(&other.area.left))
+                .then(area.top.total_cmp(&other.top))
+                .then(area.left.total_cmp(&other.left))
         });
-        self.hints = Hints::new(links);
+        self.hints = Hints::new(
+            links
+                .into_iter()
+                .map(|(page, _, item)| (page, item))
+                .collect(),
+        );
         if self.hints.is_none() {
-            self.notice = Notice::Info("no links in view".to_owned());
+            self.notice = Notice::Info("no links or markings in view".to_owned());
         }
     }
 
     /// Acts on a key typed while the links are labelled.
-    fn on_hint(&mut self, outcome: Outcome<Link>) {
+    fn on_hint(&mut self, outcome: Outcome<Labelled>) {
         match outcome {
             Outcome::Wait => {}
             Outcome::Cancel => self.hints = None,
             Outcome::NoMatch => {
                 self.hints = None;
-                self.notice = Notice::Error("no such link".to_owned());
+                self.notice = Notice::Error("no such label".to_owned());
             }
             Outcome::Picked(hint) => {
                 self.hints = None;
-                match hint.item.target {
+                let link = match hint.item {
+                    Labelled::Link(link) => link,
+                    Labelled::Marking(marking) => {
+                        self.pick_marking(&marking);
+                        return;
+                    }
+                };
+                match link.target {
                     Target::Page { page, top } => {
                         if let Some(document) = self.document_mut() {
                             document.jumps.record(document.reader.place());
@@ -1913,7 +1930,7 @@ impl App {
                 self.show_panel(action);
                 return Task::none();
             }
-            Action::FollowLink => return self.label_links(),
+            Action::FollowLink => return self.with_markings(Wanted::Follow),
             Action::Write => return self.write(None, false),
             Action::Chapter { forward, times } => return self.step_chapter(forward, times),
             Action::Undo => return self.undo(),
@@ -2727,7 +2744,7 @@ impl App {
                     .and_then(Hints::typed)
                     .map(String::from)
                     .unwrap_or_default();
-                label(format!("follow link: {typed}\u{2588}"), chrome.bar_text)
+                label(format!("follow: {typed}\u{2588}"), chrome.bar_text)
             }
             (Some((Prompt::Password, line)), _) => {
                 label(self.password_prompt(line), chrome.bar_text)
@@ -2789,6 +2806,13 @@ fn append_pasted(line: &mut String, text: &str) {
                 .filter(|character| !character.is_control()),
         );
     }
+}
+
+/// What `f` labels: a link to follow, or a marking to pick.
+#[derive(Debug, Clone, PartialEq)]
+enum Labelled {
+    Link(Link),
+    Marking(Marking),
 }
 
 /// Completes the word at the end of a command line. The first press
@@ -3293,7 +3317,14 @@ impl canvas::Program<Message> for Marks<'_> {
         }
         if let Some(hints) = &self.0.hints {
             for hint in hints.shown() {
-                let Some(area) = document.reader.area_on_screen(hint.page, hint.item.area) else {
+                let link = match &hint.item {
+                    Labelled::Link(link) => link,
+                    Labelled::Marking(marking) => {
+                        markings::draw_marking_label(&mut frame, document, hint.label, marking);
+                        continue;
+                    }
+                };
+                let Some(area) = document.reader.area_on_screen(hint.page, link.area) else {
                     continue;
                 };
                 let area = rectangle(area);

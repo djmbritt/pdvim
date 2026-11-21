@@ -150,8 +150,8 @@ note-color = "#fdd835"
 # key by default; give it one with, for example:
 # "ctrl+h" = "help"
 
-# Links: label every link in view, then type a label's two letters to
-# follow it
+# Links: label every link in view, and every highlight and note, then type
+# a label's two letters to follow the link or pick the marking
 "f" = "follow-link"
 
 # Selecting text: label every line in view, type a label to start there,

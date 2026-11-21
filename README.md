@@ -20,7 +20,7 @@ pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.r
 - Selecting and copying text from the keyboard, with a visual mode like vim's
 - A sidebar with the table of contents, to go to a chapter
 - Marks (`ma`, `` `a ``, and `A`–`Z` across documents) and a jump list (`Ctrl-o`, `Ctrl-i`), as in vim
-- Following links from the keyboard: `f` labels every link in view, and typing a label follows it
+- Following links from the keyboard: `f` labels every link, highlight and note in view, and typing a label follows the link or picks the marking
 - A cheat sheet of the key bindings in force, with `:help`
 - `Tab` completion of commands, settings, and file paths in the command prompt
 - Tabs, with vim's `gt` / `gT`, `Ctrl-Tab` / `Ctrl-Shift-Tab`, and `:tabedit`
@@ -150,9 +150,9 @@ The mouse wheel also scrolls.
 
 | Key | Action                   |
 | --- | ------------------------ |
-| `f` | Label every link in view |
+| `f` | Label every link, highlight and note in view |
 
-After `f`, each link in view is highlighted and gets a label of two letters. Type a label to follow its link. A link to another place in the document goes there. A web or mail link (`http`, `https`, `mailto`) opens in your default program; links to anything else, such as files, are not followed. `Backspace` takes back the first letter, and `Esc` puts the labels away.
+After `f`, each link in view is highlighted and gets a label of two letters. Type a label to follow its link. A link to another place in the document goes there. A web or mail link (`http`, `https`, `mailto`) opens in your default program; links to anything else, such as files, are not followed. Highlights, notes and the other markings get labels too, just left of them; typing one picks that marking as `]h` would, so its note shows and `d` and `c` work on it. `Backspace` takes back the first letter, and `Esc` puts the labels away.
 
 ### Marks and jumps
 

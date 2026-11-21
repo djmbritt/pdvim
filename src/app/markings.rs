@@ -150,6 +150,8 @@ pub enum Wanted {
     /// Know them afresh after a change, for the sidebar and the frame
     /// around the one gone to.
     Refresh,
+    /// Label them with the links in view, to follow or pick one.
+    Follow,
 }
 
 impl App {
@@ -232,6 +234,7 @@ impl App {
                 self.label_markings();
                 Task::none()
             }
+            Wanted::Follow => self.label_links(),
             Wanted::DeleteIn(areas) => self.delete_in(&areas),
             Wanted::List => {
                 self.list_markings();
@@ -383,19 +386,28 @@ impl App {
             || self.marking_at_cursor().is_some()
     }
 
-    /// Labels the markings in view, to pick one by typing its label.
-    fn label_markings(&mut self) {
-        self.pending = Pending::new();
+    /// The markings that show in the window.
+    pub(super) fn markings_in_view(&self) -> Vec<Marking> {
         let height = self.area.height;
         let Some(document) = self.document() else {
-            return;
+            return Vec::new();
         };
-        let shown: Vec<(u32, Marking)> = document
+        document
             .markings
             .iter()
             .flatten()
             .filter(|marking| in_view(&document.reader, marking, height))
-            .map(|marking| (marking.page, marking.clone()))
+            .cloned()
+            .collect()
+    }
+
+    /// Labels the markings in view, to pick one by typing its label.
+    fn label_markings(&mut self) {
+        self.pending = Pending::new();
+        let shown = self
+            .markings_in_view()
+            .into_iter()
+            .map(|marking| (marking.page, marking))
             .collect();
         self.marking_hints = Hints::new(shown);
         if self.marking_hints.is_none() {
@@ -409,20 +421,23 @@ impl App {
             HintOutcome::Wait => return,
             HintOutcome::Cancel => {}
             HintOutcome::NoMatch => self.notice = Notice::Error("no such marking".to_owned()),
-            HintOutcome::Picked(hint) => {
-                if let Some(document) = current_document(&mut self.tabs, self.current) {
-                    let markings = document.markings.as_deref().unwrap_or_default();
-                    let count = markings.len();
-                    let index = markings
-                        .iter()
-                        .position(|marking| *marking == hint.item)
-                        .unwrap_or_default();
-                    document.marking = Some(hint.item.annotation());
-                    self.notice = Notice::Info(describe(&hint.item, index, count));
-                }
-            }
+            HintOutcome::Picked(hint) => self.pick_marking(&hint.item),
         }
         self.marking_hints = None;
+    }
+
+    /// Picks a marking, as `]h` would go to it, without moving.
+    pub(super) fn pick_marking(&mut self, picked: &Marking) {
+        if let Some(document) = current_document(&mut self.tabs, self.current) {
+            let markings = document.markings.as_deref().unwrap_or_default();
+            let count = markings.len();
+            let index = markings
+                .iter()
+                .position(|marking| marking == picked)
+                .unwrap_or_default();
+            document.marking = Some(picked.annotation());
+            self.notice = Notice::Info(describe(picked, index, count));
+        }
     }
 
     /// Opens the prompt to change the note on a marking, with the note it
@@ -843,21 +858,30 @@ pub(super) fn note_band(note: String, chrome: Colours) -> Element<'static, Messa
 /// so that it does not hide the marking's colour.
 pub(super) fn draw_labels(frame: &mut canvas::Frame, document: &Document, hints: &Hints<Marking>) {
     for hint in hints.shown() {
-        let Some(area) = hint
-            .item
-            .areas
-            .first()
-            .and_then(|&area| document.reader.area_on_screen(hint.page, area))
-        else {
-            continue;
-        };
-        let width = label_size().width;
-        draw_label(
-            frame,
-            hint.label,
-            iced::Point::new(area.left - width - 2.0, area.top),
-        );
+        draw_marking_label(frame, document, hint.label, &hint.item);
     }
+}
+
+/// Draws a label just left of a marking's first line.
+pub(super) fn draw_marking_label(
+    frame: &mut canvas::Frame,
+    document: &Document,
+    label: [char; 2],
+    marking: &Marking,
+) {
+    let Some(area) = marking
+        .areas
+        .first()
+        .and_then(|&area| document.reader.area_on_screen(marking.page, area))
+    else {
+        return;
+    };
+    let width = label_size().width;
+    draw_label(
+        frame,
+        label,
+        iced::Point::new(area.left - width - 2.0, area.top),
+    );
 }
 
 /// Draws a frame around each line of the marking last gone to.

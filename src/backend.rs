@@ -295,6 +295,11 @@ enum Request {
         Vec<Marking>,
         oneshot::Sender<Result<Vec<Annotation>, Error>>,
     ),
+    SetNote(
+        Annotation,
+        String,
+        oneshot::Sender<Result<Option<String>, Error>>,
+    ),
     Markings(oneshot::Sender<Result<Vec<Marking>, Error>>),
     Save(Option<PathBuf>, oneshot::Sender<Result<(), Error>>),
     Outline(oneshot::Sender<Result<Vec<Chapter>, Error>>),
@@ -526,6 +531,20 @@ impl Backend {
     ) -> impl Future<Output = Result<Vec<Annotation>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
         let _ = self.requests.send(Request::Restore(markings, reply));
+        async move { answer.await.unwrap_or(Err(Error::Closed)) }
+    }
+
+    /// Sets the note on a marking: the text of a note, or the comment on
+    /// another kind; empty for none. Answers with what it was.
+    pub fn set_note(
+        &self,
+        annotation: Annotation,
+        text: String,
+    ) -> impl Future<Output = Result<Option<String>, Error>> + use<> {
+        let (reply, answer) = oneshot::channel();
+        let _ = self
+            .requests
+            .send(Request::SetNote(annotation, text, reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -1042,6 +1061,32 @@ fn restore_in(document: &Document, markings: &[Marking]) -> Result<Vec<Annotatio
     Ok(restored)
 }
 
+/// Sets the note on a marking, empty for none. Answers with what it was.
+fn set_note_in(
+    document: &Document,
+    (number, xref): Annotation,
+    text: &str,
+) -> Result<Option<String>, Error> {
+    let failed = |error: mupdf::Error| Error::Markup(error.to_string());
+    let pdf = editable(document)?;
+    let page = pdf.load_page(page_number(number)).map_err(failed)?;
+    let page = mupdf::pdf::PdfPage::try_from(page).map_err(failed)?;
+    let Some(mut annotation) = page
+        .annotations()
+        .find(|annotation| annotation.xref().is_ok_and(|found| found == xref))
+    else {
+        return Err(Error::Markup("the marking is gone".to_owned()));
+    };
+    let before = annotation
+        .contents()
+        .map_err(failed)?
+        .filter(|contents| !contents.is_empty())
+        .map(str::to_owned);
+    annotation.set_contents(text).map_err(failed)?;
+    annotation.update().map_err(failed)?;
+    Ok(before)
+}
+
 /// The markings on a page, in the order the page lists them.
 fn page_markings(document: &Document, number: u32) -> Result<Vec<Marking>, mupdf::Error> {
     if !document.is_pdf() {
@@ -1391,6 +1436,9 @@ impl Worker {
                 }
                 Request::Restore(markings, reply) => {
                     let _ = reply.send(restore_in(&self.document, &markings));
+                }
+                Request::SetNote(annotation, text, reply) => {
+                    let _ = reply.send(set_note_in(&self.document, annotation, &text));
                 }
                 Request::Markings(reply) => {
                     let _ = reply.send(
@@ -2122,6 +2170,15 @@ mod tests {
             page_markings(&saved, 0).unwrap()[0].text,
             "Check this greeting"
         );
+
+        let note = again[0].annotation();
+        let before = set_note_in(&document, note, "Check it twice").unwrap();
+        assert_eq!(before.as_deref(), Some("Check this greeting"));
+        assert_eq!(
+            page_markings(&document, 0).unwrap()[0].text,
+            "Check it twice"
+        );
+        assert!(set_note_in(&document, (0, 9999), "nowhere").is_err());
     }
 
     #[test]

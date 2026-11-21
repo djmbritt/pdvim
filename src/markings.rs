@@ -19,6 +19,7 @@ bindable! {
         Bottom = "bottom", "Select the last marking";
         Go = "go", "Go to the marking selected";
         Delete = "delete", "Take the marking selected away";
+        Change = "change", "Change the note on the marking selected";
         Close = "close", "Close the list";
     }
 }
@@ -90,6 +91,8 @@ pub enum Outcome {
     Go(usize),
     /// Take the marking with this index away, and stay.
     Delete(usize),
+    /// Change the note on the marking with this index.
+    Change(usize),
     Close,
 }
 
@@ -171,6 +174,7 @@ impl List {
         self.selected = match binding {
             Binding::Go => return Outcome::Go(self.selected),
             Binding::Delete => return Outcome::Delete(self.selected),
+            Binding::Change => return Outcome::Change(self.selected),
             Binding::Close => return Outcome::Close,
             Binding::Down => self.selected.saturating_add(times),
             Binding::Up => self.selected.saturating_sub(times),
@@ -292,6 +296,7 @@ mod tests {
         list.feed(Key::Char('k'), &keymap(), 10);
         assert_eq!(list.feed(Key::Enter, &keymap(), 10), Outcome::Go(1));
         assert_eq!(list.feed(Key::Char('d'), &keymap(), 10), Outcome::Delete(1));
+        assert_eq!(list.feed(Key::Char('c'), &keymap(), 10), Outcome::Change(1));
         assert_eq!(list.feed(Key::Escape, &keymap(), 10), Outcome::Close);
     }
 

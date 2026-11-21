@@ -197,7 +197,7 @@ After `v` or `V`, each line of text in view gets a label of two letters. Type a 
 
 `H`, `U`, `S` and `W` add the marking to the document as a standard PDF annotation (a highlight, underline, strike-out or squiggly underline), which other PDF readers show too once it is saved. Each has its color setting: `highlight-color`, `underline-color`, `strikeout-color` and `squiggly-color`. Nothing is written until you save with `:w`; until then the tab, the status bar and the window title show `[+]`, and closing the document asks first. `:w` saves into the file incrementally: everything that was in it when pdvim opened it stays byte for byte as it was, and the changes are written after it. `:w copy.pdf` writes the whole document with its highlights to a new file instead, and leaves the original alone. Set `autosave` to save every change into the file as it is made. Many downloaded PDFs are slightly damaged, and MuPDF repairs them as it opens them; such a file can't be added to, so `:w` writes it whole, beside the original, and then puts it in the original's place. That repairs the file too.
 
-`n` opens the prompt as `:note `; type the note and press `Enter`. The note is a sticky-note annotation, which shows as an icon in the left margin beside the cursor's line, and which other PDF readers open to show its text. `:note {text}` in normal mode puts one in the margin at the top of the window. Notes count as markings: `]h` / `[h` go to them and show their text, the markings sidebar lists them, `dh` takes one away, `u` takes one back, and `:w` saves them.
+`n` opens the prompt as `:note `; type the note and press `Enter`. The note is a sticky-note annotation, which shows as an icon in the left margin beside the cursor's line, and which other PDF readers open to show its text. `:note {text}` in normal mode puts one in the margin at the top of the window. Notes count as markings: `]h` / `[h` go to them and show their text, the markings sidebar lists them, `dh` takes one away, `u` takes one back, and `:w` saves them. To change a note, go to it with `]h` or `[h` and press `cn`, or press `c` on it in the sidebar: the prompt opens with the note as it is, to change and `Enter`. `u` changes it back. `cn` on a highlight or another marking sets the comment on it, which other PDF readers show with it.
 
 Press `u` to take back the last marking, or the last taking away of one, and `Ctrl-r` to put back what `u` took back. Taking back everything since the last save leaves nothing to save. pdvim remembers what to undo for each open document until you close it.
 
@@ -209,12 +209,13 @@ A count before a motion repeats it, as in `3w` or `2fe`. As in vim, `f`, `F`, `t
 | ----------- | ---------------------------------------------------------- |
 | `]h` / `[h` | Go to the next / previous marking; `{n}]h` goes n on       |
 | `dh`        | Take away the marking `]h` or `[h` went to                 |
+| `cn`        | Change the note on the marking `]h` or `[h` went to        |
 | `Shift-Tab` | List the markings in a sidebar, with their text and page   |
 | `u`         | Take back the last marking, or the last taking away of one |
 | `Ctrl-r`    | Put back what `u` took back                                |
 | `Ctrl-s`    | Save the markings into the file, like `:w`                 |
 
-These go through every highlight, underline, strike-out and squiggly underline in the document, whether pdvim or another program made it. `]h` starts from the marking it last went to while that is in view, and from the top of the view otherwise; the marking it goes to gets a frame, which `Esc` hides. In the sidebar, `j` and `k` move, `Enter` goes to the marking selected, `d` takes it away, and `q`, `Esc` or `Shift-Tab` close the list. In visual mode, `d` takes away the markings under the selection. Taking a marking away is a change like any other: `:w` saves it, and `u` puts the marking back.
+These go through every highlight, underline, strike-out, squiggly underline and note in the document, whether pdvim or another program made it. `]h` starts from the marking it last went to while that is in view, and from the top of the view otherwise; the marking it goes to gets a frame, which `Esc` hides. In the sidebar, `j` and `k` move, `Enter` goes to the marking selected, `d` takes it away, `c` changes its note, and `q`, `Esc` or `Shift-Tab` close the list. In visual mode, `d` takes away the markings under the selection. Taking a marking away is a change like any other: `:w` saves it, and `u` puts the marking back.
 
 ### Tabs
 

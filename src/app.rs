@@ -469,6 +469,9 @@ pub struct App {
     /// Where a note is to go, from visual mode's cursor, until the prompt
     /// for its text closes: the document, the page, and the area.
     note_at: Option<(u64, u32, Rect)>,
+    /// The marking whose note is being changed at the prompt: the document
+    /// and the annotation.
+    note_editing: Option<(u64, Annotation)>,
     /// Whether the next key is the letter of a mark to set, or to go to.
     awaiting_mark: Option<MarkVerb>,
     /// The marks A to Z: a document and a place in it. Kept in the history
@@ -544,6 +547,7 @@ impl App {
             awaiting_mark: None,
             chapter_wanted: None,
             note_at: None,
+            note_editing: None,
             global_marks: HashMap::new(),
             arriving: None,
         };
@@ -1677,6 +1681,7 @@ impl App {
                 Ok(Some(command)) => {
                     let task = self.run_command(command);
                     self.note_at = None;
+                    self.note_editing = None;
                     task
                 }
                 Ok(None) => Task::none(),

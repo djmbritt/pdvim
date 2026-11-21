@@ -40,6 +40,13 @@ pub enum Edit {
     /// These markings were taken away; or, while that is taken back, put
     /// back as they now are.
     Unmarked(Vec<Marking>),
+    /// The note on a marking was changed: the text of a note, or the
+    /// comment on another kind of marking. None for no note.
+    Renoted {
+        annotation: Annotation,
+        before: Option<String>,
+        after: String,
+    },
 }
 
 impl Edit {
@@ -51,6 +58,54 @@ impl Edit {
                 [one] => one.kind.noun().to_owned(),
                 many => format!("{} markings", many.len()),
             },
+            Self::Renoted { .. } => "note".to_owned(),
+        }
+    }
+
+    /// Takes markings that came back as other annotations to be those:
+    /// putting a marking back, or making it again, gives it a new number.
+    fn renumber(&mut self, moved: &[(Annotation, Annotation)]) {
+        let new = |old: Annotation| {
+            moved
+                .iter()
+                .find(|(from, _)| *from == old)
+                .map_or(old, |&(_, to)| to)
+        };
+        match self {
+            Self::Marked { annotations, .. } => {
+                for annotation in annotations {
+                    *annotation = new(*annotation);
+                }
+            }
+            Self::Unmarked(markings) => {
+                for marking in markings {
+                    (marking.page, marking.xref) = new(marking.annotation());
+                }
+            }
+            Self::Renoted { annotation, .. } => *annotation = new(*annotation),
+        }
+    }
+
+    /// The annotations that, made again or put back by this change, are now
+    /// other annotations: each as it was, and as it is.
+    fn moved(&self, step: Step, asked: &Self) -> Vec<(Annotation, Annotation)> {
+        match (self, step, asked) {
+            (Self::Unmarked(now), Step::Undo, Self::Unmarked(before)) => before
+                .iter()
+                .map(Marking::annotation)
+                .zip(now.iter().map(Marking::annotation))
+                .collect(),
+            (
+                Self::Marked {
+                    annotations: now, ..
+                },
+                Step::Redo,
+                Self::Marked {
+                    annotations: before,
+                    ..
+                },
+            ) => before.iter().copied().zip(now.iter().copied()).collect(),
+            _ => Vec::new(),
         }
     }
 
@@ -81,6 +136,8 @@ pub enum Wanted {
     Step { forward: bool, times: u32 },
     /// Take away the marking last gone to.
     DeleteCurrent,
+    /// Change the note on the marking last gone to.
+    ChangeCurrent,
     /// Take away the markings over these areas, each on a page.
     DeleteIn(Vec<(u32, Rect)>),
     /// List them in the sidebar.
@@ -95,6 +152,7 @@ impl App {
         let wanted = match action {
             MarkingAction::Step { forward, times } => Wanted::Step { forward, times },
             MarkingAction::Delete => Wanted::DeleteCurrent,
+            MarkingAction::ChangeNote => Wanted::ChangeCurrent,
             MarkingAction::List => Wanted::List,
         };
         self.with_markings(wanted)
@@ -151,6 +209,12 @@ impl App {
                 Task::none()
             }
             Wanted::DeleteCurrent => self.delete_current(),
+            Wanted::ChangeCurrent => {
+                if let Some(marking) = self.picked() {
+                    self.ask_to_change(&marking);
+                }
+                Task::none()
+            }
             Wanted::DeleteIn(areas) => self.delete_in(&areas),
             Wanted::List => {
                 self.list_markings();
@@ -221,10 +285,20 @@ impl App {
 
     /// Takes away the marking last gone to, if it is in view.
     fn delete_current(&mut self) -> Task<Message> {
-        let height = self.area.height;
-        let Some(document) = self.document() else {
+        let Some(marking) = self.picked() else {
             return Task::none();
         };
+        let Some(id) = self.document().map(|document| document.id) else {
+            return Task::none();
+        };
+        self.start_edit(id, Edit::Unmarked(vec![marking]), Step::Do)
+    }
+
+    /// The marking last gone to, if it is in view; or else says how to
+    /// pick one.
+    fn picked(&mut self) -> Option<Marking> {
+        let height = self.area.height;
+        let document = self.document()?;
         let picked = document.marking.and_then(|current| {
             document
                 .markings
@@ -234,12 +308,23 @@ impl App {
                 .filter(|marking| in_view(&document.reader, marking, height))
                 .cloned()
         });
-        let Some(marking) = picked else {
+        if picked.is_none() {
             self.notice = Notice::Info("no marking picked here: ]h or [h picks one".to_owned());
-            return Task::none();
+        }
+        picked
+    }
+
+    /// Opens the prompt to change the note on a marking, with the note it
+    /// has now.
+    fn ask_to_change(&mut self, marking: &Marking) {
+        let Some(document) = self.document() else {
+            return;
         };
-        let id = document.id;
-        self.start_edit(id, Edit::Unmarked(vec![marking]), Step::Do)
+        self.note_editing = Some((document.id, marking.annotation()));
+        self.completing = None;
+        self.prompt_pending = Pending::new();
+        let now = marking.kept.contents.clone().unwrap_or_default();
+        self.prompt = Some((Prompt::Command, format!("note {now}")));
     }
 
     /// Takes away the markings over some areas, as selected in visual mode.
@@ -301,6 +386,13 @@ impl App {
                 }
                 Task::none()
             }
+            Outcome::Change(index) => {
+                if let Some(marking) = list.get(index).cloned() {
+                    self.sidebar = None;
+                    self.ask_to_change(&marking);
+                }
+                Task::none()
+            }
             Outcome::Delete(index) => {
                 let marking = list.get(index).cloned();
                 match (marking, self.document()) {
@@ -331,9 +423,18 @@ impl App {
     pub(super) fn add_note(&mut self, text: String) -> Task<Message> {
         let colour = self.markup_colours.of(MarkupKind::Note);
         let wanted = self.note_at.take();
+        let editing = self.note_editing.take();
         let Some(document) = self.document() else {
             return Task::none();
         };
+        if let Some((id, annotation)) = editing.filter(|(id, _)| *id == document.id) {
+            let edit = Edit::Renoted {
+                annotation,
+                before: None,
+                after: text,
+            };
+            return self.start_edit(id, edit, Step::Do);
+        }
         let (page, left, top) = match wanted {
             // In the margin beside the cursor's line, so as not to cover
             // the text.
@@ -431,15 +532,46 @@ impl App {
                     },
                     Step::Undo,
                 ) => {
-                    backend.remove(annotations).await?;
+                    // Kept, so that what redo makes again can be matched to
+                    // it.
+                    backend.remove(annotations.clone()).await?;
                     Ok(Edit::Marked {
                         markup,
-                        annotations: Vec::new(),
+                        annotations,
                     })
                 }
                 (Edit::Unmarked(markings), Step::Do | Step::Redo) => {
                     let annotations = markings.iter().map(Marking::annotation).collect();
                     Ok(Edit::Unmarked(backend.remove(annotations).await?))
+                }
+                (
+                    Edit::Renoted {
+                        annotation, after, ..
+                    },
+                    Step::Do | Step::Redo,
+                ) => {
+                    let before = backend.set_note(annotation, after.clone()).await?;
+                    Ok(Edit::Renoted {
+                        annotation,
+                        before,
+                        after,
+                    })
+                }
+                (
+                    Edit::Renoted {
+                        annotation,
+                        before,
+                        after,
+                    },
+                    Step::Undo,
+                ) => {
+                    let text = before.clone().unwrap_or_default();
+                    backend.set_note(annotation, text).await?;
+                    Ok(Edit::Renoted {
+                        annotation,
+                        before,
+                        after,
+                    })
                 }
                 (Edit::Unmarked(mut markings), Step::Undo) => {
                     let annotations = backend.restore(markings.clone()).await?;
@@ -490,6 +622,8 @@ impl App {
             (Edit::Marked { .. }, Step::Redo) | (Edit::Unmarked(_), Step::Undo) => {
                 format!("{noun} put back")
             }
+            (Edit::Renoted { .. }, Step::Do | Step::Redo) => "note changed".to_owned(),
+            (Edit::Renoted { .. }, Step::Undo) => "note changed back".to_owned(),
         };
         if step == Step::Do {
             // A state that was saved and then undone is gone for good once
@@ -502,6 +636,17 @@ impl App {
             }
             // A new change ends what could be redone.
             document.redo.clear();
+        }
+        // What came back under another number is that number now, in every
+        // change still to undo or redo, and as the marking gone to.
+        let moved = edit.moved(step, &asked);
+        for other in document.undo.iter_mut().chain(document.redo.iter_mut()) {
+            other.renumber(&moved);
+        }
+        if let Some(current) = document.marking
+            && let Some(&(_, to)) = moved.iter().find(|(from, _)| *from == current)
+        {
+            document.marking = Some(to);
         }
         let gone = edit.gone(step, &asked);
         if document
@@ -648,11 +793,12 @@ pub(super) fn list<'a>(
     let end = top.saturating_add(shown.len());
     let foot = container(label(
         format!(
-            "{}-{end} of {}   {}: go   {}: take away",
+            "{}-{end} of {}   {}: go   {}: take away   {}: change note",
             top.saturating_add(1),
             list.len(),
             keymaps.markings.first(Binding::Go),
             keymaps.markings.first(Binding::Delete),
+            keymaps.markings.first(Binding::Change),
         ),
         chrome.list_number,
     ))
@@ -675,4 +821,72 @@ pub(super) fn list<'a>(
         })
     });
     container(panel).width(Fill).height(Fill).into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::Kept;
+    use crate::recolor::Rgb;
+
+    fn marking(xref: i32) -> Marking {
+        Marking {
+            page: 2,
+            xref,
+            kind: MarkupKind::Highlight,
+            areas: Vec::new(),
+            text: String::new(),
+            kept: Kept::default(),
+        }
+    }
+
+    fn marked(annotations: Vec<Annotation>) -> Edit {
+        Edit::Marked {
+            markup: Markup {
+                kind: MarkupKind::Highlight,
+                pages: Vec::new(),
+                colour: Rgb(0, 0, 0),
+                note: None,
+            },
+            annotations,
+        }
+    }
+
+    #[test]
+    fn a_marking_put_back_is_found_again_by_older_changes() {
+        // A highlight made as 10, then taken away; undoing that puts it
+        // back as 30.
+        let asked = Edit::Unmarked(vec![marking(10)]);
+        let now = Edit::Unmarked(vec![marking(30)]);
+        let moved = now.moved(Step::Undo, &asked);
+        assert_eq!(moved, [((2, 10), (2, 30))]);
+        // So undoing the highlight takes away 30.
+        let mut older = marked(vec![(2, 10), (2, 11)]);
+        older.renumber(&moved);
+        let Edit::Marked { annotations, .. } = older else {
+            panic!()
+        };
+        assert_eq!(annotations, [(2, 30), (2, 11)]);
+    }
+
+    #[test]
+    fn a_marking_made_again_is_found_again_by_newer_changes() {
+        let moved = marked(vec![(2, 40)]).moved(Step::Redo, &marked(vec![(2, 10)]));
+        assert_eq!(moved, [((2, 10), (2, 40))]);
+        let mut newer = Edit::Renoted {
+            annotation: (2, 10),
+            before: None,
+            after: "a note".into(),
+        };
+        newer.renumber(&moved);
+        let Edit::Renoted { annotation, .. } = newer else {
+            panic!()
+        };
+        assert_eq!(annotation, (2, 40));
+        // Nothing moves when nothing came back.
+        assert_eq!(
+            marked(vec![(2, 40)]).moved(Step::Do, &marked(Vec::new())),
+            []
+        );
+    }
 }

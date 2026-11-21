@@ -73,6 +73,8 @@ pub enum MarkingAction {
     Step { forward: bool, times: u32 },
     /// Take away the marking last gone to.
     Delete,
+    /// Change the note on the marking last gone to.
+    ChangeNote,
     /// List them in a sidebar.
     List,
 }
@@ -211,6 +213,8 @@ bindable! {
         PreviousMarking = "previous-marking", "Go to the previous highlight or other marking";
         /// The marking last gone to with next-marking or previous-marking.
         DeleteMarking = "delete-marking", "Take away the marking last gone to";
+        /// The text of a note, or the comment on another kind of marking.
+        ChangeNote = "change-note", "Change the note on the marking gone to";
         Markings = "markings", "List the highlights and other markings, to go to one";
         /// Take back the last change to the markings.
         Undo = "undo", "Take back the last marking, or taking one away";
@@ -309,6 +313,7 @@ impl Binding {
             }),
             Self::DeleteMarking => Action::Marking(MarkingAction::Delete),
             Self::Markings => Action::Marking(MarkingAction::List),
+            Self::ChangeNote => Action::Marking(MarkingAction::ChangeNote),
             Self::Undo => Action::Undo,
             Self::Redo => Action::Redo,
             Self::Outline => Action::ShowOutline,

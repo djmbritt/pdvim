@@ -89,6 +89,7 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
                 B::NextMarking,
                 B::PreviousMarking,
                 B::DeleteMarking,
+                B::ChangeNote,
                 B::Markings,
                 B::Undo,
                 B::Redo,

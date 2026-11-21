@@ -35,8 +35,12 @@ impl App {
             if !path.is_file() {
                 continue;
             }
+            // A document open again since only comes into view.
+            let open = self.tabs.iter().any(|tab| tab.holds(&path));
             tasks.push(self.open_in_tab(path));
-            self.move_tab(TabPlace::At(index));
+            if !open {
+                self.move_tab(TabPlace::At(index));
+            }
         }
         Task::batch(tasks)
     }

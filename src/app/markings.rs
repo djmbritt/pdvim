@@ -331,6 +331,23 @@ impl App {
         picked
     }
 
+    /// The note on the marking picked with `]h`, `[h` or `gh`, while it is
+    /// in view.
+    pub(super) fn picked_note(&self) -> Option<&str> {
+        let document = self.document()?;
+        let current = document.marking?;
+        document
+            .markings
+            .as_ref()?
+            .iter()
+            .find(|marking| marking.annotation() == current)
+            .filter(|marking| in_view(&document.reader, marking, self.area.height))?
+            .kept
+            .contents
+            .as_deref()
+            .filter(|note| !note.trim().is_empty())
+    }
+
     /// The marking at a character of the document in view: over it, or a
     /// note beside its line.
     pub(super) fn marking_at(&self, page: u32, character: Rect) -> Option<Marking> {
@@ -771,16 +788,35 @@ fn go_to(document: &mut Document, marking: &Marking, index: usize, count: usize)
 
 /// What the bottom line says of a marking, the one with this index of so
 /// many: its kind, its place, and its note.
+/// What the status bar says on going to a marking. Its note shows in a
+/// band of its own, which has room for all of it.
 fn describe(marking: &Marking, index: usize, count: usize) -> String {
-    let said = format!(
+    format!(
         "{} {} of {count}",
         marking.kind.noun(),
         index.saturating_add(1)
-    );
-    match &marking.kept.contents {
-        Some(note) => format!("{said}: {note}"),
-        None => said,
-    }
+    )
+}
+
+/// The band over the bottom of the pages that shows the whole note on the
+/// marking picked, wrapped to fit.
+pub(super) fn note_band(note: &str, chrome: Colours) -> Element<'_, Message> {
+    let band = container(
+        text(note)
+            .size(LIST_TEXT_SIZE)
+            .color(chrome.bar_text)
+            .wrapping(text::Wrapping::WordOrGlyph),
+    )
+    .padding([6, 10])
+    .width(Fill)
+    .style(move |_| {
+        container::background(chrome.list).border(iced::Border {
+            color: chrome.list_border,
+            width: 1.0,
+            radius: 0.0.into(),
+        })
+    });
+    container(band).align_bottom(Fill).clip(true).into()
 }
 
 /// Draws the label on each marking in view, just left of its first area,

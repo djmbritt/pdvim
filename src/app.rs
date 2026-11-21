@@ -2529,6 +2529,8 @@ impl App {
         }
         if let Some(completing) = &self.completing {
             layers = layers.push(completions(completing, chrome));
+        } else if let Some(note) = self.picked_note().filter(|_| self.prompt.is_none()) {
+            layers = layers.push(markings::note_band(note, chrome));
         }
         match &self.sidebar {
             Some(Sidebar::Outline(sidebar)) => {

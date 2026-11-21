@@ -191,7 +191,9 @@ struct Document {
     path: PathBuf,
     backend: Backend,
     /// What the document says about itself.
-    info: backend::Info,
+    info: Box<backend::Info>,
+    /// The number printed on each page, when the document gives them.
+    labels: Option<Vec<String>>,
     reader: Reader,
     recolor: bool,
     /// Whether the margins should be trimmed. The reader only trims them
@@ -1698,10 +1700,10 @@ impl App {
             Command::TabPrevious => self.step_tab(-1),
             Command::Goto(page) => {
                 if let Some(document) = self.document_mut() {
-                    document.jumps.record(document.reader.place());
-                    document.reader.go_to_page(page.saturating_sub(1));
+                    leap(document, page.saturating_sub(1));
                 }
             }
+            Command::GotoLabel(label) => self.go_to_label(&label),
             Command::NoHighlight => {
                 if let Some(document) = self.document_mut() {
                     document.results.shown = false;
@@ -1978,6 +1980,7 @@ impl App {
             path,
             backend: opened.backend,
             info: opened.info,
+            labels: opened.labels,
             reader,
             recolor,
             trim: false,
@@ -2606,12 +2609,8 @@ impl App {
         let position = self.document().map_or_else(String::new, |document| {
             let reader = &document.reader;
             format!(
-                "{}/{}  {}%",
-                reader
-                    .current_page()
-                    .saturating_add(1)
-                    .min(reader.page_count()),
-                reader.page_count(),
+                "{}  {}%",
+                document.page_position(),
                 num::round(reader.zoom() * 100.0),
             )
         });

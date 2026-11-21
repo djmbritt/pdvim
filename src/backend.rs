@@ -181,6 +181,22 @@ impl Info {
     }
 }
 
+/// The label of every page, as the document's `/PageLabels` give them, if
+/// it has any and they are not all just the page's place counted from 1.
+fn page_labels(document: &Document) -> Option<Vec<String>> {
+    let pdf = mupdf::pdf::PdfDocument::try_from(document.clone()).ok()?;
+    pdf.catalog().ok()?.get_dict("PageLabels").ok()??;
+    let count = usize::try_from(pdf.page_count().ok()?).ok()?;
+    let labels: Vec<String> = (0..count)
+        .map(|page| pdf.page_label(page).unwrap_or_default())
+        .collect();
+    let plain = labels
+        .iter()
+        .enumerate()
+        .all(|(page, label)| *label == page.saturating_add(1).to_string());
+    (!plain).then_some(labels)
+}
+
 /// Reads what a document says about itself.
 fn read_info(document: &Document) -> Info {
     use mupdf::document::MetadataName;
@@ -255,7 +271,10 @@ pub struct Opened {
     pub backend: Backend,
     /// The unturned size of every page, in points.
     pub sizes: Vec<PageSize>,
-    pub info: Info,
+    pub info: Box<Info>,
+    /// The number printed on each page, as `xii` or `A-3`, when the
+    /// document gives any that are not just the page's place.
+    pub labels: Option<Vec<String>>,
 }
 
 /// A request to the worker, with the channel to answer on.
@@ -545,12 +564,14 @@ pub fn open(path: PathBuf) -> impl Future<Output = Result<Opened, Error>> {
             let document = match load(&path) {
                 Ok((document, sizes)) => {
                     let backend = Backend { requests };
-                    let info = read_info(&document);
+                    let info = Box::new(read_info(&document));
+                    let labels = page_labels(&document);
                     if reply
                         .send(Ok(Opened {
                             backend,
                             sizes,
                             info,
+                            labels,
                         }))
                         .is_err()
                     {
@@ -1689,6 +1710,34 @@ mod tests {
         let saved = Document::open(copy.0.to_str().unwrap()).unwrap();
         let page = mupdf::pdf::PdfPage::try_from(saved.load_page(0).unwrap()).unwrap();
         assert_eq!(page.annotations().count(), 1);
+    }
+
+    #[test]
+    fn printed_page_numbers_are_read() {
+        // Two pages numbered i and ii, then two numbered from 1.
+        let labelled = pdf(&[
+            "<< /Type /Catalog /Pages 2 0 R /PageLabels << /Nums [0 << /S /r >> 2 << /S /D >>] >> >>",
+            "<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R 6 0 R] /Count 4 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+        ]);
+        let document = Document::from_bytes(&labelled, "application/pdf").unwrap();
+        assert_eq!(
+            page_labels(&document),
+            Some(vec!["i".into(), "ii".into(), "1".into(), "2".into()])
+        );
+        // No labels, and labels that are just the page's place, are none.
+        let document = Document::from_bytes(&text_pdf(), "application/pdf").unwrap();
+        assert_eq!(page_labels(&document), None);
+        let plain = pdf(&[
+            "<< /Type /Catalog /Pages 2 0 R /PageLabels << /Nums [0 << /S /D >>] >> >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+        ]);
+        let document = Document::from_bytes(&plain, "application/pdf").unwrap();
+        assert_eq!(page_labels(&document), None);
     }
 
     #[test]

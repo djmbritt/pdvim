@@ -38,6 +38,9 @@ pub enum Command {
     TabPrevious,
     /// Go to a page, counted from 1.
     Goto(u32),
+    /// Go to the page with this number printed on it, as `xii`, or else
+    /// at this place, counted from 1.
+    GotoLabel(String),
     /// Change a setting.
     Set(Setting),
     /// Hide the search highlights.
@@ -150,8 +153,9 @@ pub enum Error {
 }
 
 /// Every command by its full name, and the shorter names it also goes by.
-const NAMES: [(&str, &[&str]); 24] = [
+const NAMES: [(&str, &[&str]); 25] = [
     ("delmarks", &["delm"]),
+    ("goto", &[]),
     ("help", &["h"]),
     ("info", &["f", "file"]),
     ("map", &[]),
@@ -276,6 +280,8 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
         "recent" => Command::Recent,
         "version" => Command::Version,
         "info" => Command::Info,
+        "goto" if argument.is_empty() => return Err(Error::MissingArgument("goto")),
+        "goto" => Command::GotoLabel(argument.to_owned()),
         "marks" => Command::Marks,
         "delmarks" => delete_marks(argument)?,
         // As `:set theme`; with nothing after it, says which is in force.
@@ -640,6 +646,15 @@ mod tests {
         assert_eq!(parse("version"), Ok(Some(Command::Version)));
         assert_eq!(parse("ve"), Ok(Some(Command::Version)));
         assert_eq!(parse("info"), Ok(Some(Command::Info)));
+        assert_eq!(
+            parse("goto xii"),
+            Ok(Some(Command::GotoLabel("xii".into())))
+        );
+        assert_eq!(
+            parse("goto A-3"),
+            Ok(Some(Command::GotoLabel("A-3".into())))
+        );
+        assert_eq!(parse("goto"), Err(Error::MissingArgument("goto")));
         assert_eq!(parse("f"), Ok(Some(Command::Info)));
         assert_eq!(parse("file"), Ok(Some(Command::Info)));
     }

@@ -194,6 +194,8 @@ These go through every highlight, underline, strike-out and squiggly underline i
 | `gt`, `Ctrl-Tab` / `gT`, `Ctrl-Shift-Tab` | Go to the next / previous tab |
 | `{n}gt`, `{n}Ctrl-Tab`                    | Go to tab _n_                 |
 
+When a book numbers its pages differently from their place in the file, as with roman numerals for the front matter, the status bar shows the printed number first: `xii (14/300)`. `:{n}` goes to the page at place _n_, and `:goto {label}` to the page with that number printed on it; a number printed on no page is taken as a place.
+
 A tab, and the window while its tab is in view, goes by the document's title when the PDF gives one, and by the file name otherwise. Titles that are only the name of the file the PDF was made from, such as `Microsoft Word - report.docx` or `untitled`, are passed over.
 
 ### Search and prompt
@@ -213,6 +215,7 @@ A tab, and the window while its tab is in view, goes by the document's title whe
 | Command                                | Action                                                               |
 | -------------------------------------- | -------------------------------------------------------------------- |
 | `:{n}`                                 | Go to page _n_                                                       |
+| `:goto {label}`                        | Go to the page with that number printed on it, as `xii` or `A-3`     |
 | `:o[pen] {file}`                       | Open a document in a new tab (`~` expands to your home directory)    |
 | `:rec[ent]`                            | Show recent documents                                                |
 | `:h[elp]`                              | Show every action and the keys bound to it                           |

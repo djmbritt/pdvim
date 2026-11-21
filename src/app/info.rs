@@ -4,7 +4,10 @@
 use iced::widget::{Column, column, container, row, text};
 use iced::{Color, Element, Fill, Font};
 
-use super::{App, Document, LIST_TEXT_SIZE, LIST_WIDTH, Message, Notice, tilde};
+use super::{
+    App, Document, LIST_TEXT_SIZE, LIST_WIDTH, Message, Notice, current_document, leap, tilde,
+};
+use crate::num;
 use crate::theme::Colours;
 
 /// The most characters of a title a tab shows.
@@ -28,6 +31,29 @@ impl Document {
         )
     }
 
+    /// The label printed on a page, counted from 0, if the document gives
+    /// labels.
+    fn label(&self, page: u32) -> Option<&str> {
+        self.labels
+            .as_ref()?
+            .get(num::index(page))
+            .map(String::as_str)
+    }
+
+    /// Where in the document the view is, as the status bar says it:
+    /// `12/300`, or with the printed number, `xii (12/300)`.
+    pub(super) fn page_position(&self) -> String {
+        let count = self.reader.page_count();
+        let page = self.reader.current_page().min(count.saturating_sub(1));
+        let place = format!("{}/{count}", page.saturating_add(1));
+        match self.label(page) {
+            Some(label) if !label.is_empty() && *label != page.saturating_add(1).to_string() => {
+                format!("{label} ({place})")
+            }
+            _ => place,
+        }
+    }
+
     /// Each fact about the document, named, in the order shown.
     fn facts(&self) -> Vec<(&'static str, String)> {
         let info = &self.info;
@@ -44,10 +70,7 @@ impl Document {
             ("Size", size),
             (
                 "Pages",
-                Some(format!(
-                    "{pages}, on page {}",
-                    self.reader.current_page().saturating_add(1)
-                )),
+                Some(format!("{pages}, on page {}", self.page_position())),
             ),
             ("Created", info.created.clone()),
             ("Modified", info.modified.clone()),
@@ -63,6 +86,18 @@ impl Document {
 }
 
 impl App {
+    /// Goes to the page with this number printed on it, or else at this
+    /// place, counted from 1.
+    pub(super) fn go_to_label(&mut self, label: &str) {
+        let Some(document) = current_document(&mut self.tabs, self.current) else {
+            return;
+        };
+        match labelled(document.labels.as_deref(), label) {
+            Some(page) => leap(document, page),
+            None => self.notice = Notice::Error(format!("no page is numbered {label}")),
+        }
+    }
+
     /// Shows what the document in view says about itself.
     pub(super) fn show_info(&mut self) {
         match self.document() {
@@ -72,6 +107,31 @@ impl App {
             None => self.notice = Notice::Info("no document is open".to_owned()),
         }
     }
+}
+
+/// The page, counted from 0, with this label printed on it: the first
+/// that has it exactly, then the first that has it in other case. Without
+/// such a label, a number is the page at that place, counted from 1.
+fn labelled(labels: Option<&[String]>, label: &str) -> Option<u32> {
+    let labels = labels.unwrap_or_default();
+    let found = labels
+        .iter()
+        .position(|printed| printed == label)
+        .or_else(|| {
+            labels
+                .iter()
+                .position(|printed| printed.eq_ignore_ascii_case(label))
+        });
+    found.map_or_else(
+        || {
+            label
+                .parse::<u32>()
+                .ok()
+                .filter(|&page| page > 0)
+                .map(|page| page.saturating_sub(1))
+        },
+        |page| u32::try_from(page).ok(),
+    )
 }
 
 /// A name cut short to fit a tab.
@@ -159,6 +219,22 @@ mod tests {
         assert_eq!(bytes(5_094_348), "5.0 MB");
         assert_eq!(bytes(4_950_000), "4.9 MB");
         assert_eq!(bytes(12_000_000_000_000), "12000 GB");
+    }
+
+    #[test]
+    fn pages_are_found_by_their_printed_numbers() {
+        let labels: Vec<String> = ["i", "ii", "1", "2", "A-1"].map(String::from).to_vec();
+        let labels = Some(labels.as_slice());
+        assert_eq!(labelled(labels, "ii"), Some(1));
+        assert_eq!(labelled(labels, "II"), Some(1));
+        // The printed 2, not the second page.
+        assert_eq!(labelled(labels, "2"), Some(3));
+        assert_eq!(labelled(labels, "a-1"), Some(4));
+        // A number printed on no page is the page at that place.
+        assert_eq!(labelled(labels, "5"), Some(4));
+        assert_eq!(labelled(labels, "xiv"), None);
+        assert_eq!(labelled(None, "7"), Some(6));
+        assert_eq!(labelled(None, "0"), None);
     }
 
     #[test]

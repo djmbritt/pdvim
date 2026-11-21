@@ -4,7 +4,7 @@ A minimal, keyboard-driven PDF reader with vi key bindings.
 
 pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.rs/) to draw the window. Pages are laid out in one continuous column. It also remembers where you stopped reading each document.
 
-![pdvim showing a graph from the Graphviz manual, with two tabs open](docs/screenshots/reading.png)
+![pdvim showing a page of text and figures from the Graphviz manual, with two tabs open](docs/screenshots/reading.png)
 
 ## Features
 

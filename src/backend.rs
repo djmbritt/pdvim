@@ -13,7 +13,8 @@ use std::thread;
 
 use iced::futures::channel::oneshot;
 use mupdf::{
-    Colorspace, DestinationKind, Device, DisplayList, Document, Matrix, Pixmap, TextPageFlags,
+    Colorspace, DestinationKind, Device, DisplayList, Document, ImageFormat, Matrix, Pixmap,
+    TextPageFlags,
 };
 
 use crate::fonts;
@@ -85,6 +86,8 @@ pub enum Error {
     Outline(String),
     #[error("cannot fill in the form: {0}")]
     Form(String),
+    #[error("cannot export the page: {0}")]
+    Export(String),
     #[error("the document was closed")]
     Closed,
 }
@@ -103,6 +106,43 @@ pub struct RenderJob {
     /// The colours to recolour the page in, if any.
     pub palette: Option<Palette>,
 }
+
+/// A page to write to a file, as `:export` asks.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Export {
+    /// The page, counted from 0.
+    pub page: u32,
+    /// Pixels per point, for an image.
+    pub scale: f32,
+    pub rotation: Rotation,
+    /// The file to write: an image if it ends in `.png`, a drawing if in
+    /// `.svg`.
+    pub target: PathBuf,
+    /// Whether to write over a file that is there already.
+    pub force: bool,
+}
+
+/// What a page can be exported as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportFormat {
+    Png,
+    Svg,
+}
+
+impl ExportFormat {
+    /// The format a file's extension asks for, if it is one of them.
+    pub fn of(path: &Path) -> Option<Self> {
+        let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+        match extension.as_str() {
+            "png" => Some(Self::Png),
+            "svg" => Some(Self::Svg),
+            _ => None,
+        }
+    }
+}
+
+/// The most pixels along either side of an exported image.
+const EXPORT_LONGEST_SIDE: f32 = 10_000.0;
 
 /// A rendered page as rows of red, green, blue and alpha bytes.
 pub struct Bitmap {
@@ -389,6 +429,7 @@ enum Request {
     Fields(oneshot::Sender<Result<Vec<(Rect, Field)>, Error>>),
     Markings(oneshot::Sender<Result<Vec<Marking>, Error>>),
     Save(Option<PathBuf>, oneshot::Sender<Result<(), Error>>),
+    Export(Export, oneshot::Sender<Result<(), Error>>),
     Outline(oneshot::Sender<Result<Vec<Chapter>, Error>>),
 }
 
@@ -595,6 +636,13 @@ impl Backend {
     }
 
     /// Reads the lines of text on some pages.
+    /// Writes a page to a file, as an image or a drawing.
+    pub fn export(&self, export: Export) -> impl Future<Output = Result<(), Error>> + use<> {
+        let (reply, answer) = oneshot::channel();
+        let _ = self.requests.send(Request::Export(export, reply));
+        async move { answer.await.unwrap_or(Err(Error::Closed)) }
+    }
+
     pub fn text(&self, pages: Vec<u32>) -> impl Future<Output = Result<PageText, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
         let _ = self.requests.send(Request::Text(pages, reply));
@@ -1658,6 +1706,66 @@ fn page_text(document: &Document, number: u32) -> Result<Vec<TextLine>, mupdf::E
     Ok(lines)
 }
 
+/// Writes a page to a file: as a PNG image at the scale asked for, or an
+/// SVG drawing, turned as asked, with its markings, in its own colours. A
+/// file there already is left alone unless the export is forced.
+fn export_page(document: &Document, export: &Export) -> Result<(), Error> {
+    let failed = |error: &dyn std::fmt::Display| Error::Export(error.to_string());
+    let format = ExportFormat::of(&export.target)
+        .ok_or_else(|| Error::Export("name a .png or .svg file".to_owned()))?;
+    let page = document
+        .load_page(page_number(export.page))
+        .map_err(|error| failed(&error))?;
+    let bytes = match format {
+        ExportFormat::Svg => {
+            // Turned about its corner, the page lands off the drawing's
+            // frame, which starts at 0, 0, so it is moved back onto it.
+            let bounds = page.bounds().map_err(|error| failed(&error))?;
+            let mut transform = Matrix::IDENTITY;
+            transform.rotate(export.rotation.degrees());
+            let turned = bounds.transform(&transform);
+            transform.e -= turned.x0;
+            transform.f -= turned.y0;
+            page.to_svg(&transform)
+                .map_err(|error| failed(&error))?
+                .into_bytes()
+        }
+        ExportFormat::Png => {
+            let bounds = page.bounds().map_err(|error| failed(&error))?;
+            let longest = bounds.width().max(bounds.height()).max(1.0);
+            let scale = export.scale.max(0.01).min(EXPORT_LONGEST_SIDE / longest);
+            let mut transform = Matrix::new_scale(scale, scale);
+            transform.rotate(export.rotation.degrees());
+            let pixmap = page
+                .to_pixmap(&transform, &Colorspace::device_rgb(), false, true)
+                .map_err(|error| failed(&error))?;
+            let mut bytes = Vec::new();
+            pixmap
+                .write_to(&mut bytes, ImageFormat::PNG)
+                .map_err(|error| failed(&error))?;
+            bytes
+        }
+    };
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true);
+    if export.force {
+        options.create(true).truncate(true);
+    } else {
+        options.create_new(true);
+    }
+    let mut file = options.open(&export.target).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            Error::Export(format!(
+                "{} exists; :export! writes over it",
+                export.target.display()
+            ))
+        } else {
+            failed(&error)
+        }
+    })?;
+    std::io::Write::write_all(&mut file, &bytes).map_err(|error| failed(&error))
+}
+
 /// An entry of MuPDF's outline as pdvim's own.
 fn chapter(outline: mupdf::Outline) -> Chapter {
     Chapter {
@@ -1816,6 +1924,9 @@ impl Worker {
             }
             Request::Save(target, reply) => {
                 let _ = reply.send(save_to(&self.document, &self.path, target.as_deref()));
+            }
+            Request::Export(export, reply) => {
+                let _ = reply.send(export_page(&self.document, &export));
             }
             Request::Text(pages, reply) => {
                 let _ = reply.send(
@@ -2465,6 +2576,58 @@ mod tests {
         let saved = Document::open(copy.0.to_str().unwrap()).unwrap();
         let page = mupdf::pdf::PdfPage::try_from(saved.load_page(0).unwrap()).unwrap();
         assert_eq!(page.annotations().count(), 1);
+    }
+
+    #[test]
+    fn a_page_is_exported_as_an_image_or_a_drawing_but_not_over_a_file() {
+        let file = Scratch::new("export", text_pdf());
+        let image = Scratch::of_kind("export-image", "png", b"there");
+        let drawing = Scratch::of_kind("export-drawing", "svg", b"");
+        let document = Document::open(file.0.to_str().unwrap()).unwrap();
+        let export = |target: &Path, force| Export {
+            page: 0,
+            scale: 2.0,
+            rotation: Rotation::Quarter,
+            target: target.to_owned(),
+            force,
+        };
+        // A file there already is left as it was, unless forced.
+        assert!(matches!(
+            export_page(&document, &export(&image.0, false)),
+            Err(Error::Export(reason)) if reason.contains("exists")
+        ));
+        assert_eq!(std::fs::read(&image.0).unwrap(), b"there");
+        export_page(&document, &export(&image.0, true)).unwrap();
+        let png = std::fs::read(&image.0).unwrap();
+        assert!(png.starts_with(b"\x89PNG"));
+        // Letter size at two pixels a point, turned a quarter: 1584 wide
+        // and 1224 high, as the PNG's header says.
+        assert_eq!(png.get(16..24), Some(&[0, 0, 6, 48, 0, 0, 4, 200][..]));
+
+        export_page(&document, &export(&drawing.0, true)).unwrap();
+        let svg = std::fs::read_to_string(&drawing.0).unwrap();
+        // Turned, 792 wide, with the text on the frame: its glyphs are put
+        // where x and y are both at least 0.
+        assert!(svg.contains(r#"viewBox="0 0 792 612""#), "{svg}");
+        let placed: Vec<(f32, f32)> = svg
+            .split(r#"transform="matrix("#)
+            .skip(1)
+            .filter_map(|rest| {
+                let numbers: Vec<f32> = rest
+                    .split(')')
+                    .next()?
+                    .split(',')
+                    .filter_map(|number| number.trim().parse().ok())
+                    .collect();
+                Some((*numbers.get(4)?, *numbers.get(5)?))
+            })
+            .collect();
+        assert!(!placed.is_empty(), "{svg}");
+        assert!(placed.iter().all(|&(x, y)| x >= 0.0 && y >= 0.0), "{placed:?}");
+
+        let other = Path::new("page.jpg");
+        assert_eq!(ExportFormat::of(other), None);
+        assert_eq!(ExportFormat::of(Path::new("Page.PNG")), Some(ExportFormat::Png));
     }
 
     /// A one-page PDF saying "Hello world", locked with the password

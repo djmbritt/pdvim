@@ -96,6 +96,9 @@ pub enum Command {
     WriteQuitAll,
     /// Run a command in the shell, `%` standing for the document's file.
     Shell(String),
+    /// Write the page in view to a file, as a PNG image or an SVG drawing;
+    /// over one there already only if forced with `:export!`.
+    Export { target: PathBuf, force: bool },
 }
 
 /// Where `:tabmove` moves the tab in view to.
@@ -210,9 +213,10 @@ pub enum Error {
 }
 
 /// Every command by its full name, and the shorter names it also goes by.
-const NAMES: [(&str, &[&str]); 30] = [
+const NAMES: [(&str, &[&str]); 31] = [
     ("apropos", &["apr"]),
     ("delmarks", &["delm"]),
+    ("export", &[]),
     ("goto", &[]),
     ("help", &["h"]),
     ("info", &["f", "file"]),
@@ -346,6 +350,11 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
         "source" => Command::Source((!argument.is_empty()).then(|| expand_home(argument))),
         "version" => Command::Version,
         "info" => Command::Info,
+        "export" if argument.is_empty() => return Err(Error::MissingArgument("export")),
+        "export" => Command::Export {
+            target: expand_home(argument),
+            force: false,
+        },
         "note" if argument.is_empty() => return Err(Error::MissingArgument("note")),
         "note" => Command::Note(argument.to_owned()),
         "goto" if argument.is_empty() => return Err(Error::MissingArgument("goto")),
@@ -509,6 +518,10 @@ fn forced_command(name: &str, argument: &str) -> Option<Command> {
         "quit" => Some(Command::ForceQuit),
         "qall" => Some(Command::ForceQuitAll),
         "tabonly" => Some(Command::TabOnly { force: true }),
+        "export" if !argument.is_empty() => Some(Command::Export {
+            target: expand_home(argument),
+            force: true,
+        }),
         "write" => Some(Command::Write {
             target: (!argument.is_empty()).then(|| expand_home(argument)),
             force: true,
@@ -1116,5 +1129,24 @@ mod tests {
         // Its `;` are the shell's, after another command too.
         assert_eq!(split("!make; ls"), ["!make; ls"]);
         assert_eq!(split("w; !cp % /tmp; ls"), ["w", "!cp % /tmp; ls"]);
+    }
+
+    #[test]
+    fn export_takes_a_file_and_a_bang_to_write_over_one() {
+        assert_eq!(
+            parse("export page 3.png"),
+            Ok(Some(Command::Export {
+                target: PathBuf::from("page 3.png"),
+                force: false
+            }))
+        );
+        assert_eq!(
+            parse("export! page.svg"),
+            Ok(Some(Command::Export {
+                target: PathBuf::from("page.svg"),
+                force: true
+            }))
+        );
+        assert_eq!(parse("export"), Err(Error::MissingArgument("export")));
     }
 }

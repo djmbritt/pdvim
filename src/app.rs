@@ -161,6 +161,8 @@ pub enum Message {
     /// The text on some pages of the document with this number was read,
     /// or could not be.
     TextFound(u64, Vec<u32>, Result<backend::PageText, backend::Error>),
+    /// A page was written to this file, or could not be.
+    Exported(PathBuf, Result<(), backend::Error>),
     /// A command run with `:!`, as typed, finished, or could not be run.
     ShellRan(String, Result<crate::shell::Ran, crate::shell::Error>),
 }
@@ -803,6 +805,13 @@ impl App {
                 Task::none()
             }
             Message::TextFound(id, pages, result) => self.on_text(id, &pages, result),
+            Message::Exported(target, result) => {
+                self.notice = match result {
+                    Ok(()) => Notice::Info(format!("exported {}", tilde(&target))),
+                    Err(error) => Notice::Error(error.to_string()),
+                };
+                Task::none()
+            }
             Message::ShellRan(command, result) => {
                 self.on_shell(&command, result);
                 Task::none()
@@ -1960,6 +1969,7 @@ impl App {
             Command::Info => self.show_info(),
             Command::Note(text) => return self.add_note(text),
             Command::Shell(line) => return self.shell(line),
+            Command::Export { target, force } => return self.export(target, force),
             Command::ShowTheme => {
                 let theme = self.current_theme().name();
                 self.notice = Notice::Info(if self.theme.is_some() {

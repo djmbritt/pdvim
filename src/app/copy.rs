@@ -1,13 +1,40 @@
 //! Copying what the document is: its file's path, its title, or the text
-//! of the page in view, as Tridactyl's `yy` copies a page's address.
+//! of the page in view, as Tridactyl's `yy` copies a page's address; and
+//! exporting the page in view to a file.
 
 use iced::Task;
 
 use super::{App, Message, Notice, TextFor, tilde};
-use crate::backend::TextLine;
+use std::path::PathBuf;
+
+use crate::backend::{Export, ExportFormat, TextLine};
 use crate::input::CopyWhat;
 
 impl App {
+    /// Writes the page in view to a file, as an image the size it is shown
+    /// at or as a drawing, turned as it is shown.
+    pub(super) fn export(&mut self, target: PathBuf, force: bool) -> Task<Message> {
+        let scale_factor = self.scale_factor;
+        let Some(document) = self.document() else {
+            self.notice = Notice::Error("no document to export".to_owned());
+            return Task::none();
+        };
+        if ExportFormat::of(&target).is_none() {
+            self.notice = Notice::Error("export to a .png or .svg file".to_owned());
+            return Task::none();
+        }
+        let export = Export {
+            page: document.reader.current_page(),
+            scale: document.reader.zoom() * scale_factor,
+            rotation: document.reader.rotation(),
+            target: target.clone(),
+            force,
+        };
+        Task::perform(document.backend.export(export), move |result| {
+            Message::Exported(target, result)
+        })
+    }
+
     /// Copies the path, the title or the text of the page in view. The
     /// page's text is read first if it has not been.
     pub(super) fn copy(&mut self, what: CopyWhat) -> Task<Message> {

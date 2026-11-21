@@ -63,6 +63,8 @@ pub struct Reader {
     y: f32,
     /// The width and height of the window, in screen pixels.
     window: (f32, f32),
+    /// How many pages sit side by side.
+    columns: usize,
 }
 
 impl Reader {
@@ -79,9 +81,23 @@ impl Reader {
             x: 0.0,
             y: 0.0,
             window,
+            columns: 1,
         };
         reader.refit(Anchor::Top);
         reader
+    }
+
+    /// Sets how many pages sit side by side, staying at the same place.
+    pub fn set_columns(&mut self, columns: usize) {
+        let columns = columns.max(1);
+        if columns == self.columns {
+            return;
+        }
+        let place = self.place();
+        self.columns = columns;
+        self.lay_out();
+        self.refit(Anchor::Top);
+        self.go_to_place(place);
     }
 
     /// Puts the view back the way it was left.
@@ -98,7 +114,7 @@ impl Reader {
     /// How tall the whole document is, turned as it is, in points, with
     /// its margins left on.
     pub fn extent(&self) -> f32 {
-        Layout::new(&self.sizes, self.rotation).height()
+        Layout::in_columns(&self.sizes, self.rotation, self.columns).height()
     }
 
     /// The view as it is now, for the history. `recolor` is not the
@@ -184,11 +200,15 @@ impl Reader {
         self.scroll_by(0.0, (screens - overlap) * self.window.1);
     }
 
-    /// Moves to the top of the page a number of pages away.
+    /// Moves to the top of the page a number of pages away; with pages
+    /// side by side, a number of rows away.
     pub fn page_by(&mut self, pages: i32) {
         let current = i64::from(self.current_page());
         let last = i64::from(self.page_count().saturating_sub(1));
-        let target = current.saturating_add(i64::from(pages)).clamp(0, last);
+        let columns = i64::try_from(self.columns).unwrap_or(1);
+        let target = current
+            .saturating_add(i64::from(pages).saturating_mul(columns))
+            .clamp(0, last);
         self.go_to_page(u32::try_from(target).unwrap_or(0));
     }
 
@@ -373,7 +393,7 @@ impl Reader {
                     .collect()
             },
         );
-        self.layout = Layout::new(&shown, self.rotation);
+        self.layout = Layout::in_columns(&shown, self.rotation, self.columns);
     }
 
     /// Converts a rectangle in the document to screen pixels.
@@ -396,7 +416,7 @@ impl Reader {
                 Fit::Width => Some(width / self.layout.width()),
                 Fit::Page => self
                     .layout
-                    .size(self.current_page())
+                    .row_size(self.current_page())
                     .map(|page| (width / page.width).min(height / page.height)),
             };
             if let Some(zoom) = fitted.filter(|zoom| zoom.is_finite() && *zoom > 0.0) {
@@ -713,6 +733,30 @@ mod tests {
         reader.go_to_page(8);
         reader.go_to_place(place);
         assert!(reader.place().near(place), "{:?} {place:?}", reader.place());
+    }
+
+    #[test]
+    fn two_columns_fit_side_by_side_and_step_by_rows() {
+        let mut reader = reader();
+        reader.go_to_page(4);
+        reader.set_columns(2);
+        // Two pages and the gap between fill the width.
+        assert!(close(reader.zoom(), 1200.0 / GAP.mul_add(1.0, 1200.0)));
+        assert_eq!(reader.current_page(), 4);
+        assert_eq!(reader.visible_pages().start, 4);
+        assert!(reader.visible_pages().end >= 6);
+        let left = reader.page_on_screen(4).unwrap();
+        let right = reader.page_on_screen(5).unwrap();
+        assert!(close(left.top, right.top) && right.left > left.right);
+        reader.page_by(1);
+        assert_eq!(reader.current_page(), 6);
+        reader.page_by(-1);
+        assert_eq!(reader.current_page(), 4);
+        reader.fit(Fit::Page);
+        let width = 1200.0 / GAP.mul_add(1.0, 1200.0);
+        assert!(close(reader.zoom(), width.min(1000.0 / PAGE.height)));
+        reader.set_columns(1);
+        assert_eq!(reader.current_page(), 4);
     }
 
     #[test]

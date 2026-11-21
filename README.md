@@ -89,7 +89,7 @@ Each file opens in a tab of its own. If you start pdvim without a file, it shows
 
 Besides PDF, pdvim opens EPUB and FB2 books, CBZ and CBT comics, XPS and OpenXPS documents, SVG drawings, and images: PNG, JPEG, GIF, BMP, TIFF, JPEG 2000, JPEG XR, PSD and the PNM family. Completion after `:open` offers all of these.
 
-A book has no pages of its own, so pdvim lays it out on pages the size of the window, in type of the size `:set fontsize` gives (12 points by default). When the window changes size, or the type does, the book is laid out again, and you stay at the same place in it, measured as a share of the whole book. The book in view stays on screen while it is laid out. Your place is remembered the same way between sessions, so a book left in a small window opens at the same passage in a big one. Marks and the jump list point at pages, so they can land a little off after the book is laid out again.
+A book has no pages of its own, so pdvim lays it out on pages the size of the window, in type of the size `:set fontsize` gives (12 points by default). A book always fits the window's width: in a book, the zoom keys change the type instead. `+` and `-` make it a point bigger or smaller, `=` and `z0` go back to the size set, `{n}=` makes it _n_% of that, and `zw` and `zp` do nothing. With two columns (`zc`, or `:set columns 2`), the book is laid out on pages half the window wide, two side by side. When the window, the columns or the type change, the book is laid out again, and you stay at the same place in it, measured as a share of the whole book. The book in view stays on screen while it is laid out. Your place is remembered the same way between sessions, so a book left in a small window opens at the same passage in a big one. Marks and the jump list point at pages, so they can land a little off after the book is laid out again.
 
 Characters a document's own fonts lack are drawn from the fonts installed on your system, Chinese, Japanese and Korean included (from Noto CJK, Source Han and the like, when installed).
 
@@ -130,6 +130,7 @@ The mouse wheel also scrolls.
 | `R`                   | Turn recoloring on or off        |
 | `t`                   | Turn margin trimming on or off   |
 | `zb`                  | Hide the tab and status bars, or show them |
+| `zc`                  | Show two pages side by side, or one |
 | `F11`                 | Fill the screen, or stop         |
 
 With the status bar hidden, by `zb` or `:set statusbar false`, it still comes back while it has something to show: a prompt, a message, a key sequence half typed, or a mode other than `NORMAL`. It then lies over the bottom of the pages, so they don't move. `:set tabbar false` hides the tab bar for good, and `zb` hides both until you press it again.
@@ -307,6 +308,7 @@ The box at the left of the status bar always names the mode, which says what the
 | `:set theme-light {name}`              | Set the theme followed while the system is light                     |
 | `:set scroll-step {pixels}`            | Set how far one `j` or `k` scrolls                                   |
 | `:set fontsize {points}`               | Set the type size books (EPUB, FB2) are laid out in (default 12)     |
+| `:set columns {n}`                     | Show _n_ pages side by side, 1 to 4 (default 1); `zc` switches 1 and 2 |
 | `:set hintchars {letters}`             | Set the letters labels are made of (default `asdfghjkl`)             |
 | `:set incsearch [true\|false]`         | Highlight the matches in view while a search is typed (default on)   |
 | `:set tabbar [true\|false]`            | Show the tab bar when more than one tab is open (default on)         |
@@ -467,6 +469,7 @@ The actions of normal mode, and their default keys:
 | `toggle-recolor`                      | `R`                                         |
 | `toggle-trim`                         | `t`                                         |
 | `toggle-bars`                         | `z b`                                       |
+| `toggle-columns`                      | `z c`                                       |
 | `toggle-fullscreen`                   | `f11`                                       |
 | `search-forward` / `search-backward`  | `/` / `?`                                   |
 | `search-next` / `search-previous`     | `n` / `N`                                   |

@@ -1,7 +1,7 @@
 //! Where pages sit in the document.
 //!
-//! Pages are stacked in one column, each centred on the widest page, with a
-//! gap between them. Everything here is measured in PDF points at zoom 1;
+//! Pages are stacked in rows of one or more, each row centred on the widest,
+//! with a gap between pages and between rows. Everything here is measured in PDF points at zoom 1;
 //! the view multiplies by the zoom to get screen positions.
 
 use std::ops::Range;
@@ -121,31 +121,61 @@ impl Rotation {
 pub struct Layout {
     /// The size of each page, already turned.
     sizes: Vec<PageSize>,
-    /// The top edge of each page.
+    /// The top edge of each page: that of its row.
     tops: Vec<f32>,
-    /// The width of the widest page.
+    /// How far from the left of its row each page starts.
+    offsets: Vec<f32>,
+    /// The width and height of each row.
+    rows: Vec<PageSize>,
+    /// How many pages a row holds, 1 or more.
+    columns: usize,
+    /// The width of the widest row.
     width: f32,
-    /// The bottom edge of the last page.
+    /// The bottom edge of the last row.
     height: f32,
 }
 
 impl Layout {
-    /// Lays out pages of the given unturned sizes.
+    /// Lays out pages of the given unturned sizes, one to a row.
     pub fn new(pages: &[PageSize], rotation: Rotation) -> Self {
+        Self::in_columns(pages, rotation, 1)
+    }
+
+    /// Lays out pages of the given unturned sizes, so many to a row, side
+    /// by side and aligned at the top. Fewer than one is one.
+    pub fn in_columns(pages: &[PageSize], rotation: Rotation, columns: usize) -> Self {
+        let columns = columns.max(1);
         let sizes: Vec<PageSize> = pages.iter().map(|size| rotation.turn_size(*size)).collect();
         let mut tops = Vec::with_capacity(sizes.len());
+        let mut offsets = Vec::with_capacity(sizes.len());
+        let mut rows = Vec::new();
         let mut cursor = 0.0_f32;
         let mut width = 0.0_f32;
         let mut height = 0.0_f32;
-        for size in &sizes {
-            tops.push(cursor);
-            height = cursor + size.height;
+        for row in sizes.chunks(columns) {
+            let mut left = 0.0_f32;
+            let mut tallest = 0.0_f32;
+            for size in row {
+                tops.push(cursor);
+                offsets.push(left);
+                left += size.width + GAP;
+                tallest = tallest.max(size.height);
+            }
+            let row_width = (left - GAP).max(0.0);
+            rows.push(PageSize {
+                width: row_width,
+                height: tallest,
+            });
+            height = cursor + tallest;
             cursor = height + GAP;
-            width = width.max(size.width);
+            width = width.max(row_width);
         }
         Self {
             sizes,
             tops,
+            offsets,
+            rows,
+            columns,
             width,
             height,
         }
@@ -156,7 +186,7 @@ impl Layout {
         num::len(self.sizes.len())
     }
 
-    /// The width of the widest page.
+    /// The width of the widest row.
     pub const fn width(&self) -> f32 {
         self.width
     }
@@ -171,11 +201,20 @@ impl Layout {
         self.sizes.get(num::index(page)).copied()
     }
 
+    /// The size of the row a page is in.
+    pub fn row_size(&self, page: u32) -> Option<PageSize> {
+        self.rows
+            .get(num::index(page).checked_div(self.columns)?)
+            .copied()
+    }
+
     /// The rectangle a page occupies in the column.
     pub fn page_rect(&self, page: u32) -> Option<Rect> {
         let size = self.size(page)?;
         let top = *self.tops.get(num::index(page))?;
-        let left = (self.width - size.width) / 2.0;
+        let offset = *self.offsets.get(num::index(page))?;
+        let row = self.row_size(page)?;
+        let left = (self.width - row.width) / 2.0 + offset;
         Some(Rect {
             left,
             top,
@@ -184,22 +223,28 @@ impl Layout {
         })
     }
 
-    /// The page at a height in the column. A height in the gap below a page
-    /// counts as that page, and heights outside the column count as the
-    /// first or last page.
-    pub fn page_at(&self, y: f32) -> u32 {
-        let after = self.tops.partition_point(|top| *top <= y);
-        num::len(after.saturating_sub(1))
+    /// The first page of the row a page is in.
+    fn row_start(&self, page: usize) -> usize {
+        page.saturating_sub(page.checked_rem(self.columns).unwrap_or(0))
     }
 
-    /// The pages that overlap the band between two heights.
+    /// The first page of the row at a height in the column. A height in
+    /// the gap below a row counts as that row, and heights outside the
+    /// column count as the first or last row.
+    pub fn page_at(&self, y: f32) -> u32 {
+        let after = self.tops.partition_point(|top| *top <= y);
+        num::len(self.row_start(after.saturating_sub(1)))
+    }
+
+    /// The pages in the rows that overlap the band between two heights.
     pub fn pages_between(&self, top: f32, bottom: f32) -> Range<u32> {
         if self.sizes.is_empty() {
             return 0..0;
         }
         let first = self.page_at(top);
-        let last = self.page_at(bottom);
-        first..last.saturating_add(1)
+        let last_row = num::index(self.page_at(bottom));
+        let end = last_row.saturating_add(self.columns).min(self.sizes.len());
+        first..num::len(end)
     }
 }
 
@@ -251,6 +296,32 @@ mod tests {
         assert_eq!(layout.page_at(1e9), 2);
         assert_eq!(layout.pages_between(800.0, 900.0), 0..2);
         assert_eq!(layout.pages_between(0.0, 100.0), 0..1);
+    }
+
+    #[test]
+    fn pages_sit_side_by_side_in_columns() {
+        let layout = Layout::in_columns(&[A4, WIDE, A4], Rotation::None, 2);
+        // The first row holds A4 and WIDE, as tall as A4; the second row
+        // holds the last A4 alone, centred.
+        assert!(close(layout.width(), 595.0 + GAP + 842.0));
+        assert!(close(layout.height(), 842.0 + GAP + 842.0));
+        let first = layout.page_rect(0).unwrap();
+        let second = layout.page_rect(1).unwrap();
+        let third = layout.page_rect(2).unwrap();
+        assert!(close(first.left, 0.0) && close(first.top, 0.0));
+        assert!(close(second.left, 595.0 + GAP) && close(second.top, 0.0));
+        assert!(close(third.top, 842.0 + GAP));
+        assert!(close(third.left, (layout.width() - 595.0) / 2.0));
+        // A height names the first page of its row, and a band takes in
+        // every page of the rows it meets.
+        assert_eq!(layout.page_at(100.0), 0);
+        assert_eq!(layout.page_at(900.0), 2);
+        assert_eq!(layout.pages_between(0.0, 100.0), 0..2);
+        assert_eq!(layout.pages_between(0.0, 900.0), 0..3);
+        let row = layout.row_size(1).unwrap();
+        assert!(close(row.height, 842.0));
+        let empty = Layout::in_columns(&[], Rotation::None, 0);
+        assert!(empty.row_size(0).is_none());
     }
 
     #[test]

@@ -84,21 +84,9 @@ pdvim [FILE]...
 pdvim --version
 ```
 
-`man pdvim` describes the keys and commands, and `man 5 pdvim` the configuration file, once pdvim is installed from a package.
-
 Each file opens in a tab of its own. If you start pdvim without a file, it shows the documents you read most recently. Pick one, or open another file with `:open`.
 
 `:open` and the recent list put each document in a new tab, unless the tab in view is empty. A document that is already open in a tab is brought into view instead.
-
-### Books, comics and images
-
-Besides PDF, pdvim opens EPUB and FB2 books, CBZ and CBT comics, XPS and OpenXPS documents, SVG drawings, and images: PNG, JPEG, GIF, BMP, TIFF, JPEG 2000, JPEG XR, PSD and the PNM family. Completion after `:open` offers all of these.
-
-A book has no pages of its own, so pdvim lays it out on pages the size of the window, in type of the size `:set fontsize` gives (12 points by default). A book always fits the window's width: in a book, the zoom keys change the type instead. `+` and `-` make it a point bigger or smaller, `=` and `z0` go back to the size set, `{n}=` makes it _n_% of that, and `zw` and `zp` do nothing. With two columns (`zc`, or `:set columns 2`), the book is laid out on pages half the window wide, two side by side. Columns are set for the tab in view only, and each document remembers its own, as it does its zoom; `columns` in the configuration file sets how documents not opened before start. When the window, the columns or the type change, the book is laid out again, and you stay at the same place in it, measured as a share of the whole book. The book in view stays on screen while it is laid out. Your place is remembered the same way between sessions, so a book left in a small window opens at the same passage in a big one. Marks and the jump list point at pages, so they can land a little off after the book is laid out again.
-
-Characters a document's own fonts lack are drawn from the fonts installed on your system, Chinese, Japanese and Korean included (from Noto CJK, Source Han and the like, when installed).
-
-Searching, copying, following links, the table of contents and visual mode work in every format that has text. Highlights, notes, forms and `:w` are for PDF only: marking another format says so.
 
 ## Keys
 
@@ -124,32 +112,32 @@ The mouse wheel also scrolls.
 
 ### View
 
-| Key                   | Action                           |
-| --------------------- | -------------------------------- |
-| `+`, `zi` / `-`, `zo` | Zoom in / out                    |
-| `=`, `z0`             | Zoom to 100%                     |
-| `{n}=`, `{n}zz`       | Zoom to _n_%                     |
-| `zw`                  | Fit the page width to the window |
-| `zp`                  | Fit the whole page in the window |
-| `r`                   | Rotate                           |
-| `R`                   | Turn recoloring on or off        |
-| `t`                   | Turn margin trimming on or off   |
+| Key                   | Action                                     |
+| --------------------- | ------------------------------------------ |
+| `+`, `zi` / `-`, `zo` | Zoom in / out                              |
+| `=`, `z0`             | Zoom to 100%                               |
+| `{n}=`, `{n}zz`       | Zoom to _n_%                               |
+| `zw`                  | Fit the page width to the window           |
+| `zp`                  | Fit the whole page in the window           |
+| `r`                   | Rotate                                     |
+| `R`                   | Turn recoloring on or off                  |
+| `t`                   | Turn margin trimming on or off             |
 | `zb`                  | Hide the tab and status bars, or show them |
-| `zc`                  | Show two pages side by side, or one |
-| `F11`                 | Fill the screen, or stop         |
+| `zc`                  | Show two pages side by side, or one        |
+| `F11`                 | Fill the screen, or stop                   |
 
 With the status bar hidden, by `zb` or `:set statusbar false`, it still comes back while it has something to show: a prompt, a message, a key sequence half typed, or a mode other than `NORMAL`. It then lies over the bottom of the pages, so they don't move. `:set tabbar false` hides the tab bar for good, and `zb` hides both until you press it again.
 
 ### Links
 
-| Key | Action                   |
-| --- | ------------------------ |
-| `f` | Label every link, form field, highlight and note in view |
-| `F` | Label the links; type a label to open its place in a new tab |
-| `;y` | Label the links; type a label to copy where it goes |
+| Key  | Action                                                          |
+| ---- | --------------------------------------------------------------- |
+| `f`  | Label every link, form field, highlight and note in view        |
+| `F`  | Label the links; type a label to open its place in a new tab    |
+| `;y` | Label the links; type a label to copy where it goes             |
 | `gi` | Fill in the first form field in view; `Tab` goes on to the next |
-| `gI` | Fill in the last form field in view |
-| `g;` | Go back to the form field you were in last |
+| `gI` | Fill in the last form field in view                             |
+| `g;` | Go back to the form field you were in last                      |
 
 After `f`, each link in view is highlighted and gets a label of two letters. Type a label to follow its link. A link to another place in the document goes there. A web or mail link (`http`, `https`, `mailto`) opens in your default program; links to anything else, such as files, are not followed. Highlights, notes and the other markings get labels too, just left of them; typing one picks that marking as `]h` would, so its note shows and `d` and `c` work on it. `Backspace` takes back the first letter, and `Esc` puts the labels away.
 
@@ -175,9 +163,9 @@ A jump is `gg`, `G`, `{n}G`, `:{n}`, a search match, a chapter from the table of
 
 ### Selecting text
 
-| Key       | Action                                  |
-| --------- | --------------------------------------- |
-| `v` / `V` | Select characters / whole lines of text |
+| Key       | Action                                       |
+| --------- | -------------------------------------------- |
+| `v` / `V` | Select characters / whole lines of text      |
 | `s`       | Jump to text you type, and select from there |
 
 After `v` or `V`, each line of text in view gets a label of two letters, and so does each sentence that starts partway along a line. Type a label to put the cursor there, and start selecting from there. The status bar then lists what you can do next, each with its key; `d` and `c` show there when there is a marking to take away or change.
@@ -233,12 +221,12 @@ These go through every highlight, underline, strike-out, squiggly underline and 
 
 ### Tabs
 
-| Key                                       | Action                        |
-| ----------------------------------------- | ----------------------------- |
-| `gt`, `Ctrl-Tab` / `gT`, `Ctrl-Shift-Tab` | Go to the next / previous tab |
-| `{n}gt`, `{n}Ctrl-Tab`                    | Go to tab _n_                 |
+| Key                                       | Action                                              |
+| ----------------------------------------- | --------------------------------------------------- |
+| `gt`, `Ctrl-Tab` / `gT`, `Ctrl-Shift-Tab` | Go to the next / previous tab                       |
+| `{n}gt`, `{n}Ctrl-Tab`                    | Go to tab _n_                                       |
 | `b`                                       | List the tabs; type to narrow, `Enter` to go to one |
-| `U`                                       | Open the tab closed last again |
+| `U`                                       | Open the tab closed last again                      |
 
 `U` brings back the tab closed last, in the place it had, and the document where you left it; press it again for the one closed before. pdvim keeps the last 20 tabs closed with `q`, `:q`, `:tabclose` or `:tabonly`, until it quits.
 
@@ -276,74 +264,74 @@ To copy part of a page, select it in [visual mode](#selecting-text) and press `y
 
 The box at the left of the status bar always names the mode, which says what the next key does. Modes of a kind share a color, taken from the theme:
 
-| Color  | Modes                                                                                     |
-| ------ | ----------------------------------------------------------------------------------------- |
-| Blue   | `NORMAL`: reading                                                                         |
+| Color  | Modes                                                                                          |
+| ------ | ---------------------------------------------------------------------------------------------- |
+| Blue   | `NORMAL`: reading                                                                              |
 | Mauve  | `VISUAL`, `V-LINE`: selecting text; `SELECT`, `JUMP`: picking where to start, after `v` or `s` |
-| Green  | `INSERT`: filling in a field of a form                                                    |
-| Peach  | `COMMAND`, `SEARCH`, `PASSWORD`: typing at the bottom line; `CONFIRM`: answering it        |
-| Yellow | `FOLLOW`, `PICK`: labels on links, fields and markings, after `f` or `gh`                 |
-| Teal   | `CONTENTS`, `MARKINGS`, `HELP`, `RECENT`, `TABS`, `INFO`: a list or panel over the pages   |
+| Green  | `INSERT`: filling in a field of a form                                                         |
+| Peach  | `COMMAND`, `SEARCH`, `PASSWORD`: typing at the bottom line; `CONFIRM`: answering it            |
+| Yellow | `FOLLOW`, `PICK`: labels on links, fields and markings, after `f` or `gh`                      |
+| Teal   | `CONTENTS`, `MARKINGS`, `HELP`, `RECENT`, `TABS`, `INFO`: a list or panel over the pages       |
 
 ## Commands
 
-| Command                                | Action                                                               |
-| -------------------------------------- | -------------------------------------------------------------------- |
-| `:{n}`                                 | Go to page _n_                                                       |
-| `:goto {label}`                        | Go to the page with that number printed on it, as `xii` or `A-3`     |
-| `:o[pen] {file}`                       | Open a document in a new tab (`~` expands to your home directory)    |
-| `:rec[ent]`                            | Show recent documents                                                |
-| `:h[elp]`                              | Show every action and the keys bound to it                           |
-| `:h[elp] {topic}`                      | The same, scrolled to a mode, a heading or an action: `:help visual` |
-| `:apr[opos] {word}`                    | Show only the actions and keys that mention the word: `:apropos zoom` |
-| `:marks`                               | List the marks of the document in view, and `A`–`Z`                  |
-| `:delm[arks] {letters}` or `!`         | Take marks away: those letters, or with `!` all of this document's   |
-| `:ve[rsion]`                           | Show pdvim's version and where to find it on GitHub                  |
-| `:info`, `:f[ile]`                     | Show the document's title, author, dates, pages, format, encryption  |
-| `:note {text}`                         | Put a note with that text in the margin at the top of the window     |
-| `:noh[lsearch]`                        | Hide search highlights                                               |
-| `:set recolor [true\|false\|auto]`     | Turn recoloring on or off, or follow the system's theme (default)    |
-| `:set trim [true\|false]`              | Turn margin trimming on or off                                       |
-| `:set recolor-lightcolor #rrggbb`      | Set the color white paper becomes when recolored (default: theme's)  |
-| `:set recolor-darkcolor #rrggbb`       | Set the color black ink becomes when recolored (default: theme's)    |
-| `:theme {name}\|auto`                  | Set the theme, or follow the system's (default); or `:colo[rscheme]` |
-| `:theme`                               | Show the theme in force                                              |
-| `:set theme {name}\|auto`              | The same as `:theme`                                                 |
-| `:set theme-dark {name}`               | Set the theme followed while the system is dark                      |
-| `:set theme-light {name}`              | Set the theme followed while the system is light                     |
-| `:set scroll-step {pixels}`            | Set how far one `j` or `k` scrolls                                   |
-| `:set fontsize {points}`               | Set the type size books (EPUB, FB2) are laid out in (default 12)     |
+| Command                                | Action                                                                 |
+| -------------------------------------- | ---------------------------------------------------------------------- |
+| `:{n}`                                 | Go to page _n_                                                         |
+| `:goto {label}`                        | Go to the page with that number printed on it, as `xii` or `A-3`       |
+| `:o[pen] {file}`                       | Open a document in a new tab (`~` expands to your home directory)      |
+| `:rec[ent]`                            | Show recent documents                                                  |
+| `:h[elp]`                              | Show every action and the keys bound to it                             |
+| `:h[elp] {topic}`                      | The same, scrolled to a mode, a heading or an action: `:help visual`   |
+| `:apr[opos] {word}`                    | Show only the actions and keys that mention the word: `:apropos zoom`  |
+| `:marks`                               | List the marks of the document in view, and `A`–`Z`                    |
+| `:delm[arks] {letters}` or `!`         | Take marks away: those letters, or with `!` all of this document's     |
+| `:ve[rsion]`                           | Show pdvim's version and where to find it on GitHub                    |
+| `:info`, `:f[ile]`                     | Show the document's title, author, dates, pages, format, encryption    |
+| `:note {text}`                         | Put a note with that text in the margin at the top of the window       |
+| `:noh[lsearch]`                        | Hide search highlights                                                 |
+| `:set recolor [true\|false\|auto]`     | Turn recoloring on or off, or follow the system's theme (default)      |
+| `:set trim [true\|false]`              | Turn margin trimming on or off                                         |
+| `:set recolor-lightcolor #rrggbb`      | Set the color white paper becomes when recolored (default: theme's)    |
+| `:set recolor-darkcolor #rrggbb`       | Set the color black ink becomes when recolored (default: theme's)      |
+| `:theme {name}\|auto`                  | Set the theme, or follow the system's (default); or `:colo[rscheme]`   |
+| `:theme`                               | Show the theme in force                                                |
+| `:set theme {name}\|auto`              | The same as `:theme`                                                   |
+| `:set theme-dark {name}`               | Set the theme followed while the system is dark                        |
+| `:set theme-light {name}`              | Set the theme followed while the system is light                       |
+| `:set scroll-step {pixels}`            | Set how far one `j` or `k` scrolls                                     |
+| `:set fontsize {points}`               | Set the type size books (EPUB, FB2) are laid out in (default 12)       |
 | `:set columns {n}`                     | Show _n_ pages side by side in this tab, 1 to 4; `zc` switches 1 and 2 |
-| `:set hintchars {letters}`             | Set the letters labels are made of (default `asdfghjkl`)             |
-| `:set incsearch [true\|false]`         | Highlight the matches in view while a search is typed (default on)   |
-| `:set tabbar [true\|false]`            | Show the tab bar when more than one tab is open (default on)         |
-| `:set statusbar [true\|false]`         | Show the status bar while reading (default on)                       |
-| `:set confirm-quit [true\|false]`      | Ask before quitting (default on)                                     |
-| `:set confirm-tab-close [true\|false]` | Ask before closing a tab while others are open (default on)          |
-| `:set highlight-color #rrggbb`         | Set the color `H` in visual mode highlights in (default `#ffff00`)   |
-| `:set underline-color #rrggbb`         | Set the color of `U`'s underline (default `#1e88e5`)                 |
-| `:set strikeout-color #rrggbb`         | Set the color of `S`'s line through the text (default `#e53935`)     |
-| `:set squiggly-color #rrggbb`          | Set the color of `W`'s squiggly underline (default `#fb8c00`)        |
-| `:set note-color #rrggbb`              | Set the color of a note's icon (default `#fdd835`)                   |
-| `:map [mode] {keys} {action}`          | Bind keys to an action (see [Keys](#keys-1))                         |
-| `:map {keys} :{command}`               | Bind keys to a command line; `;` separates several commands          |
-| `:unmap [mode] {keys}`                 | Remove a key binding                                                 |
-| `:mapclear [mode]`                     | Remove every key binding of a mode                                   |
-| `:so[urce] [file]`                     | Read the configuration file again, or another file like it           |
-| `:tabe[dit] {file}`, `:tabnew [file]`  | Open a document in a new tab, or open an empty tab                   |
-| `:tabn[ext] [n]`                       | Go to the next tab, or to tab _n_                                    |
-| `:tabp[revious]`                       | Go to the previous tab                                               |
-| `:tabc[lose]`                          | Close the tab, unless it is the last                                 |
-| `:tabo[nly]`, `:tabonly!`              | Close every other tab; `!` even those with highlights not saved      |
+| `:set hintchars {letters}`             | Set the letters labels are made of (default `asdfghjkl`)               |
+| `:set incsearch [true\|false]`         | Highlight the matches in view while a search is typed (default on)     |
+| `:set tabbar [true\|false]`            | Show the tab bar when more than one tab is open (default on)           |
+| `:set statusbar [true\|false]`         | Show the status bar while reading (default on)                         |
+| `:set confirm-quit [true\|false]`      | Ask before quitting (default on)                                       |
+| `:set confirm-tab-close [true\|false]` | Ask before closing a tab while others are open (default on)            |
+| `:set highlight-color #rrggbb`         | Set the color `H` in visual mode highlights in (default `#ffff00`)     |
+| `:set underline-color #rrggbb`         | Set the color of `U`'s underline (default `#1e88e5`)                   |
+| `:set strikeout-color #rrggbb`         | Set the color of `S`'s line through the text (default `#e53935`)       |
+| `:set squiggly-color #rrggbb`          | Set the color of `W`'s squiggly underline (default `#fb8c00`)          |
+| `:set note-color #rrggbb`              | Set the color of a note's icon (default `#fdd835`)                     |
+| `:map [mode] {keys} {action}`          | Bind keys to an action (see [Keys](#keys-1))                           |
+| `:map {keys} :{command}`               | Bind keys to a command line; `;` separates several commands            |
+| `:unmap [mode] {keys}`                 | Remove a key binding                                                   |
+| `:mapclear [mode]`                     | Remove every key binding of a mode                                     |
+| `:so[urce] [file]`                     | Read the configuration file again, or another file like it             |
+| `:tabe[dit] {file}`, `:tabnew [file]`  | Open a document in a new tab, or open an empty tab                     |
+| `:tabn[ext] [n]`                       | Go to the next tab, or to tab _n_                                      |
+| `:tabp[revious]`                       | Go to the previous tab                                                 |
+| `:tabc[lose]`                          | Close the tab, unless it is the last                                   |
+| `:tabo[nly]`, `:tabonly!`              | Close every other tab; `!` even those with highlights not saved        |
 | `:tabm[ove] [n\|+n\|-n]`               | Move the tab to place _n_ (0 is first), _n_ places on or back, or last |
-| `:q[uit]`                              | Close the tab, and quit after the last one                           |
-| `:qa[ll]`                              | Quit                                                                 |
-| `:q!`, `:qa!`                          | Close the tab, or quit, throwing away highlights not saved           |
-| `:w[rite]`                             | Save the highlights into the file                                    |
-| `:w {file}`, `:w! {file}`              | Save a copy with the highlights; `!` overwrites a file that exists   |
-| `:wq`, `:x`                            | Save, then close the tab                                             |
-| `:wa[ll]`                              | Save every document with highlights not saved                        |
-| `:wqa[ll]`, `:xa[ll]`                  | Save every document, then quit                                       |
+| `:q[uit]`                              | Close the tab, and quit after the last one                             |
+| `:qa[ll]`                              | Quit                                                                   |
+| `:q!`, `:qa!`                          | Close the tab, or quit, throwing away highlights not saved             |
+| `:w[rite]`                             | Save the highlights into the file                                      |
+| `:w {file}`, `:w! {file}`              | Save a copy with the highlights; `!` overwrites a file that exists     |
+| `:wq`, `:x`                            | Save, then close the tab                                               |
+| `:wa[ll]`                              | Save every document with highlights not saved                          |
+| `:wqa[ll]`, `:xa[ll]`                  | Save every document, then quit                                         |
 
 If you name a boolean setting without a value, it is turned on.
 
@@ -363,15 +351,15 @@ Press `Up` or `Ctrl-p` at `:`, `/` or `?` to bring back an earlier command or se
 
 `o` or `:recent` lists up to 20 documents you read before, the most recent first. The open document and files that no longer exist are left out. Type to narrow the list: it keeps the documents whose path holds every word you type, ignoring case, so `rust book` finds `~/books/the-rust-programming-language-book.pdf`.
 
-| Key                                         | Action                                  |
-| ------------------------------------------- | --------------------------------------- |
-| Letters, digits, `Space`                    | Narrow the list                         |
-| `Down`, `Ctrl-n`, `Ctrl-j`, `Tab`           | Select the next entry                   |
-| `Up`, `Ctrl-p`, `Ctrl-k`, `Shift-Tab`       | Select the previous entry               |
-| `Home` / `End`                              | Select the first / last entry           |
-| `Enter`                                     | Open the selected document in a new tab |
-| `Backspace` / `Ctrl-u`                      | Rub out a character / all that's typed  |
-| `Esc`, `Ctrl-c`, or `Backspace` with nothing typed | Close the list                   |
+| Key                                                | Action                                  |
+| -------------------------------------------------- | --------------------------------------- |
+| Letters, digits, `Space`                           | Narrow the list                         |
+| `Down`, `Ctrl-n`, `Ctrl-j`, `Tab`                  | Select the next entry                   |
+| `Up`, `Ctrl-p`, `Ctrl-k`, `Shift-Tab`              | Select the previous entry               |
+| `Home` / `End`                                     | Select the first / last entry           |
+| `Enter`                                            | Open the selected document in a new tab |
+| `Backspace` / `Ctrl-u`                             | Rub out a character / all that's typed  |
+| `Esc`, `Ctrl-c`, or `Backspace` with nothing typed | Close the list                          |
 
 `b` lists the open tabs the same way, each with its number, name and file, the tab in view selected. Type to narrow it, by name, file or number, and press `Enter` to go to the tab selected.
 

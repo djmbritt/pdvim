@@ -37,8 +37,17 @@ finish-args:
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm22/bin
   prepend-ld-library-path: /usr/lib/sdk/llvm22/lib
+  # Without debugging symbols: MuPDF's with them fill the disk of a GitHub
+  # runner, and nobody installs a debug extension for pdvim.
+  no-debuginfo: true
+  strip: true
+  cflags: -O2
+  cflags-override: true
+  cxxflags: -O2
+  cxxflags-override: true
   env:
     CARGO_HOME: /run/build/pdvim/cargo
+    CARGO_PROFILE_RELEASE_DEBUG: "0"
     LIBCLANG_PATH: /usr/lib/sdk/llvm22/lib
 modules:
   - name: pdvim

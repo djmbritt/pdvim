@@ -513,6 +513,8 @@ cargo install cargo-fuzz
 fuzz/run.sh pdf 600     # fuzz PDF loading for ten minutes
 ```
 
+The targets reach about 28% of pdvim's lines in all. They cover the parts that read outside input well: 95% of the reader, 93% of visual mode, 96% of the labels and 68–83% of command, key and configuration parsing. The window and event loop in `src/app/` aren't fuzzed. [fuzz/README.md](fuzz/README.md#coverage) has the table for every file, and `fuzz/coverage.sh` measures it again. GitHub Actions fuzzes every target for three minutes after each push to `main`, and for half an hour each week.
+
 ## License
 
 [AGPL-3.0-or-later](https://www.gnu.org/licenses/agpl-3.0.html)

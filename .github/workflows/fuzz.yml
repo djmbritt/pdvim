@@ -1,0 +1,105 @@
+# Fuzzes every target for a few minutes after each push to main and on
+# every pull request, and for half an hour each once a week, as the
+# cargo-fuzz book suggests: https://rust-fuzz.github.io/book/cargo-fuzz/ci.html
+#
+# Each target runs through fuzz/run.sh, with the same seeds, dictionaries
+# and settings as on a machine of one's own. What a run learns is kept in
+# the cache and given to the next, so the corpus grows from run to run. A
+# crash, a hang or a leak fails the run, and the inputs that caused it are
+# kept as the run's artifacts; replay one with
+#   cargo +nightly fuzz run <target> <file>
+# from fuzz/.
+name: Fuzz
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Mondays at 03:00 UTC.
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: How long to fuzz each target, in seconds
+        default: "600"
+
+permissions:
+  contents: read
+
+# A newer push to the same branch makes an older run moot.
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_FUZZ_VERSION: 0.13.2
+
+jobs:
+  fuzz:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [pdf, formats, config, command, keys, modes, reader]
+    steps:
+      - uses: actions/checkout@v4
+
+      # MuPDF is compiled from source, and its bindings are made with
+      # bindgen, which needs libclang.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libclang-dev libfontconfig1-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+          key: ${{ matrix.target }}
+
+      - name: Restore cargo-fuzz
+        id: cargo-fuzz
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.tool_cache }}/cargo-fuzz
+          key: cargo-fuzz-${{ env.CARGO_FUZZ_VERSION }}
+      - name: Install cargo-fuzz
+        if: steps.cargo-fuzz.outputs.cache-hit != 'true'
+        run: >
+          cargo install --locked --version "$CARGO_FUZZ_VERSION"
+          --root "${{ runner.tool_cache }}/cargo-fuzz" cargo-fuzz
+      - run: echo "${{ runner.tool_cache }}/cargo-fuzz/bin" >> "$GITHUB_PATH"
+
+      # The corpus the last run left, under a key of its own each time so
+      # that every run's is saved.
+      - name: Restore the corpus
+        uses: actions/cache@v4
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+
+      - name: Build
+        run: cd fuzz && cargo +nightly fuzz build ${{ matrix.target }}
+
+      - name: Fuzz
+        env:
+          SECONDS_ASKED: ${{ inputs.seconds }}
+        run: |
+          case "${{ github.event_name }}" in
+            schedule) seconds=1800 ;;
+            workflow_dispatch) seconds=$SECONDS_ASKED ;;
+            *) seconds=180 ;;
+          esac
+          fuzz/run.sh ${{ matrix.target }} "$seconds"
+
+      - name: Keep the inputs that failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}-${{ github.sha }}
+          path: fuzz/artifacts/${{ matrix.target }}
+          if-no-files-found: ignore

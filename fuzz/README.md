@@ -34,6 +34,67 @@ cargo +nightly fuzz tmin pdf artifacts/pdf/crash-…
 
 Once a crash is fixed, add a unit test for it next to the code. Then copy the input into `seeds/<target>/` so later runs start from it.
 
+## Coverage
+
+`coverage.sh` runs every target over its corpus and seeds with coverage turned on, and prints how much of each file in `src/` they reach. It needs nightly's `llvm-tools` (`rustup component add --toolchain nightly llvm-tools-preview`), and leaves the full report for each target in `coverage/<target>/`.
+
+```sh
+fuzz/coverage.sh             # every target
+fuzz/coverage.sh pdf formats # only these
+```
+
+Measured on 2026-11-21, over a corpus of about 41,000 inputs from earlier runs:
+
+| File | Lines | Functions | Regions |
+|------|------:|----------:|--------:|
+| `src/app.rs` | 0% | 0% | 0% |
+| `src/app/bars.rs` | 0% | 0% | 0% |
+| `src/app/chapters.rs` | 0% | 0% | 0% |
+| `src/app/copy.rs` | 0% | 0% | 0% |
+| `src/app/flash.rs` | 0% | 0% | 0% |
+| `src/app/forms.rs` | 0% | 0% | 0% |
+| `src/app/incsearch.rs` | 0% | 0% | 0% |
+| `src/app/info.rs` | 0% | 0% | 0% |
+| `src/app/links.rs` | 0% | 0% | 0% |
+| `src/app/markings.rs` | 0% | 0% | 0% |
+| `src/app/mode.rs` | 0% | 0% | 0% |
+| `src/app/reflow.rs` | 0% | 0% | 0% |
+| `src/app/run.rs` | 0% | 0% | 0% |
+| `src/app/tabs.rs` | 0% | 0% | 0% |
+| `src/app/unlock.rs` | 0% | 0% | 0% |
+| `src/backend.rs` | 27% | 22% | 26% |
+| `src/bindings.rs` | 82% | 82% | 82% |
+| `src/command.rs` | 68% | 56% | 66% |
+| `src/complete.rs` | 59% | 55% | 63% |
+| `src/config.rs` | 71% | 64% | 74% |
+| `src/dirs.rs` | 0% | 0% | 0% |
+| `src/flash.rs` | 0% | 0% | 0% |
+| `src/fonts.rs` | 97% | 93% | 93% |
+| `src/fuzz.rs` | 98% | 100% | 98% |
+| `src/help.rs` | 59% | 45% | 59% |
+| `src/hints.rs` | 96% | 100% | 94% |
+| `src/history.rs` | 0% | 0% | 0% |
+| `src/input.rs` | 18% | 33% | 40% |
+| `src/jumps.rs` | 0% | 0% | 0% |
+| `src/keymap.rs` | 83% | 78% | 84% |
+| `src/layout.rs` | 88% | 89% | 90% |
+| `src/markings.rs` | 0% | 0% | 0% |
+| `src/num.rs` | 75% | 75% | 81% |
+| `src/outline.rs` | 76% | 72% | 77% |
+| `src/picker.rs` | 89% | 86% | 91% |
+| `src/reader.rs` | 95% | 92% | 96% |
+| `src/recall.rs` | 0% | 0% | 0% |
+| `src/recolor.rs` | 100% | 100% | 100% |
+| `src/theme.rs` | 8% | 15% | 6% |
+| `src/visual.rs` | 93% | 92% | 94% |
+| **Total** | **28%** | **29%** | **28%** |
+
+The targets reach most of what they are meant to: parsing commands, keys and the configuration, laying out and moving through pages, the labels, visual mode and recolouring. `src/app.rs` and `src/app/` are at 0% because the window, iced's event loop and its drawing are not fuzzed; the targets drive the parts the app is built from instead. `backend.rs` is about a quarter covered because the fuzzers open documents and read their first pages, but don't highlight, fill in forms or save. `history.rs` and `recall.rs` are not fuzzed, as the history comes from pdvim's own database rather than from outside.
+
+## In CI
+
+[`.github/workflows/fuzz.yml`](../.github/workflows/fuzz.yml) runs every target through `run.sh` for three minutes after each push to `main` and on each pull request. Once a week it runs each one for half an hour, and it can be run by hand from the Actions tab for as long as you like. Each run starts from the corpus the last one left, kept in the Actions cache, so the corpus keeps growing. When a target crashes, hangs or leaks, the run fails, and the inputs that caused it are attached to the run as artifacts.
+
 ## Without the fuzzer
 
 `cargo test` runs every target once over a few fixed inputs, so the harness keeps compiling and stays sound on stable Rust.

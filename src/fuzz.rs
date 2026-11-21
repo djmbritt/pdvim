@@ -311,7 +311,12 @@ fn hints_key(hints: &mut Hints<u32>, keymaps: &Keymaps, key: Key) -> bool {
                     .all(|hint| typed.is_none_or(|typed| hint.label[0] == typed)),
                 "a label shows that does not start with {typed:?}"
             );
-            assert!(hints.shown().next().is_some(), "waiting with no labels");
+            // Text typed to narrow the labels may match none for now, and
+            // can still be rubbed out.
+            assert!(
+                hints.shown().next().is_some() || hints.filter().is_some(),
+                "waiting with no labels, and no text narrowing them"
+            );
             true
         }
         hints::Outcome::Picked(hint) => {

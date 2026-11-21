@@ -562,11 +562,12 @@ impl App {
             return self.start_edit(id, edit, Step::Do);
         }
         let (page, left, top) = match wanted {
-            // In the margin beside the cursor's line, so as not to cover
-            // the text.
+            // Just after the cursor's character, raised so that it sits
+            // mostly above the line. It lets the text through, so what it
+            // covers can still be read.
             Some((id, page, area)) if id == document.id => {
                 let middle = f32::midpoint(area.top, area.bottom);
-                (page, NOTE_MARGIN, (middle - NOTE_SIZE / 2.0).max(0.0))
+                (page, area.right, (middle - NOTE_SIZE).max(0.0))
             }
             _ => {
                 let place = document.reader.place();

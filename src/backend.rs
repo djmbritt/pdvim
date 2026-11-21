@@ -982,6 +982,9 @@ fn highlight_in(document: &Document, highlight: &Markup) -> Result<Vec<Annotatio
             .create_annotation(highlight.kind.annotation())
             .map_err(failed)?;
         annotation.set_color(colour).map_err(failed)?;
+        if highlight.kind == MarkupKind::Note {
+            annotation.set_opacity(NOTE_OPACITY).map_err(failed)?;
+        }
         place(&mut annotation, highlight.kind, areas, &bounds).map_err(failed)?;
         if let Some(note) = &highlight.note {
             annotation.set_contents(note).map_err(failed)?;
@@ -991,6 +994,10 @@ fn highlight_in(document: &Document, highlight: &Markup) -> Result<Vec<Annotatio
     }
     Ok(added)
 }
+
+/// How much of the text under a note's icon it hides: the rest shows
+/// through.
+const NOTE_OPACITY: f32 = 0.6;
 
 /// Takes markings away. Annotations no longer there are passed over.
 /// Answers with what was taken away.

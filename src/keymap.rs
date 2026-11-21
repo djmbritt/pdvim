@@ -176,6 +176,9 @@ pub fn written(keys: &[Key]) -> String {
 pub enum Match<A> {
     /// A whole sequence, bound to this.
     Bound(A),
+    /// A whole sequence, bound to the command line with this place among
+    /// the keymap's.
+    Command(usize),
     /// The start of one or more sequences.
     Prefix,
     /// Nothing.
@@ -186,6 +189,9 @@ pub enum Match<A> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Keymap<A> {
     bindings: Vec<(Vec<Key>, A)>,
+    /// Key sequences bound to command lines, as typed after `:`, which
+    /// may be several separated by `;`.
+    commands: Vec<(Vec<Key>, String)>,
 }
 
 impl<A> Default for Keymap<A> {
@@ -193,6 +199,7 @@ impl<A> Default for Keymap<A> {
     fn default() -> Self {
         Self {
             bindings: Vec::new(),
+            commands: Vec::new(),
         }
     }
 }
@@ -204,16 +211,33 @@ impl<A: Bindable> Keymap<A> {
         self.bindings.push((keys, bound));
     }
 
+    /// Binds a key sequence to a command line, replacing what it was bound
+    /// to.
+    pub fn bind_command(&mut self, keys: Vec<Key>, line: String) {
+        self.unbind(&keys);
+        self.commands.push((keys, line));
+    }
+
     /// Unbinds a key sequence. Returns whether it was bound.
     pub fn unbind(&mut self, keys: &[Key]) -> bool {
-        let before = self.bindings.len();
+        let before = self.bindings.len().saturating_add(self.commands.len());
         self.bindings.retain(|(bound, _)| bound != keys);
-        self.bindings.len() != before
+        self.commands.retain(|(bound, _)| bound != keys);
+        self.bindings.len().saturating_add(self.commands.len()) != before
     }
 
     /// Unbinds every key sequence.
     pub fn clear(&mut self) {
         self.bindings.clear();
+        self.commands.clear();
+    }
+
+    /// The key sequences bound to command lines, and the lines, in the
+    /// order they were bound.
+    pub fn commands(&self) -> impl Iterator<Item = (&[Key], &str)> {
+        self.commands
+            .iter()
+            .map(|(keys, line)| (keys.as_slice(), line.as_str()))
     }
 
     /// Every binding, sorted, so that two keymaps can be compared whatever
@@ -255,6 +279,12 @@ impl<A: Bindable> Keymap<A> {
             }
             prefix |= bound.starts_with(keys);
         }
+        for (index, (bound, _)) in self.commands.iter().enumerate() {
+            if bound == keys {
+                return Match::Command(index);
+            }
+            prefix |= bound.starts_with(keys);
+        }
         if prefix { Match::Prefix } else { Match::None }
     }
 }
@@ -272,6 +302,9 @@ pub enum Counts {
 pub enum Fed<A> {
     /// A bound sequence is complete, after this count if one was typed.
     Bound(A, Option<u32>),
+    /// A sequence bound to this command line is complete, after this count
+    /// if one was typed.
+    Command(String, Option<u32>),
     /// The keys typed so far could still become a bound sequence.
     Waiting,
     /// The keys typed, those of a sequence that is bound to nothing. A mode
@@ -345,6 +378,16 @@ impl<A: Bindable> Pending<A> {
                 let count = self.count.take();
                 self.keys.clear();
                 Fed::Bound(bound, count)
+            }
+            Match::Command(index) => {
+                let count = self.count.take();
+                self.keys.clear();
+                let line = keymap
+                    .commands
+                    .get(index)
+                    .map(|(_, line)| line.clone())
+                    .unwrap_or_default();
+                Fed::Command(line, count)
             }
             Match::None => {
                 let keys = std::mem::take(&mut self.keys);
@@ -495,6 +538,33 @@ mod tests {
             Fed::Unbound(vec![Key::Char('g'), Key::Char('x')])
         );
         assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn keys_bound_to_a_command_line_hand_it_back() {
+        let mut keymap = keymap();
+        keymap.bind_command(parse_keys("ctrl+t").unwrap(), "theme auto".into());
+        keymap.bind_command(parse_keys("g x").unwrap(), "w; q".into());
+        let mut pending = Pending::default();
+        assert_eq!(
+            pending.feed(Key::Ctrl('t'), &keymap, Counts::Taken),
+            Fed::Command("theme auto".into(), None)
+        );
+        assert_eq!(
+            pending.feed(Key::Char('g'), &keymap, Counts::Taken),
+            Fed::Waiting
+        );
+        assert_eq!(
+            pending.feed(Key::Char('x'), &keymap, Counts::Taken),
+            Fed::Command("w; q".into(), None)
+        );
+        // Binding the keys to an action takes the line away, and back.
+        keymap.bind(parse_keys("ctrl+t").unwrap(), Test::Top);
+        assert_eq!(keymap.lookup(&[Key::Ctrl('t')]), Match::Bound(Test::Top));
+        keymap.bind_command(parse_keys("ctrl+t").unwrap(), "help".into());
+        assert_eq!(keymap.lookup(&[Key::Ctrl('t')]), Match::Command(1));
+        assert!(keymap.unbind(&[Key::Ctrl('t')]));
+        assert_eq!(keymap.commands().count(), 1);
     }
 
     #[test]

@@ -14,7 +14,7 @@ use crate::backend::{
     self, Annotation, Backend, Hit, Link, Marking, Markup, MarkupKind, Opened, RenderJob, Target,
 };
 use crate::bindings::{self, Keymaps};
-use crate::command::{self, Command, Recolor, Setting};
+use crate::command::{Command, Recolor, Setting};
 use crate::complete::{self, Candidate};
 use crate::config;
 use crate::help::{Help, Line};
@@ -36,6 +36,7 @@ use crate::visual::{self, Kind, Spot, Visual};
 mod bars;
 mod chapters;
 mod copy;
+mod run;
 mod flash;
 mod forms;
 mod info;
@@ -857,6 +858,7 @@ impl App {
                 } else {
                     match self.pending.feed(key, &self.keymaps.normal, Counts::Taken) {
                         Fed::Bound(binding, count) => self.act(binding.action(count)),
+                        Fed::Command(line, _) => self.run_line(&line),
                         Fed::Waiting | Fed::Unbound(_) => Task::none(),
                     }
                 }
@@ -1865,6 +1867,7 @@ impl App {
                 | PromptBinding::Newer,
                 _,
             )
+            | Fed::Command(..)
             | Fed::Waiting => {}
         }
         // A list once shown follows what is typed, until nothing fits.
@@ -1962,19 +1965,12 @@ impl App {
     /// Runs what was typed into a prompt.
     fn submit(&mut self, prompt: Prompt, line: &str) -> Task<Message> {
         match prompt {
-            Prompt::Command => match command::parse(line) {
-                Ok(Some(command)) => {
-                    let task = self.run_command(command);
-                    self.note_at = None;
-                    self.note_editing = None;
-                    task
-                }
-                Ok(None) => Task::none(),
-                Err(error) => {
-                    self.notice = Notice::Error(error.to_string());
-                    Task::none()
-                }
-            },
+            Prompt::Command => {
+                let task = self.run_line(line);
+                self.note_at = None;
+                self.note_editing = None;
+                task
+            }
             Prompt::SearchForward => self.search(line, true),
             Prompt::SearchBackward => self.search(line, false),
             Prompt::Password => self.unlock(line.to_owned()),
@@ -2036,6 +2032,7 @@ impl App {
                 }
             }
             Command::Map(keys, bound) => self.keymaps.bind(keys, bound),
+            Command::MapLine(keys, line) => self.keymaps.normal.bind_command(keys, line),
             Command::Unmap(mode, keys) => {
                 if !self.keymaps.unbind(mode, &keys) {
                     self.notice = Notice::Error(format!(
@@ -3238,6 +3235,16 @@ fn cheat_sheet<'a>(
                 .spacing(12)
                 .into()
             }
+            Line::Command { keys, line } => row![
+                container(label(keys, chrome.bar_text))
+                    .width(HELP_KEYS_WIDTH)
+                    .clip(true),
+                container(label(&format!(":{line}"), chrome.list_number))
+                    .width(Fill)
+                    .clip(true),
+            ]
+            .spacing(12)
+            .into(),
             Line::Blank => text("").into(),
         };
         container(content)

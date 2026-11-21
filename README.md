@@ -295,6 +295,7 @@ The box at the left of the status bar always names the mode, which says what the
 | `:set squiggly-color #rrggbb`          | Set the color of `W`'s squiggly underline (default `#fb8c00`)        |
 | `:set note-color #rrggbb`              | Set the color of a note's icon (default `#fdd835`)                   |
 | `:map [mode] {keys} {action}`          | Bind keys to an action (see [Keys](#keys-1))                         |
+| `:map {keys} :{command}`               | Bind keys to a command line; `;` separates several commands          |
 | `:unmap [mode] {keys}`                 | Remove a key binding                                                 |
 | `:mapclear [mode]`                     | Remove every key binding of a mode                                   |
 | `:so[urce] [file]`                     | Read the configuration file again, or another file like it           |
@@ -400,6 +401,16 @@ Write a key as a single character, such as `j`, `G`, or `?`, or by name: `space`
 Separate the keys of a sequence with spaces, as in `"g g"` or `"z i"`. A count typed before the keys is passed to the action, as with the built-in keys. If one binding is the start of a longer one, the shorter one wins: binding `g` hides `g g`.
 
 The `:map`, `:unmap`, and `:mapclear` commands change the bindings while pdvim runs. They write keys the same way, with the mode first for any mode but normal: `:map ctrl+n next-tab`, `:map visual Y yank`, `:unmap outline q`, `:mapclear prompt`.
+
+In normal mode, keys can also run commands: write the command line after a `:`, as you would type it. Separate several commands with `;`, and they run one after another, stopping at the first mistake:
+
+```toml
+[keys.normal]
+"ctrl+t" = ":theme catppuccin-latte"
+"g x" = ":set recolor false; zoom-to 150"
+```
+
+`:map ctrl+t :theme catppuccin-latte` does the same while pdvim runs. `:help` lists these bindings under "Commands bound to keys". `;` separates commands typed at `:` too, as in `:w; tabclose`; write `;;` for a `;` that doesn't, as in a file name. `:map` and `:note` take the rest of the line, `;` and all.
 
 Two things are typed rather than bound: the character after `f`, `F`, `t` or `T` in visual mode, and the letters of a label.
 

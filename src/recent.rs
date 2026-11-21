@@ -79,7 +79,7 @@ impl Picker {
                     return self.choose(index);
                 }
             }
-            Fed::Waiting => {}
+            Fed::Waiting | Fed::Command(..) => {}
         }
         None
     }

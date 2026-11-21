@@ -146,6 +146,11 @@ pub enum Line {
         action: &'static str,
         description: &'static str,
     },
+    /// Keys bound to a command line, in normal mode.
+    Command {
+        keys: String,
+        line: String,
+    },
     Blank,
 }
 
@@ -170,6 +175,14 @@ impl Help {
                 &keymaps.normal,
                 bindings,
             );
+        }
+        let mut commands = keymaps.normal.commands().peekable();
+        if commands.peek().is_some() {
+            lines.extend([Line::Blank, Line::Heading("Commands bound to keys")]);
+            lines.extend(commands.map(|(keys, line)| Line::Command {
+                keys: written(keys),
+                line: line.to_owned(),
+            }));
         }
         for &mode in Mode::ALL {
             match mode {
@@ -327,6 +340,25 @@ mod tests {
         assert_eq!(entry(&help, Mode::Normal, "quit"), Some("Q"));
         assert_eq!(entry(&help, Mode::Normal, "help"), Some("ctrl+h"));
         assert_eq!(entry(&help, Mode::Visual, "yank"), Some("y, Y"));
+    }
+
+    #[test]
+    fn the_sheet_lists_command_lines_bound_to_keys() {
+        let mut keymaps = Keymaps::default();
+        assert!(
+            !Help::new(&keymaps)
+                .lines
+                .iter()
+                .any(|line| matches!(line, Line::Command { .. }))
+        );
+        keymaps
+            .normal
+            .bind_command(parse_keys("ctrl+t").unwrap(), "theme auto".into());
+        let help = Help::new(&keymaps);
+        assert!(help.lines.contains(&Line::Command {
+            keys: "ctrl+t".into(),
+            line: "theme auto".into()
+        }));
     }
 
     #[test]

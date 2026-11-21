@@ -202,7 +202,7 @@ impl Visual {
         }
         match self.pending.feed(key, keymap, Counts::Taken) {
             Fed::Bound(binding, count) => self.act(binding, count.unwrap_or(1), text),
-            Fed::Waiting | Fed::Unbound(_) => Outcome::Stay,
+            Fed::Waiting | Fed::Unbound(_) | Fed::Command(..) => Outcome::Stay,
         }
     }
 

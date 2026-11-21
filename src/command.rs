@@ -55,6 +55,9 @@ pub enum Command {
     NoHighlight,
     /// Bind a key sequence, in the mode of what it is bound to.
     Map(Vec<Key>, Bound),
+    /// Bind a key sequence in normal mode to a command line, as typed
+    /// after `:`; `;` separates several commands.
+    MapLine(Vec<Key>, String),
     /// Unbind a key sequence in a mode.
     Unmap(Mode, Vec<Key>),
     /// Unbind every key sequence in a mode.
@@ -176,6 +179,8 @@ pub enum Error {
     UnknownTheme(String),
     #[error("`{0}` is not a positive number")]
     NotPositive(String),
+    #[error("commands can only be bound to keys in normal mode")]
+    CommandOutsideNormal,
     #[error(transparent)]
     Colour(#[from] InvalidColour),
     #[error(transparent)]
@@ -362,6 +367,20 @@ fn tab_place(argument: &str) -> Result<TabPlace, Error> {
 /// Parses `:map`, `:unmap` or `:mapclear`, given by its full name.
 fn map_command(name: &str, argument: &str) -> Result<Command, Error> {
     let command = match name {
+        // A command line to run starts with `:`, after the keys; a key
+        // that is `:` alone is no command.
+        "map" if let Some(start) = command_start(argument) => {
+            let (keys, line) = argument.split_at(start);
+            let (mode, keys) = mode(keys.trim_end());
+            if mode != Mode::Normal {
+                return Err(Error::CommandOutsideNormal);
+            }
+            if keys.is_empty() {
+                return Err(Error::MissingArgument("map"));
+            }
+            let line = line.trim_start_matches(':').trim();
+            Command::MapLine(keymap::parse_keys(keys)?, line.to_owned())
+        }
         // The keys may have spaces between them, so the action is the
         // last word.
         "map" => {
@@ -389,6 +408,51 @@ fn map_command(name: &str, argument: &str) -> Result<Command, Error> {
         },
     };
     Ok(command)
+}
+
+/// Where the command line starts in the arguments to `:map`, if they bind
+/// keys to one: at the first word after the keys that starts with `:` and
+/// has more after it.
+fn command_start(argument: &str) -> Option<usize> {
+    let mut offset = 0;
+    for word in argument.split_inclusive(char::is_whitespace) {
+        let trimmed = word.trim_end();
+        if offset > 0 && trimmed.len() > 1 && trimmed.starts_with(':') {
+            return Some(offset);
+        }
+        offset = offset.saturating_add(word.len());
+    }
+    None
+}
+
+/// Splits a command line into the commands in it, at each `;`; `;;` is a
+/// `;` that does not split. After `map` and `note`, the rest of the line is
+/// theirs, `;` and all, so that a line can be bound to keys and a note can
+/// say anything.
+pub fn split(line: &str) -> Vec<String> {
+    let mut commands = Vec::new();
+    let mut current = String::new();
+    let mut characters = line.chars().peekable();
+    while let Some(character) = characters.next() {
+        let whole = matches!(
+            current.split_whitespace().next().and_then(canonical),
+            Some("map" | "note")
+        );
+        match character {
+            ';' if characters.peek() == Some(&';') && !whole => {
+                characters.next();
+                current.push(';');
+            }
+            ';' if !whole => commands.push(std::mem::take(&mut current)),
+            _ => current.push(character),
+        }
+    }
+    commands.push(current);
+    commands
+        .into_iter()
+        .map(|command| command.trim().to_owned())
+        .filter(|command| !command.is_empty())
+        .collect()
 }
 
 /// The mode named at the start of the arguments to `:map` and `:unmap`,
@@ -796,6 +860,47 @@ mod tests {
             parse("mapclear now"),
             Err(Error::Keys(keymap::Error::UnknownMode("now".into())))
         );
+    }
+
+    #[test]
+    fn keys_map_to_command_lines() {
+        assert_eq!(
+            parse("map ctrl+t :theme catppuccin-latte"),
+            Ok(Some(Command::MapLine(
+                vec![Key::Ctrl('t')],
+                "theme catppuccin-latte".into()
+            )))
+        );
+        assert_eq!(
+            parse("map g x :set recolor; zoom-to 150"),
+            Ok(Some(Command::MapLine(
+                vec![Key::Char('g'), Key::Char('x')],
+                "set recolor; zoom-to 150".into()
+            )))
+        );
+        // `:` alone is a key.
+        assert_eq!(
+            parse("map : command-prompt"),
+            Ok(Some(Command::Map(
+                vec![Key::Char(':')],
+                Bound::Normal(Binding::CommandPrompt)
+            )))
+        );
+        assert_eq!(
+            parse("map visual x :help"),
+            Err(Error::CommandOutsideNormal)
+        );
+    }
+
+    #[test]
+    fn lines_split_into_commands_at_semicolons() {
+        assert_eq!(split("w; q"), ["w", "q"]);
+        assert_eq!(split(" set trim ;; ; ;"), ["set trim ;"]);
+        assert_eq!(split("open a;;b.pdf;help"), ["open a;b.pdf", "help"]);
+        // The rest of the line is the binding's, or the note's.
+        assert_eq!(split("map x :w; q"), ["map x :w; q"]);
+        assert_eq!(split("note a; b"), ["note a; b"]);
+        assert_eq!(split(""), Vec::<String>::new());
     }
 
     #[test]

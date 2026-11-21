@@ -241,7 +241,7 @@ fn edit_text(text: &mut Vec<char>, cursor: &mut usize, fed: Fed<PromptBinding>) 
                 }
             }
         }
-        Fed::Bound(_, _) | Fed::Waiting => {}
+        Fed::Bound(_, _) | Fed::Command(..) | Fed::Waiting => {}
     }
     Typed::Stay
 }
@@ -287,7 +287,7 @@ fn pick(
                 *selected = 0;
             }
         }
-        Fed::Bound(_, _) | Fed::Waiting => {}
+        Fed::Bound(_, _) | Fed::Command(..) | Fed::Waiting => {}
     }
     Typed::Stay
 }

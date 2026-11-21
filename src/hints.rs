@@ -114,7 +114,7 @@ impl<T: Clone> Hints<T> {
                 Some(Key::Char(character)) => character.to_ascii_lowercase(),
                 _ => return Outcome::Wait,
             },
-            Fed::Waiting => return Outcome::Wait,
+            Fed::Waiting | Fed::Command(..) => return Outcome::Wait,
         };
         let Some(first) = self.typed else {
             if self.labelled.iter().any(|hint| hint.label[0] == letter) {

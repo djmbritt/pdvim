@@ -153,7 +153,7 @@ impl Outline {
     pub fn feed(&mut self, key: Key, keymap: &Keymap<Binding>, rows: usize) -> Outcome {
         match self.pending.feed(key, keymap, Counts::Taken) {
             Fed::Bound(binding, count) => self.act(binding, count.unwrap_or(1), rows),
-            Fed::Waiting | Fed::Unbound(_) => Outcome::Stay,
+            Fed::Waiting | Fed::Unbound(_) | Fed::Command(..) => Outcome::Stay,
         }
     }
 

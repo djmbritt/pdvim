@@ -18,8 +18,9 @@
 //! ```
 //!
 //! Settings take the names and values of `:set`. Keys are bound in a mode,
-//! one table to a mode, as with `:map`: to an action by name, or to `none`
-//! to unbind them. Keys put straight in `[keys]` are bound in normal mode.
+//! one table to a mode, as with `:map`: to an action by name, to `none` to
+//! unbind them, or in normal mode to a command line after `:`, such as
+//! `":set recolor; zoom-to 150"`. Keys put straight in `[keys]` are bound in normal mode.
 //!
 //! The built-in configuration, `defaults.toml`, is read the same way.
 
@@ -141,6 +142,12 @@ fn keys(mode: Mode, written: &str, value: &Value) -> Result<Command, String> {
     };
     if action == "none" {
         return Ok(Command::Unmap(mode, keys));
+    }
+    if let Some(line) = action.strip_prefix(':') {
+        if mode != Mode::Normal {
+            return Err(command::Error::CommandOutsideNormal.to_string());
+        }
+        return Ok(Command::MapLine(keys, line.trim().to_owned()));
     }
     let bound = mode
         .bound(action)

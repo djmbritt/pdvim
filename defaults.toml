@@ -89,6 +89,11 @@ note-color = "#fdd835"
 # Separate the keys of a sequence with spaces: "g g". If one binding is the
 # start of a longer one, the shorter one wins.
 #
+# In normal mode, keys can also run a command line, written after a colon;
+# a semicolon separates several commands, which run in turn:
+# "ctrl+t" = ":theme catppuccin-latte"
+# "g x" = ":set recolor false; zoom-to 150"
+#
 # :help lists every action of every mode, with the keys bound to it now.
 
 [keys.normal]

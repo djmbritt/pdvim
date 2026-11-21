@@ -182,7 +182,7 @@ impl List {
     pub fn feed(&mut self, key: Key, keymap: &Keymap<Binding>, rows: usize) -> Outcome {
         let (binding, count) = match self.pending.feed(key, keymap, Counts::Taken) {
             Fed::Bound(binding, count) => (binding, count.unwrap_or(1)),
-            Fed::Waiting | Fed::Unbound(_) => return Outcome::Stay,
+            Fed::Waiting | Fed::Unbound(_) | Fed::Command(..) => return Outcome::Stay,
         };
         let times = usize::try_from(count).unwrap_or(usize::MAX);
         let half = rows.max(1).div_ceil(2);

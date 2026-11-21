@@ -38,6 +38,7 @@ mod flash;
 mod forms;
 mod info;
 mod markings;
+mod mode;
 mod unlock;
 
 use markings::{Edit, Step, Wanted};
@@ -2831,6 +2832,27 @@ impl App {
         )
     }
 
+    /// The box at the left of the bottom line naming the mode, in the
+    /// colour of its kind.
+    fn mode_badge(&self) -> Element<'_, Message> {
+        let mode = self.mode();
+        let modes = self.current_theme().modes();
+        let shade = mode.colour(&modes);
+        container(
+            text(mode.name())
+                .size(BAR_TEXT_SIZE)
+                .font(Font {
+                    weight: iced::font::Weight::Bold,
+                    ..Font::MONOSPACE
+                })
+                .color(modes.text)
+                .wrapping(text::Wrapping::None),
+        )
+        .padding([3, 8])
+        .style(move |_| container::background(shade))
+        .into()
+    }
+
     /// The line at the bottom: the prompt while typing, otherwise a notice
     /// or the file name on the left and the position on the right.
     fn bar(&self, wrap: bool) -> Element<'_, Message> {
@@ -2852,19 +2874,14 @@ impl App {
                 chrome.bar_text,
             ),
             _ if self.visual.is_some() => {
-                let visual = self.visual.as_ref();
-                let kind = match visual.map(|visual| visual.kind) {
-                    Some(Kind::Lines) => "-- VISUAL LINE --",
-                    _ => "-- VISUAL --",
-                };
-                let typed = visual.map(Visual::typed).unwrap_or_default();
+                let typed = self.visual.as_ref().map(Visual::typed).unwrap_or_default();
                 let typed = if typed.is_empty() {
                     typed
                 } else {
-                    format!("  {typed}")
+                    format!("{typed}    ")
                 };
                 label(
-                    format!("{kind}{typed}    {}", self.visual_actions()),
+                    format!("{typed}{}", self.visual_actions()),
                     chrome.bar_text,
                 )
             }
@@ -2928,8 +2945,10 @@ impl App {
         let right = label(format!("{typed}  {position}"), chrome.bar_text);
         // A long notice is cut short rather than pushing the position away.
         let left = container(left).width(Fill).clip(true);
-        container(row![left, right].spacing(16))
+        let rest = container(row![left, right].spacing(16))
             .padding([3, 8])
+            .width(Fill);
+        container(row![self.mode_badge(), rest])
             .width(Fill)
             .style(move |_| container::background(chrome.bar))
             .into()

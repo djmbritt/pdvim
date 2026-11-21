@@ -28,6 +28,7 @@ pdvim uses [MuPDF](https://mupdf.com/) to render pages and [iced](https://iced.r
 - Highlighting, underlining, striking out and squiggling text into the PDF, saved with `:w` or `Ctrl-s`, with undo
 - Going through the markings with `]h` / `[h`, and listing them in a sidebar
 - Chapter by chapter with `]]` / `[[`, and the printed page numbers (`xii`, `A-3`) in the status bar and `:goto`
+- The mode always named at the left of the status bar, in a color for its kind, as vim status lines do
 - Password-protected PDFs, and `:info` for the title, author and dates
 
 ## Screenshots
@@ -228,6 +229,19 @@ A tab, and the window while its tab is in view, goes by the document's title whe
 | `q`                       | Close the tab, and quit after the last one             |
 | `Ctrl-g`                  | Show the document's title, author, dates and more      |
 
+### The mode
+
+The box at the left of the status bar always names the mode, which says what the next key does. Modes of a kind share a color, taken from the theme:
+
+| Color  | Modes                                                                                     |
+| ------ | ----------------------------------------------------------------------------------------- |
+| Blue   | `NORMAL`: reading                                                                         |
+| Mauve  | `VISUAL`, `V-LINE`: selecting text; `SELECT`, `JUMP`: picking where to start, after `v` or `s` |
+| Green  | `INSERT`: filling in a field of a form                                                    |
+| Peach  | `COMMAND`, `SEARCH`, `PASSWORD`: typing at the bottom line; `CONFIRM`: answering it        |
+| Yellow | `FOLLOW`, `PICK`: labels on links, fields and markings, after `f` or `gh`                 |
+| Teal   | `CONTENTS`, `MARKINGS`, `HELP`, `RECENT`, `INFO`: a list or panel over the pages           |
+
 ## Commands
 
 | Command                                | Action                                                               |
@@ -336,7 +350,7 @@ theme = "catppuccin-macchiato"
 
 `[settings]` takes the same names and values as `:set`. With `confirm-quit` on, as it is by default, pdvim asks `quit pdvim? (y/n)` before quitting: when you close the last tab, use `:qa`, or close the window. Press `y` or `Enter` to quit, or `Esc` or any other key to stay. If the window is closed again while pdvim is asking, for example by a window manager that insists, it quits without asking. With `confirm-tab-close` on, also the default, pdvim asks `close tab {name}? (y/n)` before closing a tab with `q`, `:q`, or `:tabclose` while other tabs are open. Closing the last tab quits pdvim, so `confirm-quit` decides whether that asks. Whatever these say, pdvim asks before closing a document with highlights not saved, unless `autosave` is on. `recolor` is `"auto"` by default: pdvim recolors every document while the system prefers a dark theme, shows them as printed while it prefers a light one, and changes as soon as the system does. pdvim reads the preference from the desktop's color-scheme setting (`org.freedesktop.appearance` through the desktop portal on Linux). `R` still turns recoloring on or off for the document in view, until the system's theme changes again. With `recolor` set to `true` or `false`, it and `trim` decide how a document starts the first time you open it. After that, the document is restored the way you left it.
 
-`theme` sets the colors of the tab bar, the status bar, the lists and the backdrop behind the pages, and the colors pages are recolored in unless `recolor-lightcolor` and `recolor-darkcolor` set their own. The themes are `catppuccin-latte` (light), `catppuccin-frappe`, `catppuccin-macchiato`, `catppuccin-mocha`, `pdvim-dark` and `pdvim-light`. With `theme = "auto"`, the default, pdvim uses `theme-dark` (`catppuccin-mocha`) while the system prefers a dark theme and `theme-light` (`catppuccin-latte`) while it prefers a light one, whatever `recolor` is set to.
+`theme` sets the colors of the tab bar, the status bar and the box naming the mode in it, the lists and the backdrop behind the pages, and the colors pages are recolored in unless `recolor-lightcolor` and `recolor-darkcolor` set their own. The themes are `catppuccin-latte` (light), `catppuccin-frappe`, `catppuccin-macchiato`, `catppuccin-mocha`, `pdvim-dark` and `pdvim-light`. With `theme = "auto"`, the default, pdvim uses `theme-dark` (`catppuccin-mocha`) while the system prefers a dark theme and `theme-light` (`catppuccin-latte`) while it prefers a light one, whatever `recolor` is set to.
 
 `[keys.<mode>]` binds keys to that mode's actions, on top of the default keys. Bind keys to `"none"` to remove a default. Keys put straight in `[keys]` are bound in normal mode, as before modes could be configured. The modes are:
 

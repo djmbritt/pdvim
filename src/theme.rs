@@ -22,7 +22,7 @@ pub enum Theme {
 
 impl Theme {
     /// Every theme with its name.
-    const NAMES: [(Self, &'static str); 6] = [
+    pub const NAMES: [(Self, &'static str); 6] = [
         (Self::PdvimDark, "pdvim-dark"),
         (Self::PdvimLight, "pdvim-light"),
         (Self::CatppuccinLatte, "catppuccin-latte"),
@@ -64,6 +64,18 @@ impl Theme {
         }
     }
 
+    /// The colours of the box naming the mode.
+    pub const fn modes(self) -> ModeColours {
+        match self {
+            Self::PdvimDark => PDVIM_DARK_MODES,
+            Self::PdvimLight => PDVIM_LIGHT_MODES,
+            Self::CatppuccinLatte => LATTE_MODES,
+            Self::CatppuccinFrappe => FRAPPE_MODES,
+            Self::CatppuccinMacchiato => MACCHIATO_MODES,
+            Self::CatppuccinMocha => MOCHA_MODES,
+        }
+    }
+
     /// The iced theme for what is not given colours of its own.
     pub const fn iced(self) -> iced::Theme {
         match self {
@@ -101,6 +113,23 @@ pub struct Colours {
     pub recolor: Palette,
 }
 
+/// The colour of the box naming each kind of mode, and of the name in it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ModeColours {
+    pub normal: Color,
+    /// Selecting text, and picking where to start.
+    pub visual: Color,
+    /// Typing into a field of a form.
+    pub insert: Color,
+    /// Typing at the bottom line, or answering it.
+    pub command: Color,
+    /// Labels over links and markings, to pick one.
+    pub label: Color,
+    /// Lists and panels over the pages.
+    pub list: Color,
+    pub text: Color,
+}
+
 const fn rgb(red: u8, green: u8, blue: u8) -> Color {
     Color::from_rgb8(red, green, blue)
 }
@@ -123,6 +152,16 @@ const PDVIM_DARK: Colours = Colours {
     },
 };
 
+const PDVIM_DARK_MODES: ModeColours = ModeColours {
+    normal: rgb(0x6c, 0x9e, 0xe8),
+    visual: rgb(0xb4, 0x8e, 0xd8),
+    insert: rgb(0x8f, 0xc0, 0x6a),
+    command: rgb(0xe0, 0x96, 0x5c),
+    label: rgb(0xe5, 0xc0, 0x7b),
+    list: rgb(0x56, 0xb6, 0xc2),
+    text: rgb(0x10, 0x10, 0x10),
+};
+
 const PDVIM_LIGHT: Colours = Colours {
     backdrop: rgb(0xd4, 0xd4, 0xd4),
     bar: rgb(0xe8, 0xe8, 0xe8),
@@ -141,10 +180,24 @@ const PDVIM_LIGHT: Colours = Colours {
     },
 };
 
+const PDVIM_LIGHT_MODES: ModeColours = ModeColours {
+    normal: rgb(0x2a, 0x6f, 0xdb),
+    visual: rgb(0x8a, 0x4f, 0xd0),
+    insert: rgb(0x3c, 0x8a, 0x2e),
+    command: rgb(0xc8, 0x5a, 0x14),
+    label: rgb(0xa8, 0x7a, 0x00),
+    list: rgb(0x1f, 0x84, 0x84),
+    text: rgb(0xff, 0xff, 0xff),
+};
+
 /// The colours of a Catppuccin flavour, from its palette: the crust,
 /// mantle and base backgrounds, surfaces 0 to 2, overlay 1, subtext 0,
-/// text and red. Pages are recoloured into text on base.
+/// text and red; and blue, mauve, green, peach, yellow and teal for the
+/// modes, named in the colour of `on_accent`. Pages are recoloured into
+/// text on base.
 struct Flavour {
+    accents: [Rgb; 6],
+    on_accent: Rgb,
     crust: Rgb,
     mantle: Rgb,
     base: Rgb,
@@ -156,6 +209,22 @@ struct Flavour {
 }
 
 impl Flavour {
+    const fn modes(&self) -> ModeColours {
+        const fn c(Rgb(red, green, blue): Rgb) -> Color {
+            rgb(red, green, blue)
+        }
+        let [blue, mauve, green, peach, yellow, teal] = self.accents;
+        ModeColours {
+            normal: c(blue),
+            visual: c(mauve),
+            insert: c(green),
+            command: c(peach),
+            label: c(yellow),
+            list: c(teal),
+            text: c(self.on_accent),
+        }
+    }
+
     const fn colours(&self) -> Colours {
         const fn c(Rgb(red, green, blue): Rgb) -> Color {
             rgb(red, green, blue)
@@ -181,7 +250,16 @@ impl Flavour {
     }
 }
 
-const LATTE: Colours = Flavour {
+const LATTE_FLAVOUR: Flavour = Flavour {
+    accents: [
+        Rgb(0x1e, 0x66, 0xf5),
+        Rgb(0x88, 0x39, 0xef),
+        Rgb(0x40, 0xa0, 0x2b),
+        Rgb(0xfe, 0x64, 0x0b),
+        Rgb(0xdf, 0x8e, 0x1d),
+        Rgb(0x17, 0x92, 0x99),
+    ],
+    on_accent: Rgb(0xef, 0xf1, 0xf5),
     crust: Rgb(0xdc, 0xe0, 0xe8),
     mantle: Rgb(0xe6, 0xe9, 0xef),
     base: Rgb(0xef, 0xf1, 0xf5),
@@ -194,10 +272,20 @@ const LATTE: Colours = Flavour {
     subtext0: Rgb(0x6c, 0x6f, 0x85),
     text: Rgb(0x4c, 0x4f, 0x69),
     red: Rgb(0xd2, 0x0f, 0x39),
-}
-.colours();
+};
+const LATTE: Colours = LATTE_FLAVOUR.colours();
+const LATTE_MODES: ModeColours = LATTE_FLAVOUR.modes();
 
-const FRAPPE: Colours = Flavour {
+const FRAPPE_FLAVOUR: Flavour = Flavour {
+    accents: [
+        Rgb(0x8c, 0xaa, 0xee),
+        Rgb(0xca, 0x9e, 0xe6),
+        Rgb(0xa6, 0xd1, 0x89),
+        Rgb(0xef, 0x9f, 0x76),
+        Rgb(0xe5, 0xc8, 0x90),
+        Rgb(0x81, 0xc8, 0xbe),
+    ],
+    on_accent: Rgb(0x23, 0x26, 0x34),
     crust: Rgb(0x23, 0x26, 0x34),
     mantle: Rgb(0x29, 0x2c, 0x3c),
     base: Rgb(0x30, 0x34, 0x46),
@@ -210,10 +298,20 @@ const FRAPPE: Colours = Flavour {
     subtext0: Rgb(0xa5, 0xad, 0xce),
     text: Rgb(0xc6, 0xd0, 0xf5),
     red: Rgb(0xe7, 0x82, 0x84),
-}
-.colours();
+};
+const FRAPPE: Colours = FRAPPE_FLAVOUR.colours();
+const FRAPPE_MODES: ModeColours = FRAPPE_FLAVOUR.modes();
 
-const MACCHIATO: Colours = Flavour {
+const MACCHIATO_FLAVOUR: Flavour = Flavour {
+    accents: [
+        Rgb(0x8a, 0xad, 0xf4),
+        Rgb(0xc6, 0xa0, 0xf6),
+        Rgb(0xa6, 0xda, 0x95),
+        Rgb(0xf5, 0xa9, 0x7f),
+        Rgb(0xee, 0xd4, 0x9f),
+        Rgb(0x8b, 0xd5, 0xca),
+    ],
+    on_accent: Rgb(0x18, 0x19, 0x26),
     crust: Rgb(0x18, 0x19, 0x26),
     mantle: Rgb(0x1e, 0x20, 0x30),
     base: Rgb(0x24, 0x27, 0x3a),
@@ -226,10 +324,20 @@ const MACCHIATO: Colours = Flavour {
     subtext0: Rgb(0xa5, 0xad, 0xcb),
     text: Rgb(0xca, 0xd3, 0xf5),
     red: Rgb(0xed, 0x87, 0x96),
-}
-.colours();
+};
+const MACCHIATO: Colours = MACCHIATO_FLAVOUR.colours();
+const MACCHIATO_MODES: ModeColours = MACCHIATO_FLAVOUR.modes();
 
-const MOCHA: Colours = Flavour {
+const MOCHA_FLAVOUR: Flavour = Flavour {
+    accents: [
+        Rgb(0x89, 0xb4, 0xfa),
+        Rgb(0xcb, 0xa6, 0xf7),
+        Rgb(0xa6, 0xe3, 0xa1),
+        Rgb(0xfa, 0xb3, 0x87),
+        Rgb(0xf9, 0xe2, 0xaf),
+        Rgb(0x94, 0xe2, 0xd5),
+    ],
+    on_accent: Rgb(0x11, 0x11, 0x1b),
     crust: Rgb(0x11, 0x11, 0x1b),
     mantle: Rgb(0x18, 0x18, 0x25),
     base: Rgb(0x1e, 0x1e, 0x2e),
@@ -242,8 +350,9 @@ const MOCHA: Colours = Flavour {
     subtext0: Rgb(0xa6, 0xad, 0xc8),
     text: Rgb(0xcd, 0xd6, 0xf4),
     red: Rgb(0xf3, 0x8b, 0xa8),
-}
-.colours();
+};
+const MOCHA: Colours = MOCHA_FLAVOUR.colours();
+const MOCHA_MODES: ModeColours = MOCHA_FLAVOUR.modes();
 
 #[cfg(test)]
 mod tests {

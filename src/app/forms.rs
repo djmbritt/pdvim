@@ -511,7 +511,7 @@ impl App {
             key(PromptBinding::CompletePrevious),
             key(PromptBinding::Cancel),
         );
-        Some(format!("-- FIELD -- {}    {how}", edit.field.name))
+        Some(format!("{}    {how}", edit.field.name))
     }
 }
 

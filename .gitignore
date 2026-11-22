@@ -9,3 +9,4 @@
 /build-dir
 /.flatpak-builder
 /.rust-review-results
+/result

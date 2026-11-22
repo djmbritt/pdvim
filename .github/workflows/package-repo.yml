@@ -1,0 +1,88 @@
+# Publishes an apt and a dnf repository of pdvim on GitHub Pages, so that
+# Debian, Ubuntu, Fedora and openSUSE update it with the rest of the system.
+#
+# It runs when a release is published, that is when the draft release.yml
+# makes is published, and takes that release's .deb and .rpm packages.
+# Run it by hand from the Actions tab to publish the latest release again,
+# or a release named by its tag.
+#
+# It needs, once (see packaging/repo/README.md):
+#   - Settings > Pages > Source set to "GitHub Actions"
+#   - the secret REPO_SIGNING_KEY: the armoured private key that signs the
+#     repositories, without a passphrase
+#   - the variable REPO_KEY_ID: that key's fingerprint
+name: Package repositories
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release to publish, as v0.1.31; the latest if empty"
+        required: false
+
+permissions:
+  contents: read
+
+# One publication at a time, and the newest wins.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Make the repositories
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apt-utils createrepo-c rpm
+
+      - name: Import the signing key
+        env:
+          REPO_SIGNING_KEY: ${{ secrets.REPO_SIGNING_KEY }}
+        run: |
+          if [ -z "$REPO_SIGNING_KEY" ]; then
+            echo "::error::the secret REPO_SIGNING_KEY is not set"
+            exit 1
+          fi
+          printf '%s\n' "$REPO_SIGNING_KEY" | gpg --batch --import
+
+      - name: Download the packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          gh release download ${TAG:+"$TAG"} --repo "$GITHUB_REPOSITORY" \
+            --pattern '*.deb' --pattern '*.rpm' --dir packages
+          ls -l packages
+
+      - name: Make the repositories
+        env:
+          REPO_KEY_ID: ${{ vars.REPO_KEY_ID }}
+        run: |
+          owner=${GITHUB_REPOSITORY%%/*}
+          packaging/repo.sh packages site \
+            "https://${owner,,}.github.io/${GITHUB_REPOSITORY#*/}"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    name: Publish on GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,123 @@
+# Updates the Homebrew tap, djmbritt/homebrew-pdvim, so that
+#
+#     brew install djmbritt/pdvim/pdvim
+#
+# installs the newest release on macOS. It runs when a release is
+# published, and by hand from the Actions tab for a release named by its
+# tag, or the latest.
+#
+# packaging/homebrew/cask.sh makes the cask from the release's SHA256SUMS.
+# Before the tap is changed, the cask is installed on a Mac of each kind,
+# from the release's own packages, and must pass Homebrew's audit.
+#
+# It needs the secret HOMEBREW_TAP_TOKEN: a fine-grained token that may
+# write the contents of djmbritt/homebrew-pdvim (see
+# packaging/homebrew/README.md). Without it, the cask is checked but the
+# tap is left as it is.
+name: Homebrew
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release to publish, as v0.1.31; the latest if empty"
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  check:
+    name: Install on macOS (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_ANALYTICS: 1
+      HOMEBREW_NO_INSTALL_FROM_API: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download ${TAG:+"$TAG"} --repo "$GITHUB_REPOSITORY" \
+            --pattern SHA256SUMS --pattern '*-apple-darwin.tar.gz' --dir release
+          tag=${TAG:-$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)}
+          echo "VERSION=${tag#v}" >> "$GITHUB_ENV"
+
+      - name: Make the cask
+        run: |
+          packaging/homebrew/cask.sh "$VERSION" release/SHA256SUMS > pdvim.rb
+          # The same cask, taking the packages from here rather than from
+          # GitHub, as they cannot be fetched there while the repository
+          # is private.
+          packaging/homebrew/cask.sh "$VERSION" release/SHA256SUMS \
+            "file://$PWD/release" > pdvim-local.rb
+          cat pdvim.rb
+
+      - name: Audit it
+        run: |
+          brew tap-new --no-git local/pdvim
+          casks="$(brew --repo local/pdvim)/Casks"
+          mkdir -p "$casks"
+          cp pdvim.rb "$casks/pdvim.rb"
+          brew style --cask local/pdvim/pdvim
+          brew audit --cask --strict --no-signing local/pdvim/pdvim
+
+      - name: Install it and check it starts
+        run: |
+          cp pdvim-local.rb "$(brew --repo local/pdvim)/Casks/pdvim.rb"
+          brew install --cask local/pdvim/pdvim
+          pdvim --version | grep -F "$VERSION"
+          man -w pdvim
+          man -w 5 pdvim
+          brew uninstall --cask local/pdvim/pdvim
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'macos-15'
+        with:
+          name: cask
+          path: pdvim.rb
+
+  publish:
+    name: Update the tap
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: cask
+
+      - name: Push the cask to the tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
+            echo "::notice::HOMEBREW_TAP_TOKEN is not set, so the tap is left as it is"
+            exit 0
+          fi
+          version=$(sed -n 's/^  version "\(.*\)"/\1/p' pdvim.rb)
+          git clone --depth 1 \
+            "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/djmbritt/homebrew-pdvim.git" tap
+          mkdir -p tap/Casks
+          cp pdvim.rb tap/Casks/pdvim.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/pdvim.rb
+          if git diff --cached --quiet; then
+            echo "The tap already has pdvim $version"
+            exit 0
+          fi
+          git commit -m "pdvim $version"
+          git push

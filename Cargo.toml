@@ -16,7 +16,7 @@ arboard = { version = "3.7", default-features = false, features = ["image-data",
 font-kit = "0.14"
 iced = { version = "0.14.0", features = ["canvas", "image"] }
 mupdf = { version = "0.8.0", default-features = false, features = ["base14-fonts", "epub", "html", "cbz", "img", "xps", "svg"] }
-rusqlite = { version = "0.42", features = ["bundled"] }
+rusqlite = { version = "0.43", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2"
 toml = { version = "1.2.1", default-features = false, features = ["parse", "serde", "preserve_order"] }

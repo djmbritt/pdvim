@@ -357,6 +357,78 @@ The reading history keeps each document's page, zoom, marks and other state, and
 
 The Flatpak reads the same configuration, but keeps its history in `~/.var/app/io.github.djmbritt.pdvim`. It can open files in your home folder, `/media`, `/run/media` and `/mnt`.
 
+## Testing
+
+`cargo test` runs the tests: units of each part, and the app itself driven with real PDFs from `fuzz/seeds/`. `coverage.sh` runs them with coverage turned on and prints how much of each file in `src/` they reach; it needs `llvm-tools` (`rustup component add llvm-tools-preview`), and leaves a report to browse line by line in `target/coverage/html/index.html`. GitHub Actions measures it after every push to `main`, in the run's summary.
+
+```sh
+./coverage.sh
+```
+
+Measured on 2026-11-22:
+
+<details>
+<summary>Lines, functions and regions covered, by file</summary>
+
+| File | Lines | Functions | Regions |
+|------|------:|----------:|--------:|
+| `src/app.rs` | 25% | 28% | 23% |
+| `src/app/bars.rs` | 61% | 50% | 60% |
+| `src/app/chapters.rs` | 0% | 0% | 0% |
+| `src/app/copy.rs` | 38% | 55% | 32% |
+| `src/app/flash.rs` | 0% | 0% | 0% |
+| `src/app/forms.rs` | 39% | 49% | 40% |
+| `src/app/incsearch.rs` | 0% | 0% | 0% |
+| `src/app/info.rs` | 46% | 61% | 49% |
+| `src/app/links.rs` | 21% | 18% | 18% |
+| `src/app/markings.rs` | 9% | 9% | 7% |
+| `src/app/matches.rs` | 93% | 96% | 94% |
+| `src/app/mode.rs` | 31% | 67% | 33% |
+| `src/app/overview.rs` | 18% | 29% | 17% |
+| `src/app/pointer.rs` | 85% | 85% | 86% |
+| `src/app/reflow.rs` | 64% | 52% | 58% |
+| `src/app/run.rs` | 0% | 0% | 0% |
+| `src/app/tabs.rs` | 22% | 25% | 18% |
+| `src/app/unlock.rs` | 0% | 0% | 0% |
+| `src/backend.rs` | 85% | 74% | 83% |
+| `src/bindings.rs` | 97% | 100% | 97% |
+| `src/clipboard.rs` | 0% | 0% | 0% |
+| `src/command.rs` | 99% | 96% | 99% |
+| `src/complete.rs` | 95% | 97% | 93% |
+| `src/config.rs` | 92% | 89% | 89% |
+| `src/contents.rs` | 98% | 100% | 98% |
+| `src/dirs.rs` | 83% | 60% | 78% |
+| `src/flash.rs` | 95% | 91% | 97% |
+| `src/fonts.rs` | 66% | 78% | 74% |
+| `src/fuzz.rs` | 87% | 91% | 90% |
+| `src/help.rs` | 99% | 100% | 99% |
+| `src/hints.rs` | 96% | 100% | 97% |
+| `src/history.rs` | 96% | 98% | 91% |
+| `src/input.rs` | 63% | 93% | 77% |
+| `src/jumps.rs` | 100% | 100% | 100% |
+| `src/keymap.rs` | 98% | 96% | 99% |
+| `src/layout.rs` | 99% | 100% | 98% |
+| `src/main.rs` | 0% | 0% | 0% |
+| `src/manual.rs` | 90% | 96% | 90% |
+| `src/markings.rs` | 93% | 89% | 93% |
+| `src/num.rs` | 100% | 100% | 100% |
+| `src/outline.rs` | 96% | 98% | 94% |
+| `src/overview.rs` | 96% | 86% | 97% |
+| `src/paths.rs` | 97% | 100% | 97% |
+| `src/picker.rs` | 99% | 100% | 98% |
+| `src/prose.rs` | 97% | 100% | 95% |
+| `src/reader.rs` | 97% | 98% | 98% |
+| `src/recall.rs` | 100% | 100% | 100% |
+| `src/recolor.rs` | 100% | 100% | 100% |
+| `src/shell.rs` | 78% | 65% | 80% |
+| `src/theme.rs` | 46% | 67% | 45% |
+| `src/visual.rs` | 96% | 96% | 96% |
+| **Total** | **69%** | **71%** | **69%** |
+
+</details>
+
+The parts that draw the window and talk to the system, such as `src/app.rs`'s view, the clipboard and `main.rs`, are reached by using pdvim rather than by its tests, and the fuzz targets reach the document readers further: see [fuzz/README.md](fuzz/README.md).
+
 ## Fuzzing
 
 `fuzz/` holds [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) targets for every part of pdvim that reads input from outside: documents, the configuration file, commands and keys. GitHub Actions fuzzes each target after every push to `main`, and for longer once a week. See [fuzz/README.md](fuzz/README.md) for how to run them and the coverage they reach.

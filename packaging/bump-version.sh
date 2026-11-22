@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Raises pdvim's version in Cargo.toml, both lockfiles, the RPM spec and
-# the metainfo, and prints the new version.
+# Raises pdvim's version in Cargo.toml, both lockfiles, the RPM spec, the
+# Arch PKGBUILD and the metainfo, and prints the new version.
 #
 # usage: packaging/bump-version.sh [patch|minor|major]   (patch by default)
 #
@@ -34,7 +34,11 @@ for lock in Cargo.lock fuzz/Cargo.lock; do
 done
 # The RPM spec (packaging/rpm/make-srpm.sh sets it again from Cargo.toml).
 sed -i.bak "s/^Version:\( *\).*/Version:\1$next/" packaging/rpm/pdvim.spec
-rm -f Cargo.toml.bak Cargo.lock.bak fuzz/Cargo.lock.bak packaging/rpm/pdvim.spec.bak
+# The PKGBUILD, a new version's first build (its pkgver() sets it again
+# from Cargo.toml when built).
+sed -i.bak -e "s/^pkgver=.*/pkgver=$next/" -e "s/^pkgrel=.*/pkgrel=1/" packaging/PKGBUILD
+rm -f Cargo.toml.bak Cargo.lock.bak fuzz/Cargo.lock.bak packaging/rpm/pdvim.spec.bak \
+    packaging/PKGBUILD.bak
 
 # The metainfo lists each release, newest first, and links its
 # screenshots at the release's tag: Flathub wants both.

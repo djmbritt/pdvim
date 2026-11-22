@@ -136,6 +136,26 @@ and
 .B zc
 change only the tab in view, and each document remembers its own.
 .TP
+.B page\-mode
+How pages show:
+.B continuous ,
+every page in a column to scroll through, side by side as
+.B columns
+says;
+.B single ,
+one page at a time; or
+.B double ,
+two facing pages at a time, after the first page alone, as a printed book
+has them.
+A page or two at a time, scrolling past the bottom of the page turns to
+the next, and past its top to the one before.
+It applies to every tab.
+Default continuous.
+.TP
+.B page\-borders
+Draw a thin line round every page, in the theme's border color.
+Default false.
+.TP
 .B confirm\-quit
 Ask before quitting.
 Default
@@ -459,6 +479,14 @@ Default: \fBz b\fP.
 .B toggle\-columns
 Show two pages side by side, or one.
 Default: \fBz c\fP.
+.TP
+.B cycle\-page\-mode
+Show pages continuously, one at a time, or two at a time, in turn.
+Default: \fBz m\fP.
+.TP
+.B toggle\-borders
+Draw a line round every page, or stop.
+Default: \fBz f\fP.
 .TP
 .B toggle\-fullscreen
 Fill the screen, or stop.

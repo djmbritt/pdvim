@@ -156,6 +156,10 @@ pub enum Action {
     ToggleBars,
     /// Show pages two side by side, or one to a row again.
     ToggleColumns,
+    /// Show pages in a column, a page at a time, or two at a time, in turn.
+    CyclePageMode,
+    /// Draw a line round every page, or stop.
+    ToggleBorders,
     /// Fill the screen with the window, or stop.
     ToggleFullscreen,
     SearchNext,
@@ -260,6 +264,8 @@ bindable! {
         ToggleTrim = "toggle-trim", "Turn margin trimming on or off";
         ToggleBars = "toggle-bars", "Hide the tab bar and status bar, or show them";
         ToggleColumns = "toggle-columns", "Show two pages side by side, or one";
+        CyclePageMode = "cycle-page-mode", "Show pages continuously, one at a time, or two at a time";
+        ToggleBorders = "toggle-borders", "Draw a line round every page, or stop";
         ToggleFullscreen = "toggle-fullscreen", "Fill the screen, or stop";
         SearchForward = "search-forward", "Search forwards";
         SearchBackward = "search-backward", "Search backwards";
@@ -330,28 +336,21 @@ bindable! {
     }
 }
 
+/// Scrolling by so many steps right and down; left and up are negative.
+const fn scroll(right: i32, down: i32) -> Action {
+    Action::Scroll { right, down }
+}
+
 impl Binding {
     /// What the binding does, given the count typed before its keys.
     pub fn action(self, count: Option<u32>) -> Action {
         let times = i32::try_from(count.unwrap_or(1)).unwrap_or(i32::MAX);
         let back = times.saturating_neg();
         match self {
-            Self::ScrollDown => Action::Scroll {
-                right: 0,
-                down: times,
-            },
-            Self::ScrollUp => Action::Scroll {
-                right: 0,
-                down: back,
-            },
-            Self::ScrollRight => Action::Scroll {
-                right: times,
-                down: 0,
-            },
-            Self::ScrollLeft => Action::Scroll {
-                right: back,
-                down: 0,
-            },
+            Self::ScrollDown => scroll(0, times),
+            Self::ScrollUp => scroll(0, back),
+            Self::ScrollRight => scroll(times, 0),
+            Self::ScrollLeft => scroll(back, 0),
             Self::ScrollHalfDown => Action::HalfScreen(times),
             Self::ScrollHalfUp => Action::HalfScreen(back),
             Self::ScrollFullDown => Action::FullScreen(times),
@@ -373,6 +372,8 @@ impl Binding {
             Self::ToggleTrim => Action::ToggleTrim,
             Self::ToggleBars => Action::ToggleBars,
             Self::ToggleColumns => Action::ToggleColumns,
+            Self::CyclePageMode => Action::CyclePageMode,
+            Self::ToggleBorders => Action::ToggleBorders,
             Self::ToggleFullscreen => Action::ToggleFullscreen,
             Self::SearchNext => Action::SearchNext,
             Self::SearchPrevious => Action::SearchPrevious,

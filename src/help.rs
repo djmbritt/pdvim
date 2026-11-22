@@ -66,6 +66,8 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
                 B::ToggleTrim,
                 B::ToggleBars,
                 B::ToggleColumns,
+                B::CyclePageMode,
+                B::ToggleBorders,
                 B::ToggleFullscreen,
             ],
         ),

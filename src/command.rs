@@ -6,6 +6,7 @@ use crate::backend::Flow;
 use crate::bindings::{Bound, Mode};
 use crate::input::{Binding, Key};
 use crate::keymap::{self, Bindable};
+use crate::reader::PageMode;
 use crate::recolor::{InvalidColour, Rgb};
 use crate::theme::Theme;
 
@@ -170,6 +171,10 @@ pub enum Setting {
     FontSize(f32),
     /// How many pages sit side by side, from 1 to 4.
     Columns(usize),
+    /// Whether pages show in a column, one at a time, or two at a time.
+    PageMode(PageMode),
+    /// Whether a line is drawn round every page.
+    PageBorders(bool),
 }
 
 /// Whether pages are recoloured for a dark background.
@@ -203,6 +208,8 @@ pub enum Error {
     NotPositive(String),
     #[error("`{0}` is not a number of columns from 1 to 4")]
     NotColumns(String),
+    #[error("`{0}` is not continuous, single or double")]
+    NotPageMode(String),
     #[error("`{0}` is not a size of type from 4 to 72")]
     NotFontSize(String),
     #[error("`{0}` is not two or more different lower-case letters or digits")]
@@ -264,7 +271,7 @@ pub fn canonical(name: &str) -> Option<&'static str> {
 }
 
 /// The names of the settings `:set` knows.
-pub const SETTINGS: [&str; 22] = [
+pub const SETTINGS: [&str; 24] = [
     "autosave",
     "columns",
     "confirm-quit",
@@ -274,6 +281,8 @@ pub const SETTINGS: [&str; 22] = [
     "hintchars",
     "incsearch",
     "note-color",
+    "page-borders",
+    "page-mode",
     "recolor",
     "recolor-darkcolor",
     "recolor-lightcolor",
@@ -588,6 +597,10 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
         "strikeout-color" => Ok(Setting::StrikeOutColour(value.parse()?)),
         "squiggly-color" => Ok(Setting::SquigglyColour(value.parse()?)),
         "note-color" => Ok(Setting::NoteColour(value.parse()?)),
+        "page-mode" => PageMode::from_name(value)
+            .map(Setting::PageMode)
+            .ok_or_else(|| Error::NotPageMode(value.to_owned())),
+        "page-borders" => parse_switch(value).map(Setting::PageBorders),
         "columns" => match value.parse::<usize>() {
             Ok(columns @ 1..=4) => Ok(Setting::Columns(columns)),
             _ => Err(Error::NotColumns(value.to_owned())),
@@ -813,6 +826,22 @@ mod tests {
         // A command of the same name comes first.
         assert_eq!(parse("quit"), Ok(Some(Command::Quit)));
         assert_eq!(parse("recent"), Ok(Some(Command::Recent)));
+    }
+
+    #[test]
+    fn pages_show_in_a_mode_and_with_borders_or_without() {
+        assert_eq!(
+            parse("set page-mode double"),
+            Ok(Some(Command::Set(Setting::PageMode(PageMode::Double))))
+        );
+        assert_eq!(
+            parse("set page-mode book"),
+            Err(Error::NotPageMode("book".into()))
+        );
+        assert_eq!(
+            parse("set page-borders true"),
+            Ok(Some(Command::Set(Setting::PageBorders(true))))
+        );
     }
 
     #[test]

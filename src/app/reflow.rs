@@ -13,7 +13,7 @@ use crate::history::{self, Fit, View};
 use crate::input::Action;
 use crate::layout::GAP;
 use crate::num;
-use crate::reader::Reader;
+use crate::reader::{PageMode, Reader};
 
 /// How much one press of a zoom key changes the type of a book, in points.
 const FONT_STEP: f32 = 1.0;
@@ -46,7 +46,11 @@ impl App {
         let columns = crate::paths::settings_for(&self.path_rules, path)
             .columns
             .unwrap_or_else(|| left.map_or(self.fresh.columns, |view| view.columns));
-        self.flow(columns)
+        self.flow(match self.paging.mode {
+            PageMode::Continuous => columns,
+            PageMode::Single => 1,
+            PageMode::Double => 2,
+        })
     }
 
     /// Sets how many pages sit side by side in the tab in view, laying a
@@ -56,11 +60,43 @@ impl App {
             return Task::none();
         };
         document.reader.set_columns(columns);
-        self.notice = Notice::Info(if columns == 1 {
+        self.notice = Notice::Info(if document.reader.page_mode().paged() {
+            format!("{columns} to a row once pages are continuous")
+        } else if columns == 1 {
             "one page to a row".to_owned()
         } else {
             format!("{columns} pages side by side")
         });
+        self.reflow()
+    }
+
+    /// A view of a document's pages, of these sizes, fitted to the window
+    /// and shown as every tab shows its pages.
+    pub(super) fn new_reader(&self, sizes: Vec<crate::layout::PageSize>) -> Reader {
+        let mut reader = Reader::new(sizes, (self.area.width, self.area.height));
+        reader.set_page_mode(self.paging.mode);
+        reader
+    }
+
+    /// Shows the pages of every tab in a column, a page at a time, or two
+    /// at a time, and lays books out again for the width a page has.
+    pub(super) fn set_page_mode(&mut self, mode: PageMode) -> Task<Message> {
+        self.paging.mode = mode;
+        for tab in &mut self.tabs {
+            if let Some(document) = &mut tab.document {
+                document.reader.set_page_mode(mode);
+            }
+        }
+        if !self.sourcing {
+            self.notice = Notice::Info(
+                match mode {
+                    PageMode::Continuous => "pages continuous",
+                    PageMode::Single => "one page at a time",
+                    PageMode::Double => "two pages at a time",
+                }
+                .to_owned(),
+            );
+        }
         self.reflow()
     }
 
@@ -100,7 +136,7 @@ impl App {
             let Some(document) = &tab.document else {
                 continue;
             };
-            let flow = self.flow(document.reader.columns());
+            let flow = self.flow(document.reader.pages_per_row());
             // Each layout waits for the one before it: a window dragged to
             // a new size is laid out for once the last is done.
             if tab.opening.is_some() || document.flow.is_none_or(|laid| laid == flow) {

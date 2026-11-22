@@ -164,6 +164,10 @@ pub enum Setting {
     TabBar(bool),
     /// Whether matches are highlighted while a search is typed.
     Incsearch(bool),
+    /// Whether a search with a capital letter in it matches case.
+    Smartcase(bool),
+    /// Whether the tabs left open are opened again at the next start.
+    Session(bool),
     /// The letters labels on links and lines are made of, the first used
     /// most.
     HintChars(Vec<char>),
@@ -280,7 +284,7 @@ pub fn canonical(name: &str) -> Option<&'static str> {
 }
 
 /// The names of the settings `:set` knows.
-pub const SETTINGS: [&str; 25] = [
+pub const SETTINGS: [&str; 27] = [
     "autosave",
     "columns",
     "confirm-quit",
@@ -296,6 +300,8 @@ pub const SETTINGS: [&str; 25] = [
     "recolor-darkcolor",
     "recolor-lightcolor",
     "scroll-step",
+    "session",
+    "smartcase",
     "squiggly-color",
     "statusbar",
     "strikeout-color",
@@ -606,6 +612,8 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
         "confirm-tab-close" => parse_switch(value).map(Setting::ConfirmTabClose),
         "tabbar" => parse_switch(value).map(Setting::TabBar),
         "incsearch" => parse_switch(value).map(Setting::Incsearch),
+        "smartcase" => parse_switch(value).map(Setting::Smartcase),
+        "session" => parse_switch(value).map(Setting::Session),
         "hintchars" => hint_chars(value).map(Setting::HintChars),
         "statusbar" => parse_switch(value).map(Setting::StatusBar),
         "highlight-color" => Ok(Setting::HighlightColour(value.parse()?)),

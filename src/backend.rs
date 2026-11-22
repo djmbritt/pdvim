@@ -151,6 +151,16 @@ pub struct Bitmap {
     pub pixels: Vec<u8>,
 }
 
+/// Text to search for, and how.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Needle {
+    pub text: String,
+    /// Whether upper and lower case must be as typed.
+    pub match_case: bool,
+    /// Whether it must be a word of its own, not part of a longer one.
+    pub whole_word: bool,
+}
+
 /// A place where the searched text occurs.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Hit {
@@ -411,7 +421,11 @@ pub struct Opened {
 enum Request {
     Render(RenderJob, oneshot::Sender<Result<Bitmap, Error>>),
     /// Every page searched, or only these.
-    Search(String, Option<Vec<u32>>, oneshot::Sender<Result<Vec<Hit>, Error>>),
+    Search(
+        Needle,
+        Option<Vec<u32>>,
+        oneshot::Sender<Result<Vec<Hit>, Error>>,
+    ),
     Measure(oneshot::Sender<Result<Vec<Rect>, Error>>),
     Links(Vec<u32>, oneshot::Sender<Result<PageLinks, Error>>),
     Figures(Vec<u32>, oneshot::Sender<Result<PageFigures, Error>>),
@@ -613,18 +627,17 @@ impl Backend {
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
-    /// Finds every place the text occurs, ignoring case, in page order.
-    pub fn search(&self, needle: String) -> impl Future<Output = Result<Vec<Hit>, Error>> + use<> {
+    /// Finds every place the text occurs, in page order.
+    pub fn search(&self, needle: Needle) -> impl Future<Output = Result<Vec<Hit>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
         let _ = self.requests.send(Request::Search(needle, None, reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
-    /// Finds every place the text occurs on some pages, ignoring case, in
-    /// page order.
+    /// Finds every place the text occurs on some pages, in page order.
     pub fn search_pages(
         &self,
-        needle: String,
+        needle: Needle,
         pages: Vec<u32>,
     ) -> impl Future<Output = Result<Vec<Hit>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
@@ -1043,6 +1056,97 @@ fn page_hits(document: &Document, number: u32, needle: &str) -> Result<Vec<Hit>,
             area: quad_area(quad, &bounds),
         })
         .collect())
+}
+
+/// The places on a page, given its lines of text, where the text searched
+/// for occurs, as it says: in its case, or as a word of its own. Spaces in
+/// it match any run of space, and the end of a line counts as a space, so
+/// that text running on to the next line is found. A place over several
+/// lines is a hit on each.
+fn text_hits(lines: &[TextLine], page: u32, needle: &Needle) -> Vec<Hit> {
+    // The page's characters in reading order, each with its line and
+    // area; the end of each line a space with neither.
+    let mut chars: Vec<(char, Option<(usize, Rect)>)> = Vec::new();
+    for (row, line) in lines.iter().enumerate() {
+        chars.extend(
+            line.chars
+                .iter()
+                .map(|text_char| (text_char.character, Some((row, text_char.area)))),
+        );
+        chars.push((' ', None));
+    }
+    let wanted: Vec<char> = needle
+        .text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .collect();
+    let same = |a: char, b: char| {
+        if needle.match_case {
+            a == b
+        } else {
+            a.to_lowercase().eq(b.to_lowercase())
+        }
+    };
+    let is_word = |c: Option<&(char, Option<(usize, Rect)>)>| {
+        c.is_some_and(|(c, _)| c.is_alphanumeric() || *c == '_')
+    };
+    let mut hits = Vec::new();
+    let mut start = 0;
+    while start < chars.len() && hits.len() < num::index(HITS_PER_PAGE) {
+        let Some(end) = match_at(&chars, start, &wanted, same) else {
+            start = start.saturating_add(1);
+            continue;
+        };
+        let before = start.checked_sub(1).and_then(|before| chars.get(before));
+        if needle.whole_word && (is_word(before) || is_word(chars.get(end))) {
+            start = start.saturating_add(1);
+            continue;
+        }
+        // An area for each line the place is on.
+        let mut areas: Vec<(usize, Rect)> = Vec::new();
+        for (_, place) in chars.get(start..end).unwrap_or_default() {
+            let Some((row, area)) = place else {
+                continue;
+            };
+            match areas.last_mut() {
+                Some((last, joined)) if last == row => *joined = joined.union(*area),
+                _ => areas.push((*row, *area)),
+            }
+        }
+        hits.extend(areas.into_iter().map(|(_, area)| Hit { page, area }));
+        start = end.max(start.saturating_add(1));
+    }
+    hits
+}
+
+/// Where the text wanted ends if it starts at this character, past its
+/// last character; a space in it takes in a run of spaces.
+fn match_at(
+    chars: &[(char, Option<(usize, Rect)>)],
+    start: usize,
+    wanted: &[char],
+    same: impl Fn(char, char) -> bool,
+) -> Option<usize> {
+    let mut at = start;
+    for &want in wanted {
+        let (have, _) = *chars.get(at)?;
+        if want == ' ' {
+            if !have.is_whitespace() {
+                return None;
+            }
+            while chars.get(at).is_some_and(|(c, _)| c.is_whitespace()) {
+                at = at.saturating_add(1);
+            }
+            continue;
+        }
+        if !same(want, have) {
+            return None;
+        }
+        at = at.saturating_add(1);
+    }
+    Some(at)
 }
 
 /// The area of a page that holds its content, found by rendering it small
@@ -2388,16 +2492,27 @@ impl Worker {
     }
 
     /// Searches every page in order, or only some.
-    fn search(&mut self, needle: &str, pages: Option<Vec<u32>>) -> Result<Vec<Hit>, mupdf::Error> {
+    fn search(
+        &mut self,
+        needle: &Needle,
+        pages: Option<Vec<u32>>,
+    ) -> Result<Vec<Hit>, mupdf::Error> {
         let mut hits = Vec::new();
-        if needle.is_empty() {
+        if needle.text.trim().is_empty() {
             return Ok(hits);
         }
         let count = u32::try_from(self.document.page_count()?).unwrap_or(0);
         let pages = pages.unwrap_or_else(|| (0..count).collect());
         for number in pages.into_iter().filter(|page| *page < count) {
             self.render_waiting();
-            hits.extend(page_hits(&self.document, number, needle)?);
+            // MuPDF's own search ignores case and finds parts of words, so
+            // a search that cares about either is made on the page's text.
+            if needle.match_case || needle.whole_word {
+                let lines = page_text(&self.document, number)?;
+                hits.extend(text_hits(&lines, number, needle));
+            } else {
+                hits.extend(page_hits(&self.document, number, &needle.text)?);
+            }
         }
         Ok(hits)
     }
@@ -3819,5 +3934,71 @@ mod tests {
     fn faint_marks_count_as_paper() {
         assert_eq!(content_box(&[255, 250, 246, 255], 4, 4), None);
         assert_eq!(content_box(&[255, 250, 244, 255], 4, 4), Some((2, 0, 3, 1)));
+    }
+
+    /// Lines of text, each character 10 points wide and each line 20
+    /// points under the one before.
+    fn lines(rows: &[&str]) -> Vec<TextLine> {
+        rows.iter()
+            .enumerate()
+            .map(|(row, content)| TextLine {
+                chars: content
+                    .chars()
+                    .enumerate()
+                    .map(|(column, character)| {
+                        let left = f32::from(u16::try_from(column).unwrap()) * 10.0;
+                        let top = f32::from(u16::try_from(row).unwrap()) * 20.0;
+                        TextChar {
+                            character,
+                            area: Rect {
+                                left,
+                                top,
+                                right: left + 10.0,
+                                bottom: top + 12.0,
+                            },
+                        }
+                    })
+                    .collect(),
+            })
+            .collect()
+    }
+
+    fn found(rows: &[&str], text: &str, match_case: bool, whole_word: bool) -> Vec<(f32, f32)> {
+        let needle = Needle {
+            text: text.to_owned(),
+            match_case,
+            whole_word,
+        };
+        text_hits(&lines(rows), 3, &needle)
+            .into_iter()
+            .map(|hit| {
+                assert_eq!(hit.page, 3);
+                (hit.area.left, hit.area.top)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_search_in_case_finds_only_that_case() {
+        let rows = ["Fox and fox", "FOX"];
+        assert_eq!(found(&rows, "Fox", true, false), [(0.0, 0.0)]);
+        assert_eq!(found(&rows, "fox", false, false).len(), 3);
+    }
+
+    #[test]
+    fn a_search_for_a_word_skips_it_inside_others() {
+        let rows = ["foxes, fox. fox_y outfox", "fox"];
+        assert_eq!(
+            found(&rows, "fox", false, true),
+            [(70.0, 0.0), (0.0, 20.0)]
+        );
+    }
+
+    #[test]
+    fn a_search_runs_on_over_the_end_of_a_line() {
+        let rows = ["the quick", "brown  fox"];
+        let hits = found(&rows, "quick brown fox", true, false);
+        assert_eq!(hits, [(40.0, 0.0), (0.0, 20.0)]);
+        assert!(found(&rows, "quickbrown", true, false).is_empty());
     }
 }

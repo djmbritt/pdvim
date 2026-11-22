@@ -44,6 +44,7 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
                 B::PreviousPage,
                 B::FirstPage,
                 B::LastPage,
+                B::Percent,
                 B::PageTop,
                 B::PageBottom,
                 B::NextChapter,
@@ -78,6 +79,7 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
                 B::SearchBackward,
                 B::SearchNext,
                 B::SearchPrevious,
+                B::Matches,
                 B::CommandPrompt,
                 B::Repeat,
                 B::Recent,
@@ -99,7 +101,10 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
             "Marks and jumps",
             &[B::SetMark, B::GoToMark, B::JumpBack, B::JumpForward],
         ),
-        ("Selecting text", &[B::Visual, B::VisualLine, B::Flash]),
+        (
+            "Selecting text",
+            &[B::Visual, B::VisualLine, B::Flash, B::SelectAgain],
+        ),
         (
             "Highlights and other markings",
             &[

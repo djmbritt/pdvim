@@ -425,6 +425,24 @@ fn visual_key(selection: &mut Visual, keymaps: &Keymaps, key: Key, text: &Text) 
             assert_eq!(page, cursor.page, "a note away from the cursor");
             false
         }
+        // The text searched for is the selection's, its spaces made
+        // single, and a whole word only when it is one.
+        visual::Outcome::Search {
+            text: searched,
+            whole_word,
+            ..
+        } => {
+            assert_eq!(
+                searched,
+                selected.split_whitespace().collect::<Vec<_>>().join(" ")
+            );
+            assert!(!searched.is_empty(), "searched for nothing");
+            assert!(
+                !whole_word || searched.chars().all(|c| c.is_alphanumeric() || c == '_'),
+                "{searched:?} is not a word"
+            );
+            false
+        }
         visual::Outcome::Leave => false,
     }
 }

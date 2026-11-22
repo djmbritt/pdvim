@@ -74,6 +74,11 @@ Go to the next, previous page; also
 Go to the first, last page; with a count, to page
 .IR n .
 .TP
+.IB n %
+Go
+.I n
+percent of the way through the document.
+.TP
 .BR H ", " L
 Go to the top, bottom of the page.
 .TP
@@ -143,9 +148,16 @@ Fill the screen, or stop.
 .TP 18
 .BR / ", " ?
 Search forwards, backwards.
+Case is ignored unless what is typed has a capital letter in it; the
+.B smartcase
+setting of pdvim(5) turns that off.
 .TP
 .BR n ", " N
 Go to the next, previous match.
+.TP
+.B g/
+List every match, each with its page and line; type to narrow it, enter
+to go to one.
 .TP
 .B :
 Open the command prompt.
@@ -196,6 +208,9 @@ whole lines, from there.
 .B s
 Type some text in view, then the label beside a match, to start selecting
 there.
+.TP
+.B gv
+Select the last selection again.
 .PP
 In visual mode,
 .BR h ", " j ", " k ", " l ,
@@ -212,6 +227,16 @@ selects the paragraph the cursor is in, and the next ones when pressed
 again or after a count;
 .B ap
 does the same, and copies a blank line after.
+.B iw
+and
+.B aw
+select the word, and the space after it, and the next words when pressed
+again or after a count.
+.BR * " and " #
+search forward and backward for the selection, as a whole word if it is
+one, as vim's
+.B *
+does for the word under the cursor.
 .B y
 copies the selection;
 .BR H ,

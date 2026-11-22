@@ -159,6 +159,15 @@ impl History {
                 PRIMARY KEY (prompt, line)
             ) STRICT",
         )?;
+        // The tabs open when pdvim was last quit, in order, and which was
+        // in view.
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS session (
+                place   INTEGER PRIMARY KEY,
+                path    TEXT NOT NULL,
+                current INTEGER NOT NULL
+            ) STRICT",
+        )?;
         Ok(Self { connection })
     }
 
@@ -368,6 +377,44 @@ impl History {
         Ok(())
     }
 
+    /// Remembers the documents open in tabs, in order, and the place of the
+    /// one in view, in place of those remembered before.
+    pub fn save_session(&mut self, paths: &[PathBuf], current: usize) -> Result<(), Error> {
+        let transaction = self.connection.transaction()?;
+        transaction.execute("DELETE FROM session", [])?;
+        let current = i64::try_from(current).unwrap_or(0);
+        for (place, path) in paths.iter().filter_map(|path| key(path)).enumerate() {
+            let place = i64::try_from(place).unwrap_or(i64::MAX);
+            transaction.execute(
+                "INSERT INTO session (place, path, current) VALUES (?1, ?2, ?3)",
+                rusqlite::params![place, path, current],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    /// The documents open in tabs when pdvim was last quit, in order, and
+    /// the place of the one in view.
+    pub fn session(&self) -> Result<(Vec<PathBuf>, usize), Error> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT path, current FROM session ORDER BY place")?;
+        let rows: Vec<(String, i64)> = statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<_, _>>()?;
+        let current = rows
+            .first()
+            .and_then(|(_, current)| usize::try_from(*current).ok())
+            .unwrap_or(0);
+        Ok((
+            rows.into_iter()
+                .map(|(path, _)| PathBuf::from(path))
+                .collect(),
+            current,
+        ))
+    }
+
     /// Every document in the history, the one left most recently first.
     pub fn recent(&self) -> Result<Vec<PathBuf>, Error> {
         let mut statement = self
@@ -420,6 +467,17 @@ mod tests {
         assert_eq!(history.marks(two).unwrap(), []);
         history.delete_marks(two, &['a']).unwrap();
         assert_eq!(history.load(two).unwrap(), None);
+    }
+
+    #[test]
+    fn the_tabs_left_open_are_remembered_in_place_of_the_last() {
+        let mut history = memory();
+        assert_eq!(history.session().unwrap(), (Vec::new(), 0));
+        let paths = [PathBuf::from("/tmp/a.pdf"), PathBuf::from("/tmp/b.pdf")];
+        history.save_session(&paths, 1).unwrap();
+        assert_eq!(history.session().unwrap(), (paths.to_vec(), 1));
+        history.save_session(&paths[..1], 0).unwrap();
+        assert_eq!(history.session().unwrap(), (paths[..1].to_vec(), 0));
     }
 
     #[test]

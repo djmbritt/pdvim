@@ -95,6 +95,8 @@ pub fn complete(line: &str) -> Completion {
         Some("set") if words_before == 1 => match rest.split_whitespace().next() {
             Some(
                 "autosave" | "confirm-quit" | "confirm-tab-close" | "incsearch" | "page-borders"
+                | "session"
+                | "smartcase"
                 | "statusbar" | "tabbar" | "trim",
             ) => {
                 words(last_word, ["true", "false"])

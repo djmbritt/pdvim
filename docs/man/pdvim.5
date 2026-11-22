@@ -176,6 +176,14 @@ Ask before closing a tab while others are open.
 Default
 .BR true .
 .TP
+.B session
+When pdvim starts without a file, open the tabs left open when it was last
+quit, the one in view then in view again, as a vim session; off, it lists
+the documents read lately instead.
+The tabs open are remembered at every quit either way.
+Default
+.BR false .
+.TP
 .B autosave
 Save markings into the PDF as soon as they are made or taken back, rather
 than at
@@ -190,6 +198,20 @@ Default
 .TP
 .B incsearch
 Highlight the matches in view while a search is typed.
+Default
+.BR true .
+.TP
+.B smartcase
+Make a search match case when it has a capital letter in it, as vim's
+smartcase:
+.B /pdf
+finds PDF and pdf,
+.B /PDF
+only PDF.
+.B *
+and
+.B #
+in visual mode find any case, as in vim.
 Default
 .BR true .
 .TP
@@ -422,6 +444,11 @@ Default: \fBg g\fP, \fBhome\fP.
 Go to the last page, or page n.
 Default: \fBG\fP, \fBend\fP.
 .TP
+.B percent
+Go n percent of the way through the document, as vim's
+.BR 50% .
+Default: \fB%\fP.
+.TP
 .B page\-top
 Go to the top of the page.
 Default: \fBH\fP.
@@ -558,6 +585,11 @@ Default: \fBV\fP.
 Type text in view, then its label, to start selecting there.
 Default: \fBs\fP.
 .TP
+.B select\-again
+Select the last selection again, as vim's
+.BR gv .
+Default: \fBg v\fP.
+.TP
 .B first\-field
 Fill in the first field of a form in view; tab goes to the next.
 Default: \fBg i\fP.
@@ -617,6 +649,11 @@ Default: \fBg T\fP, \fBctrl+shift+tab\fP.
 .B tabs
 List the open tabs; type to narrow, enter to go to one.
 Default: \fBb\fP.
+.TP
+.B matches
+List every match of the last search, each with its page and line, as
+vim's quickfix list; type to narrow, enter to go to one.
+Default: \fBg /\fP.
 .TP
 .B reopen\-tab
 Open the tab closed last again, where it was.

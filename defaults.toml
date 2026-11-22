@@ -365,6 +365,8 @@ note-color = "#fdd835"
 "a p" = "around-paragraph"
 "i w" = "inner-word"
 "a w" = "around-word"
+"i s" = "inner-sentence"
+"a s" = "around-sentence"
 "*" = "search-selection"
 "#" = "search-selection-back"
 

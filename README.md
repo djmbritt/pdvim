@@ -48,6 +48,7 @@ Each [release](https://github.com/djmbritt/pdvim/releases) has packages for:
 | Fedora, openSUSE     | `pdvim-VERSION-1.x86_64.rpm`, or `pdvim-VERSION-1.aarch64.rpm` on Arm, for `sudo dnf install ./FILE` |
 | Arch Linux           | `makepkg -si` in [`packaging/`](packaging/), which builds what is checked out                        |
 | Nix                  | `nix run github:djmbritt/pdvim`, or `nix profile add github:djmbritt/pdvim`                          |
+| macOS                | `brew install djmbritt/pdvim/pdvim`, from the [Homebrew tap](packaging/homebrew/)                    |
 | macOS, Apple silicon | `pdvim-VERSION-aarch64-apple-darwin.dmg`, or the `.tar.gz` for the terminal                          |
 | macOS, Intel         | `pdvim-VERSION-x86_64-apple-darwin.dmg`, or the `.tar.gz`                                            |
 | Windows, x86-64      | `pdvim-VERSION-x86_64-pc-windows-msvc.zip`                                                           |

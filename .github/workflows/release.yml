@@ -1,6 +1,6 @@
-# Builds pdvim for Linux, macOS and Windows, and attaches the packages to a
-# draft GitHub release, with the AppImage and Flatpak bundle that
-# linux-bundles.yml builds.
+# Builds pdvim for Linux (x86-64 and Arm), macOS and Windows, and attaches
+# the packages to a draft GitHub release, with the AppImages and Flatpak
+# bundles that linux-bundles.yml builds.
 #
 # Push a tag to make a release: `git tag v0.1.0 && git push origin v0.1.0`.
 # The tag must match the version in Cargo.toml. Run it by hand from the
@@ -30,12 +30,13 @@ jobs:
           # The oldest Ubuntu still offered, so that the program runs on
           # distributions with an older glibc.
           - { target: x86_64-unknown-linux-gnu, os: ubuntu-22.04, deb: true, rpm: true }
+          # The same for 64-bit Arm, built natively on an Arm runner. In a
+          # private repository it has two cores, and its minutes count
+          # towards the plan's free minutes as the x86-64 runners' do.
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm, deb: true, rpm: true }
           - { target: aarch64-apple-darwin, os: macos-15 }
           - { target: x86_64-apple-darwin, os: macos-15-intel }
           - { target: x86_64-pc-windows-msvc, os: windows-2022 }
-          # Arm Linux runners are free only for public repositories. Once
-          # this one is public, add:
-          # - { target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm, deb: true, rpm: true }
     defaults:
       run:
         shell: bash
@@ -106,16 +107,23 @@ jobs:
     uses: ./.github/workflows/linux-bundles.yml
 
   # Installs the .rpm on Fedora as a user would, which also installs the
-  # libraries it requires, and checks that pdvim then starts.
+  # libraries it requires, and checks that pdvim then starts: for each
+  # architecture, on a runner of that architecture.
   check-rpm:
-    name: Install the .rpm on Fedora
+    name: Install the .rpm on Fedora (${{ matrix.target }})
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     container: fedora:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-24.04-arm }
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: pdvim-x86_64-unknown-linux-gnu
+          name: pdvim-${{ matrix.target }}
           path: dist
       # The Fedora image leaves out documentation, which a desktop install
       # does not; tsflags= puts it back, so the man pages are installed.
@@ -132,14 +140,20 @@ jobs:
 
   # The same for the .deb, on Ubuntu.
   check-deb:
-    name: Install the .deb on Ubuntu
+    name: Install the .deb on Ubuntu (${{ matrix.target }})
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     container: ubuntu:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-24.04-arm }
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: pdvim-x86_64-unknown-linux-gnu
+          name: pdvim-${{ matrix.target }}
           path: dist
       # The Ubuntu image leaves out documentation, which a desktop install
       # does not; taking its exclusions away puts it back.

@@ -1,12 +1,15 @@
-# Builds pdvim as an AppImage and as a Flatpak bundle, for Linux on x86-64.
+# Builds pdvim as an AppImage and as a Flatpak bundle, for Linux on x86-64
+# and on 64-bit Arm, each on a runner of that architecture.
 #
 # The release workflow runs this for each tag, and attaches both to the
 # draft release with the other packages. Run it by hand from the Actions
 # tab to build and try them without releasing; they are kept as the run's
 # artifacts.
 #
-#   AppImage  chmod +x pdvim-VERSION-x86_64.AppImage && ./pdvim-VERSION-x86_64.AppImage
-#   Flatpak   flatpak install --user pdvim-VERSION-x86_64.flatpak
+#   AppImage  chmod +x pdvim-VERSION-ARCH.AppImage && ./pdvim-VERSION-ARCH.AppImage
+#   Flatpak   flatpak install --user pdvim-VERSION-ARCH.flatpak
+#
+# where ARCH is x86_64 or aarch64.
 #
 # The Flatpak bundle needs the freedesktop runtime from Flathub, which
 # `flatpak install` fetches when the Flathub remote is set up.
@@ -24,10 +27,16 @@ env:
 
 jobs:
   appimage:
-    name: AppImage
+    name: AppImage (${{ matrix.arch }})
     # The oldest Ubuntu still offered, so that the AppImage runs on
     # distributions with an older glibc.
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, os: ubuntu-22.04 }
+          - { arch: aarch64, os: ubuntu-22.04-arm }
     steps:
       - uses: actions/checkout@v4
 
@@ -41,29 +50,36 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          key: appimage
+          key: appimage-${{ matrix.arch }}
 
       - name: Build
-        run: cargo build --release --locked --target x86_64-unknown-linux-gnu
+        run: cargo build --release --locked --target ${{ matrix.arch }}-unknown-linux-gnu
       - name: Package
-        run: packaging/appimage.sh x86_64-unknown-linux-gnu
+        run: packaging/appimage.sh ${{ matrix.arch }}-unknown-linux-gnu
       - name: Check it starts
         run: dist/pdvim-*.AppImage --appimage-extract-and-run --version
 
       - uses: actions/upload-artifact@v4
         with:
-          name: pdvim-appimage
+          name: pdvim-appimage-${{ matrix.arch }}
           path: dist/*
           if-no-files-found: error
 
   flatpak:
-    name: Flatpak
-    runs-on: ubuntu-latest
+    name: Flatpak (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, os: ubuntu-latest }
+          - { arch: aarch64, os: ubuntu-24.04-arm }
     # The freedesktop SDK, flatpak and flatpak-builder, as Flathub builds.
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
       # The runner's own Android SDK and .NET, mounted to be cleared: the
-      # SDK, LLVM and the build of MuPDF otherwise fill its disk.
+      # SDK, LLVM and the build of MuPDF otherwise fill its disk. The Arm
+      # runner may have neither, and then the mounts are left empty.
       options: >-
         --privileged
         -v /usr/local/lib/android:/runner/android
@@ -93,12 +109,14 @@ jobs:
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           manifest-path: packaging/flatpak/io.github.djmbritt.pdvim.yml
-          bundle: pdvim-${{ steps.version.outputs.version }}-x86_64.flatpak
+          bundle: pdvim-${{ steps.version.outputs.version }}-${{ matrix.arch }}.flatpak
+          # The action builds for x86-64 unless told otherwise.
+          arch: ${{ matrix.arch }}
           upload-artifact: false
-          cache-key: flatpak-builder-${{ hashFiles('Cargo.lock') }}
+          cache-key: flatpak-builder-${{ matrix.arch }}-${{ hashFiles('Cargo.lock') }}
 
       - uses: actions/upload-artifact@v4
         with:
-          name: pdvim-flatpak
+          name: pdvim-flatpak-${{ matrix.arch }}
           path: pdvim-*.flatpak
           if-no-files-found: error

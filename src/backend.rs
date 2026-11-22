@@ -3278,12 +3278,16 @@ mod tests {
             .map(|chapter| chapter.title.as_str())
             .collect();
         assert_eq!(titles, ["Chapter 1", "Chapter 2"]);
-        let first: String = page_text(&document, 0).unwrap()[0]
-            .chars
+        // The heading may wrap, as the type of the fonts on the system is
+        // wider or narrower, so the page's words are read across lines.
+        let words: Vec<String> = page_text(&document, 0)
+            .unwrap()
             .iter()
-            .map(|glyph| glyph.character)
+            .map(|line| line.chars.iter().map(|glyph| glyph.character).collect())
             .collect();
-        assert_eq!(first.trim(), "Chapter 1");
+        let words = words.join(" ");
+        let words: Vec<&str> = words.split_whitespace().take(2).collect();
+        assert_eq!(words, ["Chapter", "1"]);
     }
 
     #[test]

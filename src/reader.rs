@@ -19,6 +19,11 @@ pub const MOST_COLUMNS: usize = 4;
 /// How much one zoom step enlarges the page.
 const ZOOM_STEP: f32 = 1.1;
 
+/// The most a trimmed page is enlarged to be as wide as the widest: more
+/// would blow up a page with little on it, such as a title, out of all
+/// proportion to the pages around it.
+const MOST_STRETCH: f32 = 2.0;
+
 /// How near the edge of a page, in points, the window must be for scrolling
 /// on to turn to the next page or spread.
 const EDGE: f32 = 0.5;
@@ -102,6 +107,9 @@ pub struct Reader {
     sizes: Vec<PageSize>,
     /// The part of each unturned page that shows, when margins are trimmed.
     crops: Option<Vec<Rect>>,
+    /// How much larger than its size each page shows: trimmed, a narrower
+    /// page is enlarged to be as wide as the widest. Empty when none is.
+    stretches: Vec<f32>,
     layout: Layout,
     rotation: Rotation,
     zoom: f32,
@@ -127,6 +135,7 @@ impl Reader {
         let mut reader = Self {
             sizes,
             crops: None,
+            stretches: Vec::new(),
             layout,
             rotation: Rotation::None,
             zoom: 1.0,
@@ -249,6 +258,13 @@ impl Reader {
     /// Screen pixels per point.
     pub const fn zoom(&self) -> f32 {
         self.zoom
+    }
+
+    /// How much larger than its size a page shows, besides the zoom: when
+    /// margins are trimmed, a narrower page is enlarged to be as wide as
+    /// the widest, up to twice its size.
+    pub fn stretch(&self, page: u32) -> f32 {
+        self.stretches.get(num::index(page)).copied().unwrap_or(1.0)
     }
 
     pub const fn rotation(&self) -> Rotation {
@@ -507,11 +523,12 @@ impl Reader {
             };
         }
         let turned = self.rotation.turn_rect(area, size);
+        let stretch = self.stretch(page);
         Some(self.to_screen(Rect {
-            left: page_area.left + turned.left,
-            top: page_area.top + turned.top,
-            right: page_area.left + turned.right,
-            bottom: page_area.top + turned.bottom,
+            left: turned.left.mul_add(stretch, page_area.left),
+            top: turned.top.mul_add(stretch, page_area.top),
+            right: turned.right.mul_add(stretch, page_area.left),
+            bottom: turned.bottom.mul_add(stretch, page_area.top),
         }))
     }
 
@@ -540,7 +557,7 @@ impl Reader {
 
     /// Places the pages afresh, after their sizes or the rotation changed.
     fn lay_out(&mut self) {
-        let shown: Vec<PageSize> = self.crops.as_ref().map_or_else(
+        let mut shown: Vec<PageSize> = self.crops.as_ref().map_or_else(
             || self.sizes.clone(),
             |crops| {
                 crops
@@ -552,6 +569,15 @@ impl Reader {
                     .collect()
             },
         );
+        self.stretches = if self.crops.is_some() {
+            stretches(&shown, self.rotation)
+        } else {
+            Vec::new()
+        };
+        for (size, stretch) in shown.iter_mut().zip(&self.stretches) {
+            size.width *= stretch;
+            size.height *= stretch;
+        }
         let arrangement = match self.mode {
             PageMode::Continuous => Arrangement::Columns(self.columns),
             PageMode::Single => Arrangement::Columns(1),
@@ -627,6 +653,24 @@ impl Reader {
             self.y = 0.0;
         }
     }
+}
+
+/// How much to enlarge each page, of these unturned sizes, for it to be as
+/// wide as the widest once turned, up to [`MOST_STRETCH`].
+fn stretches(sizes: &[PageSize], rotation: Rotation) -> Vec<f32> {
+    let width = |size: &PageSize| rotation.turn_size(*size).width;
+    let widest = sizes.iter().map(width).fold(0.0_f32, f32::max);
+    sizes
+        .iter()
+        .map(|size| {
+            let stretch = widest / width(size);
+            if stretch.is_finite() {
+                stretch.clamp(1.0, MOST_STRETCH)
+            } else {
+                1.0
+            }
+        })
+        .collect()
 }
 
 /// Keeps a zoom within the allowed range. Nonsense becomes real size.
@@ -770,6 +814,54 @@ mod tests {
         assert_eq!(reader.page_mode().next(), PageMode::Single);
         assert_eq!(PageMode::from_name("double"), Some(PageMode::Double));
         assert_eq!(PageMode::from_name("book"), None);
+    }
+
+    #[test]
+    fn trimmed_pages_are_enlarged_to_the_width_of_the_widest() {
+        let mut reader = reader();
+        let crop = |left: f32, right: f32| Rect {
+            left,
+            top: 100.0,
+            right,
+            bottom: 700.0,
+        };
+        // Page 0 keeps 500 points of its width, page 1 only 400, and page
+        // 2, a title, 100: enlarged, page 1 matches page 0, and page 2 is
+        // held at twice its size.
+        let mut crops = vec![crop(50.0, 550.0); 10];
+        crops[1] = crop(100.0, 500.0);
+        crops[2] = crop(250.0, 350.0);
+        reader.set_crops(Some(crops));
+        assert!(close(reader.stretch(0), 1.0));
+        assert!(close(reader.stretch(1), 1.25));
+        assert!(close(reader.stretch(2), 2.0));
+        reader.go_to_page(1);
+        let wide = reader.page_on_screen(0).unwrap();
+        let narrow = reader.page_on_screen(1).unwrap();
+        let title = reader.page_on_screen(2).unwrap();
+        assert!(close(wide.right - wide.left, 1200.0), "{wide:?}");
+        assert!(close(narrow.right - narrow.left, 1200.0), "{narrow:?}");
+        assert!(close(title.right - title.left, 480.0), "{title:?}");
+        // An area of page 1 is drawn where the enlarged page has it: its
+        // right edge, 500 points across, at the right of the page.
+        let edge = Rect {
+            left: 450.0,
+            top: 200.0,
+            right: 500.0,
+            bottom: 300.0,
+        };
+        let on_screen = reader.area_on_screen(1, edge).unwrap();
+        assert!(close(on_screen.right, narrow.right), "{on_screen:?}");
+        assert!(
+            close(
+                on_screen.bottom - on_screen.top,
+                100.0 * 1.25 * reader.zoom()
+            ),
+            "{on_screen:?}"
+        );
+        // Untrimmed, nothing is enlarged.
+        reader.set_crops(None);
+        assert!(close(reader.stretch(1), 1.0));
     }
 
     #[test]

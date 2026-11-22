@@ -4,10 +4,10 @@
 # `makepkg -si` packages whatever is checked out right now.
 
 pkgname=pdvim
-pkgver=0.1.0
+pkgver=0.1.19
 pkgrel=1
 pkgdesc='A minimal, keyboard-driven PDF reader with vi keybindings'
-arch=('x86_64')
+arch=('x86_64' 'aarch64')
 url='https://github.com/djmbritt/pdvim'
 license=('AGPL-3.0-or-later')
 depends=(

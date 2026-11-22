@@ -45,6 +45,7 @@ Each [release](https://github.com/djmbritt/pdvim/releases) has packages for:
 | Linux, x86-64        | `pdvim-VERSION-x86_64.AppImage`, or `pdvim-VERSION-x86_64.flatpak` for `flatpak install --user` |
 | Fedora, openSUSE     | `pdvim-VERSION-1.x86_64.rpm`, for `sudo dnf install ./pdvim-VERSION-1.x86_64.rpm`               |
 | Arch Linux           | `yay -S pdvim` or `paru -S pdvim` from the AUR, or `makepkg -si` in [`packaging/`](packaging/)  |
+| Nix                  | `nix run github:djmbritt/pdvim`, or `nix profile add github:djmbritt/pdvim`                     |
 | macOS, Apple silicon | `pdvim-VERSION-aarch64-apple-darwin.dmg`, or the `.tar.gz` for the terminal                     |
 | macOS, Intel         | `pdvim-VERSION-x86_64-apple-darwin.dmg`, or the `.tar.gz`                                       |
 | Windows, x86-64      | `pdvim-VERSION-x86_64-pc-windows-msvc.zip`                                                      |
@@ -69,7 +70,7 @@ sudo dnf install pdvim
 
 ### Building from source
 
-pdvim needs Rust 1.90 or newer. The `mupdf` crate builds MuPDF from source, so you also need a C toolchain and `libclang`.
+pdvim needs Rust 1.90 or newer. The `mupdf` crate builds MuPDF from source, so you also need a C toolchain and `libclang`. With Nix, `nix develop` opens a shell that has them, and `nix build` builds the package.
 
 ```sh
 cargo build --release

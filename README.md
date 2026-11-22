@@ -39,15 +39,17 @@ A highlight, an underline, a squiggly underline, and a selection in progress:
 
 Each [release](https://github.com/djmbritt/pdvim/releases) has packages for:
 
-| Platform             | Download                                                                                        |
-| -------------------- | ----------------------------------------------------------------------------------------------- |
-| Linux, x86-64        | `pdvim_VERSION-1_amd64.deb`, or `pdvim-VERSION-x86_64-unknown-linux-gnu.tar.gz`                 |
-| Linux, x86-64        | `pdvim-VERSION-x86_64.AppImage`, or `pdvim-VERSION-x86_64.flatpak` for `flatpak install --user` |
-| Fedora, openSUSE     | `pdvim-VERSION-1.x86_64.rpm`, for `sudo dnf install ./pdvim-VERSION-1.x86_64.rpm`               |
-| Arch Linux           | `yay -S pdvim` or `paru -S pdvim` from the AUR, or `makepkg -si` in [`packaging/`](packaging/)  |
-| macOS, Apple silicon | `pdvim-VERSION-aarch64-apple-darwin.dmg`, or the `.tar.gz` for the terminal                     |
-| macOS, Intel         | `pdvim-VERSION-x86_64-apple-darwin.dmg`, or the `.tar.gz`                                       |
-| Windows, x86-64      | `pdvim-VERSION-x86_64-pc-windows-msvc.zip`                                                      |
+| Platform             | Download                                                                                             |
+| -------------------- | ---------------------------------------------------------------------------------------------------- |
+| Linux, x86-64        | `pdvim_VERSION-1_amd64.deb`, or `pdvim-VERSION-x86_64-unknown-linux-gnu.tar.gz`                      |
+| Linux, x86-64        | `pdvim-VERSION-x86_64.AppImage`, or `pdvim-VERSION-x86_64.flatpak` for `flatpak install --user`      |
+| Linux, Arm 64-bit    | `pdvim_VERSION-1_arm64.deb`, or `pdvim-VERSION-aarch64-unknown-linux-gnu.tar.gz`                     |
+| Linux, Arm 64-bit    | `pdvim-VERSION-aarch64.AppImage`, or `pdvim-VERSION-aarch64.flatpak` for `flatpak install --user`    |
+| Fedora, openSUSE     | `pdvim-VERSION-1.x86_64.rpm`, or `pdvim-VERSION-1.aarch64.rpm` on Arm, for `sudo dnf install ./FILE` |
+| Arch Linux           | `yay -S pdvim` or `paru -S pdvim` from the AUR, or `makepkg -si` in [`packaging/`](packaging/)       |
+| macOS, Apple silicon | `pdvim-VERSION-aarch64-apple-darwin.dmg`, or the `.tar.gz` for the terminal                          |
+| macOS, Intel         | `pdvim-VERSION-x86_64-apple-darwin.dmg`, or the `.tar.gz`                                            |
+| Windows, x86-64      | `pdvim-VERSION-x86_64-pc-windows-msvc.zip`                                                           |
 
 The packages install the manual pages too: `man pdvim` covers the keys and commands, and `man 5 pdvim` covers the configuration file.
 

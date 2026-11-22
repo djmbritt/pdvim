@@ -1,6 +1,6 @@
 .\" The manual page for pdvim, the program. pdvim(5) is its configuration.
 .\" View it with: man docs/man/pdvim.1
-.TH PDVIM 1 2026-11-21 "pdvim" "User Commands"
+.TH PDVIM 1 2026-11-22 "pdvim" "User Commands"
 .SH NAME
 pdvim \- a keyboard-driven PDF reader with vi key bindings
 .SH SYNOPSIS
@@ -14,15 +14,18 @@ pdvim \- a keyboard-driven PDF reader with vi key bindings
 reads PDF documents, EPUB and FB2 books, CBZ and CBT comics, XPS
 documents, SVG drawings, and PNG, JPEG, GIF, TIFF, BMP and other images,
 from the keyboard, with keys like those of
-.BR vi (1).
+.BR vi (1),
+and from the mouse.
 It renders pages with MuPDF and lays them out in one continuous column,
-or in up to four side by side.
+in up to four side by side, or a page or two facing pages at a time.
 .PP
 Each
 .I file
 opens in a tab of its own.
 Started without one, pdvim lists the documents read most recently, to pick
-one from.
+one from, or, with the
+.B session
+setting of pdvim(5), opens the tabs left open when it was last quit.
 pdvim remembers the page, zoom, fit, rotation and columns of every
 document it has opened, and starts each where it was left.
 .PP
@@ -498,9 +501,14 @@ The configuration, described in pdvim(5); by default
 pdvim works without it.
 .TP
 .I $XDG_DATA_HOME/pdvim/history.sqlite
-Where each document was left, its marks, and the commands and searches
-typed; by default
+Where each document was left, its marks, the commands and searches typed,
+and the tabs open at the last quit; by default
 .IR ~/.local/share/pdvim/history.sqlite .
+.TP
+.I $XDG_DATA_HOME/pdvim/manual/
+The manual pages as HTML, written there by
+.B :man
+to be opened as books.
 .SH ENVIRONMENT
 .TP
 .B XDG_CONFIG_HOME

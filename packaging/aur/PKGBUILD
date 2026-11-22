@@ -1,12 +1,13 @@
 # Maintainer: David Britt
 #
-# The PKGBUILD published to the AUR as `pdvim`. It builds a tagged release
-# from GitHub. .github/workflows/aur.yml sets pkgver and the checksum and
-# pushes it to the AUR whenever a release is published; to try it by hand,
-# run `updpkgsums && makepkg -si` here.
+# The PKGBUILD to publish to the AUR as `pdvim`. It builds a tagged release
+# from GitHub. Nothing updates it on its own: for each release, set pkgver
+# to the release's version and pkgrel to 1, then run `updpkgsums` to put in
+# the checksum of its source, which can only be fetched once the repository
+# is public, and `makepkg -si` here to try it before publishing.
 
 pkgname=pdvim
-pkgver=0.1.1
+pkgver=0.1.31
 pkgrel=1
 pkgdesc='A minimal, keyboard-driven PDF reader with vi keybindings'
 arch=('x86_64' 'aarch64')

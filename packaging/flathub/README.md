@@ -113,8 +113,7 @@ Explain these in the pull request; reviewers look at them on their own.
   `xdg-documents` and `xdg-download` alone would cover where many people
   keep PDFs, but not papers kept in `~/src`, `~/notes` or the like, and
   pdvim would fail with "permission denied" on them with no way to ask.
-  `home` is what document viewers and editors that open paths are
-  usually given. `/mnt` is dropped: it is rarely used for documents and
+  `/mnt` is dropped: it is rarely used for documents and
   is easy for a reviewer to question.
 
   To narrow this later, pdvim would need a file chooser through the

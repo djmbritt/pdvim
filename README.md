@@ -51,6 +51,22 @@ Each [release](https://github.com/djmbritt/pdvim/releases) has packages for:
 
 The packages install the manual pages too: `man pdvim` covers the keys and commands, and `man 5 pdvim` covers the configuration file.
 
+On Debian, Ubuntu, Fedora and openSUSE, the [package repository](https://djmbritt.github.io/pdvim/) keeps pdvim up to date with the rest of the system. On Debian and Ubuntu:
+
+```sh
+sudo install -d /etc/apt/keyrings
+sudo curl -fsSLo /etc/apt/keyrings/pdvim.gpg https://djmbritt.github.io/pdvim/pdvim.gpg
+sudo curl -fsSLo /etc/apt/sources.list.d/pdvim.sources https://djmbritt.github.io/pdvim/pdvim.sources
+sudo apt update && sudo apt install pdvim
+```
+
+On Fedora:
+
+```sh
+sudo curl -fsSLo /etc/yum.repos.d/pdvim.repo https://djmbritt.github.io/pdvim/pdvim.repo
+sudo dnf install pdvim
+```
+
 ### Building from source
 
 pdvim needs Rust 1.90 or newer. The `mupdf` crate builds MuPDF from source, so you also need a C toolchain and `libclang`.

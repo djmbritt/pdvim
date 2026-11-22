@@ -22,6 +22,7 @@ mod clipboard;
 mod command;
 mod complete;
 mod config;
+mod contents;
 mod dirs;
 mod flash;
 mod fonts;

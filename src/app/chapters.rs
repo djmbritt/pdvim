@@ -13,9 +13,12 @@ impl App {
         let Some(document) = current_document(&mut self.tabs, self.current) else {
             return Task::none();
         };
-        let Some(chapters) = &document.chapters else {
+        let super::Contents::Read(chapters) = &document.chapters else {
             // Read it first; this is done once it is read.
             self.chapter_wanted = Some((forward, times));
+            if document.chapters == super::Contents::Guessing {
+                return Task::none();
+            }
             let id = document.id;
             let reading = document.backend.outline();
             return Task::perform(reading, move |result| Message::OutlineFound(id, result));

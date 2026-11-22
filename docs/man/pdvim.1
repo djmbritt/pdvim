@@ -82,6 +82,11 @@ Go to the next, previous chapter or section.
 .TP
 .B Tab
 Show the table of contents, to go to a chapter.
+A document without one has one guessed from its text: from a printed
+contents page, its page numbers found among the pages, or else from the
+headings, told by their larger or bold type.
+A guess can miss a heading or take in a line that is not one, and a
+scanned document, with no text, has none.
 .TP
 .B go
 Show every page small, side by side;
@@ -292,6 +297,39 @@ Copy the text of the marking picked.
 .B yi
 Label the pictures and figures in view: photographs, and drawings such as
 charts and tables. Type a label to copy one to the clipboard as a picture.
+.SH MOUSE
+pdvim is read from the keyboard, but the mouse works too.
+.TP
+.B Wheel
+Scroll; with
+.BR Ctrl ,
+zoom.
+The
+.B wheel\-speed
+setting of pdvim(5) makes it faster or slower.
+.TP
+.B Click
+Follow a link, or fill in a form field, as
+.B f
+does.
+A click elsewhere ends the selection.
+.TP
+.B Drag
+Over text, select it, as in visual mode:
+.B y
+copies it, and the keys of visual mode go on from there.
+Begun off the pages, move them.
+.TP
+.B Double click
+Select a word.
+.TP
+.B Middle drag
+Move the pages.
+.TP
+.B Click in a list
+Go to the tab, document, chapter, marking or page clicked, in the tab bar,
+the lists, the table of contents, the markings, and the overview.
+A click on the pages closes a list or panel shown over them.
 .SH COMMANDS
 Commands are typed after
 .BR : .

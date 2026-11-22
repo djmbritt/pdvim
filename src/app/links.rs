@@ -240,6 +240,12 @@ impl App {
                 }
             }
         };
+        self.follow_link(link)
+    }
+
+    /// Does with a link what the labels were shown for: following it, as a
+    /// click on it does too, opening it in a new tab, or copying it.
+    pub(super) fn follow_link(&mut self, link: Link) -> Task<Message> {
         match (self.link_goal, link.target) {
             (LinkGoal::Copy, target) => self.copy_link(&target),
             (LinkGoal::NewTab, Target::Page { page, top }) => self.open_beside(page, top),

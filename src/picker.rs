@@ -82,6 +82,18 @@ impl<T: Clone> Picker<T> {
         &self.typed
     }
 
+    /// What picking the entry shown in this place gives, as a click on it
+    /// does.
+    pub fn choose(&mut self, index: usize) -> Option<T> {
+        let entry = self
+            .shown
+            .get(index)
+            .and_then(|&entry| self.entries.get(entry))?;
+        let value = entry.value.clone();
+        self.selected = index;
+        Some(value)
+    }
+
     /// Selects one of the entries shown, by its place among them.
     pub const fn select(&mut self, index: usize) {
         if index < self.shown.len() {

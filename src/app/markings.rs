@@ -1046,19 +1046,21 @@ pub(super) fn list<'a>(
             ),
         ]
         .spacing(6);
-        container(line)
-            .height(HELP_ROW)
-            .width(Fill)
-            .padding([0, 6])
-            .align_y(iced::alignment::Vertical::Center)
-            .style(move |_| {
-                if selected {
-                    container::background(chrome.tab_current)
-                } else {
-                    container::Style::default()
-                }
-            })
-            .into()
+        super::clickable(
+            container(line)
+                .height(HELP_ROW)
+                .width(Fill)
+                .padding([0, 6])
+                .align_y(iced::alignment::Vertical::Center)
+                .style(move |_| {
+                    if selected {
+                        container::background(chrome.tab_current)
+                    } else {
+                        container::Style::default()
+                    }
+                }),
+            super::pointer::Click::Marking(top.saturating_add(offset)),
+        )
     });
     let heading = container(label("Markings".to_owned(), chrome.bar_text).font(Font {
         weight: iced::font::Weight::Bold,

@@ -436,6 +436,7 @@ enum Request {
     Save(Option<PathBuf>, oneshot::Sender<Result<(), Error>>),
     Export(Export, oneshot::Sender<Result<(), Error>>),
     Outline(oneshot::Sender<Result<Vec<Chapter>, Error>>),
+    GuessOutline(oneshot::Sender<Result<Vec<Chapter>, Error>>),
 }
 
 /// An entry in a document's table of contents, with the entries under it.
@@ -752,6 +753,16 @@ impl Backend {
     pub fn outline(&self) -> impl Future<Output = Result<Vec<Chapter>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
         let _ = self.requests.send(Request::Outline(reply));
+        async move { answer.await.unwrap_or(Err(Error::Closed)) }
+    }
+
+    /// Guesses a table of contents from the text of the document, for one
+    /// that has none: empty when none can be told. It is read from a copy
+    /// of the document opened again, so that the pages go on being drawn
+    /// meanwhile.
+    pub fn guess_outline(&self) -> impl Future<Output = Result<Vec<Chapter>, Error>> + use<> {
+        let (reply, answer) = oneshot::channel();
+        let _ = self.requests.send(Request::GuessOutline(reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -1096,6 +1107,85 @@ fn outline(
         .into_iter()
         .map(|outline| chapter(outline, 0))
         .collect())
+}
+
+/// The longest a table of contents is guessed for: the pages read by then
+/// are guessed from.
+const GUESS_TIME: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Guesses a table of contents from the text of the file, opened again.
+/// Books laid out by pdvim have their own, and are left alone.
+fn guess_outline(path: &Path, password: Option<&str>) -> Result<Vec<Chapter>, mupdf::Error> {
+    let document = reopen(path, password)?;
+    if document.is_reflowable()? {
+        return Ok(Vec::new());
+    }
+    let count = u32::try_from(document.page_count()?).unwrap_or(0);
+    let start = std::time::Instant::now();
+    let mut pages = Vec::new();
+    for number in 0..count {
+        if start.elapsed() > GUESS_TIME {
+            break;
+        }
+        // A page that cannot be read is left blank, keeping the others in
+        // their places.
+        pages.push(styled_text(&document, number).unwrap_or_default());
+    }
+    let labels = page_labels(&document);
+    Ok(crate::contents::guess(&pages, labels.as_deref()))
+}
+
+/// The lines of a page with the size and weight of their type, for telling
+/// headings apart.
+fn styled_text(
+    document: &Document,
+    number: u32,
+) -> Result<crate::contents::PageText, mupdf::Error> {
+    let page = document.load_page(page_number(number))?;
+    let bounds = page.bounds()?;
+    let text = page.to_text_page(TextPageFlags::empty())?;
+    let mut lines = Vec::new();
+    for block in text.blocks() {
+        for line in block.lines() {
+            let mut words = String::new();
+            let mut sizes = 0.0_f32;
+            let mut bold = 0_usize;
+            let mut count = 0_usize;
+            for text_char in line.chars() {
+                let Some(character) = text_char.char() else {
+                    continue;
+                };
+                words.push(character);
+                if character.is_whitespace() {
+                    continue;
+                }
+                count = count.saturating_add(1);
+                sizes += text_char.size();
+                if text_char.flags().contains(mupdf::TextCharFlags::BOLD)
+                    || text_char.font().is_some_and(|font| font.is_bold())
+                {
+                    bold = bold.saturating_add(1);
+                }
+            }
+            let text = words.trim();
+            if count == 0 || text.is_empty() {
+                continue;
+            }
+            let area = line.bounds();
+            lines.push(crate::contents::Line {
+                text: text.to_owned(),
+                size: sizes / crate::num::float(crate::num::len(count)),
+                bold: bold.saturating_mul(2) > count,
+                left: area.x0 - bounds.x0,
+                top: area.y0 - bounds.y0,
+                bottom: area.y1 - bounds.y0,
+            });
+        }
+    }
+    Ok(crate::contents::PageText {
+        lines,
+        height: bounds.height(),
+    })
 }
 
 /// Reads every object of a PDF. MuPDF rebuilds its record of where the
@@ -2188,6 +2278,21 @@ impl Worker {
                     })
                     .map_err(|error| Error::Outline(error.to_string())),
                 );
+            }
+            Request::GuessOutline(reply) => {
+                let path = self.path.clone();
+                let password = self.password.clone();
+                let spawned = thread::Builder::new()
+                    .name("pdvim-contents".to_owned())
+                    .spawn(move || {
+                        let _ = reply.send(
+                            guess_outline(&path, password.as_deref())
+                                .map_err(|error| Error::Outline(error.to_string())),
+                        );
+                    });
+                // Without a thread, the reply is dropped, which says the
+                // document is closed; no table of contents is guessed.
+                drop(spawned);
             }
             // A change to the markings changes how pages look, so the
             // recordings are made again.

@@ -822,6 +822,91 @@ fn line(text: &Text, page: u32, line: usize) -> Option<&TextLine> {
     text.get(&page)?.get(line)
 }
 
+/// The character nearest a point of a page, in points from its top-left
+/// corner: on the line the point is on, or else the nearest line, the
+/// character it is over, or else the nearest along the line. None on a page
+/// without text, or whose text is not read yet.
+pub fn spot_at(text: &Text, page: u32, (across, down): (f32, f32)) -> Option<Spot> {
+    let lines = text.get(&page)?;
+    let distance = |line: &TextLine| {
+        let top = line
+            .chars
+            .iter()
+            .map(|c| c.area.top)
+            .fold(f32::INFINITY, f32::min);
+        let bottom = line
+            .chars
+            .iter()
+            .map(|c| c.area.bottom)
+            .fold(f32::NEG_INFINITY, f32::max);
+        if down < top {
+            top - down
+        } else if down > bottom {
+            down - bottom
+        } else {
+            0.0
+        }
+    };
+    let (line_index, line) = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| !line.chars.is_empty())
+        .min_by(|(_, a), (_, b)| distance(a).total_cmp(&distance(b)))?;
+    // The character the point is over, or before which it falls.
+    let index = line
+        .chars
+        .iter()
+        .position(|c| across < c.area.right)
+        .unwrap_or_else(|| line.chars.len().saturating_sub(1));
+    Some(Spot {
+        page,
+        line: line_index,
+        index,
+    })
+}
+
+/// The first and last characters of the word at a spot: letters and
+/// digits, or a run of other characters that are not spaces.
+pub fn word_at(text: &Text, spot: Spot) -> (Spot, Spot) {
+    let Some(chars) = line(text, spot.page, spot.line).map(|line| &line.chars) else {
+        return (spot, spot);
+    };
+    let kind = |index: usize| {
+        chars.get(index).map(|c| {
+            if c.character.is_alphanumeric() || c.character == '_' {
+                1
+            } else if c.character.is_whitespace() {
+                0
+            } else {
+                2
+            }
+        })
+    };
+    let Some(wanted) = kind(spot.index) else {
+        return (spot, spot);
+    };
+    let mut first = spot.index;
+    while let Some(before) = first.checked_sub(1)
+        && kind(before) == Some(wanted)
+    {
+        first = before;
+    }
+    let mut last = spot.index;
+    while kind(last.saturating_add(1)) == Some(wanted) {
+        last = last.saturating_add(1);
+    }
+    (
+        Spot {
+            index: first,
+            ..spot
+        },
+        Spot {
+            index: last,
+            ..spot
+        },
+    )
+}
+
 /// The area of the character at a spot.
 pub fn character(text: &Text, spot: Spot) -> Option<Rect> {
     line(text, spot.page, spot.line)?
@@ -1008,6 +1093,36 @@ mod tests {
                     .collect(),
             })
             .collect()
+    }
+
+    #[test]
+    fn a_point_finds_the_character_under_it_or_the_nearest() {
+        let text = text();
+        // Over the "w" of "two".
+        assert_eq!(spot_at(&text, 0, (55.0, 5.0)), Some(spot(0, 0, 5)));
+        // Between the lines, nearer the second; past the end of it.
+        assert_eq!(spot_at(&text, 0, (500.0, 17.0)), Some(spot(0, 1, 8)));
+        // Above the text.
+        assert_eq!(spot_at(&text, 2, (5.0, -40.0)), Some(spot(2, 0, 0)));
+        assert_eq!(spot_at(&text, 1, (5.0, 5.0)), None);
+        assert_eq!(spot_at(&text, 7, (5.0, 5.0)), None);
+    }
+
+    #[test]
+    fn a_word_is_found_around_a_spot() {
+        let text = text();
+        assert_eq!(
+            word_at(&text, spot(0, 0, 5)),
+            (spot(0, 0, 4), spot(0, 0, 6))
+        );
+        assert_eq!(
+            word_at(&text, spot(0, 0, 0)),
+            (spot(0, 0, 0), spot(0, 0, 2))
+        );
+        assert_eq!(
+            word_at(&text, spot(0, 1, 8)),
+            (spot(0, 1, 5), spot(0, 1, 8))
+        );
     }
 
     fn text() -> Text {

@@ -80,6 +80,7 @@ pub fn complete(line: &str) -> Completion {
             };
         }
         Some("set") if words_before == 0 => words(last_word, command::SETTINGS),
+        Some("man") if words_before == 0 => words(last_word, crate::manual::SECTIONS),
         // A mode, or an action of normal mode.
         Some("help") if words_before == 0 => {
             let mut topics: Vec<&str> = Mode::ALL

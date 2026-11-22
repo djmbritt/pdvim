@@ -18,7 +18,10 @@
 # restored the way you left it.
 recolor = "auto"
 
-# Hide the blank margins of pages.
+# Hide the blank margins of pages. Each page is then enlarged to be as
+# wide as the widest, so that every page fills the window's width alike,
+# up to twice its size, so a page with little on it, such as a title, is
+# not blown up.
 trim = false
 
 # The theme: the colors of the tab bar, the status bar, the lists and the

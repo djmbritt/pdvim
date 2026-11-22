@@ -2510,6 +2510,8 @@ impl App {
         if self.area.width < 1.0 || self.area.height < 1.0 {
             return Task::none();
         }
+        // Each page is rendered at the zoom, and larger again when its
+        // margins are trimmed and it is enlarged to the width of the widest.
         let scale = document.reader.zoom() * scale_factor;
         let job = RenderJob {
             page: 0,
@@ -2519,8 +2521,8 @@ impl App {
             palette: document.recolor.then_some(palette),
         };
         let trimmed = document.reader.crop(0).is_some();
-        let wanted = RenderKey {
-            scale: scale.to_bits(),
+        let wanted = |page: u32| RenderKey {
+            scale: (scale * document.reader.stretch(page)).to_bits(),
             rotation: job.rotation,
             palette: job.palette,
             trimmed,
@@ -2542,6 +2544,7 @@ impl App {
             .chain(ahead.filter(|page| !visible.contains(page)));
         let mut tasks = Vec::new();
         for page in order {
+            let wanted = wanted(page);
             let current = document
                 .pages
                 .get(&page)
@@ -2554,7 +2557,13 @@ impl App {
             }
             document.rendering.insert(page, wanted);
             let clip = document.reader.crop(page);
-            let render = document.backend.render(RenderJob { page, clip, ..job });
+            let scale = f32::from_bits(wanted.scale);
+            let render = document.backend.render(RenderJob {
+                page,
+                scale,
+                clip,
+                ..job
+            });
             tasks.push(Task::perform(render, move |result| {
                 let handle = result.map(|bitmap| {
                     image::Handle::from_rgba(bitmap.width, bitmap.height, bitmap.pixels)

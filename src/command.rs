@@ -22,6 +22,8 @@ pub enum Command {
     Help(Option<String>),
     /// Show only the bindings that mention a word.
     Apropos(String),
+    /// Open pdvim's manual page of that section in a tab.
+    Man(u8),
     /// Say which theme is in force.
     ShowTheme,
     /// Say which version of pdvim this is, and where it comes from.
@@ -210,6 +212,8 @@ pub enum Error {
     NotColumns(String),
     #[error("`{0}` is not continuous, single or double")]
     NotPageMode(String),
+    #[error("no manual page {0}; there are pdvim(1) and pdvim(5)")]
+    NoManual(String),
     #[error("`{0}` is not a size of type from 4 to 72")]
     NotFontSize(String),
     #[error("`{0}` is not two or more different lower-case letters or digits")]
@@ -223,13 +227,14 @@ pub enum Error {
 }
 
 /// Every command by its full name, and the shorter names it also goes by.
-const NAMES: [(&str, &[&str]); 31] = [
+const NAMES: [(&str, &[&str]); 32] = [
     ("apropos", &["apr"]),
     ("delmarks", &["delm"]),
     ("export", &[]),
     ("goto", &[]),
     ("help", &["h"]),
     ("info", &["f", "file"]),
+    ("man", &[]),
     ("map", &[]),
     ("mapclear", &[]),
     ("marks", &[]),
@@ -379,6 +384,9 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
         "help" => Command::Help((!argument.is_empty()).then(|| argument.to_owned())),
         "apropos" if argument.is_empty() => return Err(Error::MissingArgument("apropos")),
         "apropos" => Command::Apropos(argument.to_owned()),
+        "man" => Command::Man(
+            crate::manual::section(argument).ok_or_else(|| Error::NoManual(argument.to_owned()))?,
+        ),
         "nohlsearch" => Command::NoHighlight,
         "set" => Command::Set(parse_setting(argument)?),
         "map" | "unmap" | "mapclear" => map_command(canonical, argument)?,
@@ -842,6 +850,13 @@ mod tests {
             parse("set page-borders true"),
             Ok(Some(Command::Set(Setting::PageBorders(true))))
         );
+    }
+
+    #[test]
+    fn the_manual_opens_at_either_page() {
+        assert_eq!(parse("man"), Ok(Some(Command::Man(1))));
+        assert_eq!(parse("man 5"), Ok(Some(Command::Man(5))));
+        assert_eq!(parse("man 3"), Err(Error::NoManual("3".into())));
     }
 
     #[test]

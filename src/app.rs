@@ -2030,6 +2030,7 @@ impl App {
                     self.notice = Notice::Error(format!("no help for {topic}"));
                 }
             }
+            Command::Man(section) => return self.open_manual(section),
             Command::Apropos(word) => {
                 self.pending = Pending::new();
                 self.picker = None;
@@ -2288,6 +2289,22 @@ impl App {
             backend::open(path.clone(), None, self.flow_for(&path)),
             move |result| Message::Opened(request, path, result),
         )
+    }
+
+    /// Opens pdvim's manual page of that section in a tab, written out as a
+    /// book in the data directory, where it stays to be opened again.
+    fn open_manual(&mut self, section: u8) -> Task<Message> {
+        let Some(directory) = crate::dirs::data().map(|data| data.join("manual")) else {
+            self.notice = Notice::Error("no data directory to put the manual in".to_owned());
+            return Task::none();
+        };
+        match crate::manual::write(section, &directory) {
+            Ok(path) => self.open_in_tab(path),
+            Err(error) => {
+                self.notice = Notice::Error(format!("cannot write the manual: {error}"));
+                Task::none()
+            }
+        }
     }
 
     /// Puts a document that finished opening in the tab that asked for it.

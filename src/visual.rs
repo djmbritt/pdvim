@@ -11,6 +11,7 @@ use crate::backend::{MarkupKind, TextLine};
 use crate::input::Key;
 use crate::keymap::{Counts, Fed, Keymap, Pending, bindable};
 use crate::layout::Rect;
+use crate::prose;
 
 bindable! {
     /// What keys can be bound to in visual mode.
@@ -632,7 +633,10 @@ impl Visual {
     /// spaces.
     pub fn text(&self, text: &Text) -> String {
         let (first, last) = self.range(text);
-        let mut lines = Vec::new();
+        // Each line's part, and whether a paragraph starts there.
+        let mut lines: Vec<(String, bool)> = Vec::new();
+        let mut starts: HashMap<u32, Vec<usize>> = HashMap::new();
+        let mut previous_page = None;
         let mut at = Some((first.page, first.line));
         while let Some((page, line_index)) = at {
             if (page, line_index) > (last.page, last.line) {
@@ -656,11 +660,33 @@ impl Visual {
                     .skip(from)
                     .map(|character| character.character)
                     .collect();
-                lines.push(content.trim_end().to_owned());
+                let paragraph = if line_index == 0 {
+                    // A page's first line goes on with the page before,
+                    // unless that ended a sentence on a short last line,
+                    // and this starts one.
+                    lines.last().is_some_and(|(before, _)| {
+                        prose::ends_sentence(before)
+                            && content.trim_start().starts_with(char::is_uppercase)
+                            && previous_page
+                                .and_then(|before| text.get(&before))
+                                .is_some_and(|lines| ends_short(lines))
+                    })
+                } else {
+                    starts
+                        .entry(page)
+                        .or_insert_with(|| {
+                            text.get(&page)
+                                .map(|lines| paragraph_starts(lines))
+                                .unwrap_or_default()
+                        })
+                        .contains(&line_index)
+                };
+                lines.push((content, paragraph));
+                previous_page = Some(page);
             }
             at = next_line(text, (page, line_index));
         }
-        lines.join("\n")
+        prose::join(lines.iter().map(|(line, starts)| (line.as_str(), *starts)))
     }
 
     /// The area selected on each line, as a page and an area on it.
@@ -1154,6 +1180,44 @@ fn next_line(text: &Text, (page, line): (u32, usize)) -> Option<(u32, usize)> {
     }
 }
 
+/// Whether the last line of a page stops well short of the right edge the
+/// page's lines usually end at, as a paragraph's last line does: by more
+/// than 15% of their width.
+fn ends_short(lines: &[TextLine]) -> bool {
+    let edges = |line: &TextLine| {
+        let left = line
+            .chars
+            .iter()
+            .map(|c| c.area.left)
+            .fold(f32::INFINITY, f32::min);
+        let right = line
+            .chars
+            .iter()
+            .map(|c| c.area.right)
+            .fold(f32::NEG_INFINITY, f32::max);
+        (left, right)
+    };
+    let full: Vec<(f32, f32)> = lines
+        .iter()
+        .filter(|line| !line.chars.is_empty())
+        .map(edges)
+        .collect();
+    let Some(&(_, last)) = full.last() else {
+        return false;
+    };
+    let middle = |mut edges: Vec<f32>| {
+        edges.sort_by(f32::total_cmp);
+        edges.get(edges.len() / 2).copied()
+    };
+    let (Some(left), Some(right)) = (
+        middle(full.iter().map(|(left, _)| *left).collect()),
+        middle(full.iter().map(|(_, right)| *right).collect()),
+    ) else {
+        return false;
+    };
+    last < (right - left).mul_add(-0.15, right)
+}
+
 /// Where the first sentence after a spot starts: later on its page, or on
 /// a page after, of those whose text is read.
 fn next_sentence_start(text: &Text, at: Spot) -> Option<Spot> {
@@ -1343,14 +1407,16 @@ mod tests {
             }
             (visual.text(&text), visual.cursor())
         };
-        assert_eq!(typed("is").0, "Three four\nfive.");
+        assert_eq!(typed("is").0, "Three four five.");
         // The space after "five." is taken in.
         assert_eq!(typed("as").1, spot(0, 1, 5));
-        assert_eq!(typed("isis").0, "Three four\nfive. Six seven.");
-        // On to the next page, and no further than the text read.
+        assert_eq!(typed("isis").0, "Three four five. Six seven.");
+        // On to the next page, and no further than the text read. The
+        // first page's last line is short, and ends a sentence, so the next
+        // page starts a paragraph.
         assert_eq!(
             typed("isisis").0,
-            "Three four\nfive. Six seven.\nEight nine."
+            "Three four five. Six seven.\n\nEight nine."
         );
         assert_eq!(typed("isisisis").1, spot(1, 0, 10));
         // At the end, with no space after, the space before is taken in.
@@ -1519,24 +1585,38 @@ mod tests {
     }
 
     #[test]
-    fn the_selection_is_copied_line_by_line() {
+    fn a_sentence_ending_a_full_last_line_goes_on_over_the_page() {
+        let text = HashMap::from([
+            (0, page(&["a line as long as the next", "ends a sentence right there."])),
+            (1, page(&["Then the page goes on.", "with more"])),
+        ]);
+        let mut visual = Visual::new(Kind::Characters, spot(0, 1, 0));
+        assert_eq!(
+            keys(&mut visual, &text, "j$y"),
+            Outcome::Copy("ends a sentence right there. Then the page goes on.".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_selection_is_copied_as_running_text() {
         let text = text();
         let mut visual = Visual::new(Kind::Characters, spot(0, 0, 4));
         assert_eq!(
             keys(&mut visual, &text, "j$y"),
-            Outcome::Copy("two three\nfour five".to_owned())
+            Outcome::Copy("two three four five".to_owned())
         );
-        // Backwards selections read forwards.
+        // Backwards selections read forwards, and the page between, with no
+        // text, joins the lines on either side.
         let mut visual = Visual::new(Kind::Characters, spot(2, 0, 2));
         assert_eq!(
             keys(&mut visual, &text, "kby"),
-            Outcome::Copy("four five\nsix".to_owned())
+            Outcome::Copy("four five six".to_owned())
         );
         // Whole lines.
         let mut visual = Visual::new(Kind::Lines, spot(0, 1, 6));
         assert_eq!(
             keys(&mut visual, &text, "jy"),
-            Outcome::Copy("four five\nsix".to_owned())
+            Outcome::Copy("four five six".to_owned())
         );
     }
 
@@ -1745,7 +1825,7 @@ mod tests {
         assert_eq!(visual.cursor, spot(0, 3, 25));
         assert_eq!(
             keys(&mut visual, &text, "y"),
-            Outcome::Copy("The second one runs on and\non and fills its last line".into())
+            Outcome::Copy("The second one runs on and on and fills its last line".into())
         );
     }
 
@@ -1790,13 +1870,15 @@ mod tests {
         let mut visual = Visual::new(Kind::Characters, spot(0, 1, 2));
         assert_eq!(
             keys(&mut visual, &text, "apy"),
-            Outcome::Copy("The first paragraph runs o\nto here.\n\n".into())
+            Outcome::Copy("The first paragraph runs o to here.\n\n".into())
         );
         // Moving afterwards makes it a selection like any other.
         let mut moved = Visual::new(Kind::Characters, spot(0, 1, 2));
         assert_eq!(
             keys(&mut moved, &text, "apjy"),
-            Outcome::Copy("The first paragraph runs o\nto here.\nThe second one runs on and".into())
+            Outcome::Copy(
+                "The first paragraph runs o to here.\n\nThe second one runs on and".into()
+            )
         );
     }
 }

@@ -41,6 +41,7 @@ mod num;
 mod outline;
 mod overview;
 mod paths;
+mod prose;
 mod reader;
 mod shell;
 mod recall;

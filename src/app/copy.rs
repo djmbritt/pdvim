@@ -86,17 +86,20 @@ impl App {
     }
 }
 
-/// The text of a page, a line of text to a line, without trailing spaces
-/// or blank lines at either end.
+/// The text of a page as running text: the lines of each paragraph joined,
+/// and the paragraphs kept apart by a blank line.
 fn page_text(lines: &[TextLine]) -> String {
-    let lines: Vec<String> = lines
+    let starts = crate::visual::paragraph_starts(lines);
+    let texts: Vec<String> = lines
         .iter()
-        .map(|line| {
-            let text: String = line.chars.iter().map(|glyph| glyph.character).collect();
-            text.trim_end().to_owned()
-        })
+        .map(|line| line.chars.iter().map(|glyph| glyph.character).collect())
         .collect();
-    lines.join("\n").trim().to_owned()
+    crate::prose::join(
+        texts
+            .iter()
+            .enumerate()
+            .map(|(index, text)| (text.as_str(), starts.contains(&index))),
+    )
 }
 
 #[cfg(test)]
@@ -123,9 +126,9 @@ mod tests {
     }
 
     #[test]
-    fn a_page_is_its_lines_trimmed() {
+    fn a_page_is_copied_as_running_text() {
         let lines = [line("  "), line("First line  "), line("second"), line(" ")];
-        assert_eq!(page_text(&lines), "First line\nsecond");
+        assert_eq!(page_text(&lines), "First line second");
         assert_eq!(page_text(&[]), "");
     }
 }

@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 David Britt -->
 <!-- What software centres show of pdvim, in the Flatpak and the AppImage. -->
 <component type="desktop-application">
   <id>io.github.djmbritt.pdvim</id>
@@ -32,16 +33,40 @@
   <url type="homepage">https://github.com/djmbritt/pdvim</url>
   <url type="bugtracker">https://github.com/djmbritt/pdvim/issues</url>
   <url type="vcs-browser">https://github.com/djmbritt/pdvim</url>
+  <!--
+    Flathub wants screenshots linked at a tag, not a branch. These are at
+    the tag of the release, and are only reached once the repository is
+    public. packaging/bump-version.sh moves them to each new tag.
+  -->
   <screenshots>
     <screenshot type="default">
       <caption>Reading, with two tabs open</caption>
-      <image>https://raw.githubusercontent.com/djmbritt/pdvim/main/docs/screenshots/reading.png</image>
+      <image>https://raw.githubusercontent.com/djmbritt/pdvim/v0.1.31/docs/screenshots/reading.png</image>
     </screenshot>
     <screenshot>
-      <caption>The table of contents, in the Catppuccin Mocha theme</caption>
-      <image>https://raw.githubusercontent.com/djmbritt/pdvim/main/docs/screenshots/contents.png</image>
+      <caption>The table of contents, over a recolored page</caption>
+      <image>https://raw.githubusercontent.com/djmbritt/pdvim/v0.1.31/docs/screenshots/contents.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Labels on each line of text, to start selecting from</caption>
+      <image>https://raw.githubusercontent.com/djmbritt/pdvim/v0.1.31/docs/screenshots/labels.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Lines highlighted, underlined and squiggled</caption>
+      <image>https://raw.githubusercontent.com/djmbritt/pdvim/v0.1.31/docs/screenshots/visual.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The cheat sheet of key bindings</caption>
+      <image>https://raw.githubusercontent.com/djmbritt/pdvim/v0.1.31/docs/screenshots/help.png</image>
     </screenshot>
   </screenshots>
+  <branding>
+    <color type="primary" scheme_preference="light">#a5d6a7</color>
+    <color type="primary" scheme_preference="dark">#2d5e34</color>
+  </branding>
+  <releases>
+    <release version="0.1.31" date="2026-11-21"/>
+  </releases>
   <content_rating type="oars-1.1"/>
   <supports>
     <control>keyboard</control>

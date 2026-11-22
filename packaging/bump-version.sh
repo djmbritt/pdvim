@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Raises pdvim's version in Cargo.toml and both lockfiles, and prints the
-# new version.
+# Raises pdvim's version in Cargo.toml, both lockfiles and the metainfo,
+# and prints the new version.
 #
 # usage: packaging/bump-version.sh [patch|minor|major]   (patch by default)
 #
@@ -33,5 +33,14 @@ for lock in Cargo.lock fuzz/Cargo.lock; do
     sed -i.bak "/^name = \"pdvim\"\$/{n;s/^version = \".*\"/version = \"$next\"/;}" "$lock"
 done
 rm -f Cargo.toml.bak Cargo.lock.bak fuzz/Cargo.lock.bak
+
+# The metainfo lists each release, newest first, and links its
+# screenshots at the release's tag: Flathub wants both.
+metainfo=packaging/io.github.djmbritt.pdvim.metainfo.xml
+sed -i.bak \
+    -e "s|^\(  *\)<releases>\$|&\n\1  <release version=\"$next\" date=\"$(date -u +%F)\"/>|" \
+    -e "s|/djmbritt/pdvim/v[0-9.]*/docs/screenshots/|/djmbritt/pdvim/v$next/docs/screenshots/|" \
+    "$metainfo"
+rm -f "$metainfo.bak"
 
 echo "$next"

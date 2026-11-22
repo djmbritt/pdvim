@@ -58,6 +58,10 @@ bindable! {
         InnerWord = "inner-word", "Select the word, or the next too";
         /// As vim's `aw`: the spaces after the word, or else before it.
         AroundWord = "around-word", "Select the word and the space after it";
+        /// As vim's `is`; again, or with a count, takes in the next ones.
+        InnerSentence = "inner-sentence", "Select the sentence, or the next too";
+        /// As vim's `as`: the spaces after the sentence, or else before it.
+        AroundSentence = "around-sentence", "Select the sentence and the space after it";
         /// As vim's `*`, for the selection: a word is found only whole.
         SearchSelection = "search-selection", "Search forward for the selection, and leave";
         SearchSelectionBack = "search-selection-back", "Search backward for the selection, and leave";
@@ -192,6 +196,82 @@ impl Visual {
         again
     }
 
+    /// Selects a text object, as vim's `iw`, `as` or `ip` do. `around` says
+    /// whether the selection was whole paragraphs and their gaps before.
+    fn select_object(&mut self, binding: Binding, times: u32, text: &Text, around: bool) {
+        match binding {
+            Binding::InnerWord | Binding::AroundWord => {
+                self.words(text, times, binding == Binding::AroundWord);
+            }
+            Binding::InnerSentence | Binding::AroundSentence => {
+                self.sentences(text, times, binding == Binding::AroundSentence);
+            }
+            _ => {
+                self.paragraphs(text, times);
+                self.around = binding == Binding::AroundParagraph
+                    || (around && self.anchor != self.cursor);
+            }
+        }
+    }
+
+    /// A search for the selection, its spaces made single, for a whole
+    /// word if it is one; leaving, when there is nothing to search for.
+    fn search(&self, text: &Text, forward: bool) -> Outcome {
+        let selected = self.text(text);
+        let selected = selected.split_whitespace().collect::<Vec<_>>().join(" ");
+        if selected.is_empty() {
+            return Outcome::Leave;
+        }
+        let whole_word = selected.chars().all(|c| c.is_alphanumeric() || c == '_');
+        Outcome::Search {
+            text: selected,
+            forward,
+            whole_word,
+        }
+    }
+
+    /// Selects whole sentences, as vim's `is` and `as` do: the sentence at
+    /// the cursor, or, with a selection already made or a count, the
+    /// sentences after it too; around them, the spaces after the last, or
+    /// else those before the first.
+    fn sentences(&mut self, text: &Text, times: u32, around: bool) {
+        let mut more = times;
+        if self.anchor == self.cursor {
+            self.anchor = sentence_start(text, self.cursor);
+            self.cursor = sentence_end(text, self.anchor);
+            more = more.saturating_sub(1);
+        }
+        for _ in 0..more {
+            let Some(next) = next_sentence_start(text, self.cursor) else {
+                break;
+            };
+            self.cursor = sentence_end(text, next);
+        }
+        if !around {
+            return;
+        }
+        // The spaces up to the next sentence, which may run over the end of
+        // the line; with none, those before the first.
+        match next_sentence_start(text, self.cursor).and_then(|next| before(text, next)) {
+            Some(last) if last > self.cursor => self.cursor = last,
+            _ => {
+                let space = |spot: Spot| {
+                    line(text, spot.page, spot.line)
+                        .and_then(|line| line.chars.get(spot.index))
+                        .is_some_and(|c| c.character.is_whitespace())
+                };
+                while let Some(index) = self.anchor.index.checked_sub(1)
+                    && space(Spot {
+                        index,
+                        ..self.anchor
+                    })
+                {
+                    self.anchor.index = index;
+                }
+            }
+        }
+    }
+
     /// Selects whole words, as vim's `iw` and `aw` do: the word at the
     /// cursor, or, with a selection already made or a count, the words
     /// after it too; around them, the spaces after the last, or else those
@@ -317,27 +397,14 @@ impl Visual {
                 }
                 return Outcome::Copy(copied);
             }
-            Binding::InnerWord | Binding::AroundWord => {
-                self.words(text, times, binding == Binding::AroundWord);
-            }
-            Binding::SearchSelection | Binding::SearchSelectionBack => {
-                let selected = self.text(text);
-                let selected = selected.split_whitespace().collect::<Vec<_>>().join(" ");
-                if selected.is_empty() {
-                    return Outcome::Leave;
-                }
-                let whole_word = selected.chars().all(|c| c.is_alphanumeric() || c == '_');
-                return Outcome::Search {
-                    text: selected,
-                    forward: binding == Binding::SearchSelection,
-                    whole_word,
-                };
-            }
-            Binding::InnerParagraph | Binding::AroundParagraph => {
-                self.paragraphs(text, times);
-                self.around = binding == Binding::AroundParagraph
-                    || (around && self.anchor != self.cursor);
-            }
+            Binding::InnerWord
+            | Binding::AroundWord
+            | Binding::InnerSentence
+            | Binding::AroundSentence
+            | Binding::InnerParagraph
+            | Binding::AroundParagraph => self.select_object(binding, times, text, around),
+            Binding::SearchSelection => return self.search(text, true),
+            Binding::SearchSelectionBack => return self.search(text, false),
             Binding::Highlight => return Outcome::Mark(MarkupKind::Highlight, self.areas(text)),
             Binding::Underline => return Outcome::Mark(MarkupKind::Underline, self.areas(text)),
             Binding::StrikeOut => return Outcome::Mark(MarkupKind::StrikeOut, self.areas(text)),
@@ -1087,6 +1154,75 @@ fn next_line(text: &Text, (page, line): (u32, usize)) -> Option<(u32, usize)> {
     }
 }
 
+/// Where the first sentence after a spot starts: later on its page, or on
+/// a page after, of those whose text is read.
+fn next_sentence_start(text: &Text, at: Spot) -> Option<Spot> {
+    let mut page = at.page;
+    loop {
+        let lines = text.get(&page)?;
+        let found = every_sentence_start(lines)
+            .into_iter()
+            .map(|(line, index)| Spot { page, line, index })
+            .find(|start| *start > at);
+        if found.is_some() {
+            return found;
+        }
+        page = page.checked_add(1)?;
+    }
+}
+
+/// The last character of the sentence starting at a spot, spaces left
+/// out: just before the next sentence, or else the end of the page.
+fn sentence_end(text: &Text, start: Spot) -> Spot {
+    let mut end = next_sentence_start(text, start)
+        .and_then(|next| before(text, next))
+        .or_else(|| {
+            let lines = text.get(&start.page)?;
+            let (row, last) = lines
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, line)| !line.chars.is_empty())?;
+            Some(Spot {
+                page: start.page,
+                line: row,
+                index: last.chars.len().saturating_sub(1),
+            })
+        })
+        .unwrap_or(start);
+    while end > start
+        && line(text, end.page, end.line)
+            .and_then(|line| line.chars.get(end.index))
+            .is_none_or(|c| c.character.is_whitespace())
+    {
+        let Some(earlier) = before(text, end) else {
+            break;
+        };
+        end = earlier;
+    }
+    end
+}
+
+/// The character before a spot: earlier on its line, or the last of the
+/// line before, skipping empty lines.
+fn before(text: &Text, at: Spot) -> Option<Spot> {
+    if let Some(index) = at.index.checked_sub(1) {
+        return Some(Spot { index, ..at });
+    }
+    let mut here = (at.page, at.line);
+    loop {
+        here = previous_line(text, here)?;
+        let (page, row) = here;
+        if let Some(index) = line(text, page, row)?.chars.len().checked_sub(1) {
+            return Some(Spot {
+                page,
+                line: row,
+                index,
+            });
+        }
+    }
+}
+
 /// The line before a line, on an earlier page if need be, skipping pages
 /// with no text. None before the first page whose text is known.
 fn previous_line(text: &Text, (page, line): (u32, usize)) -> Option<(u32, usize)> {
@@ -1190,6 +1326,39 @@ mod tests {
         assert_eq!(spot_at(&text, 2, (5.0, -40.0)), Some(spot(2, 0, 0)));
         assert_eq!(spot_at(&text, 1, (5.0, 5.0)), None);
         assert_eq!(spot_at(&text, 7, (5.0, 5.0)), None);
+    }
+
+    #[test]
+    fn inner_and_around_sentence_select_sentences_and_their_spaces() {
+        let text = HashMap::from([
+            (0, page(&["One two. Three four", "five. Six seven."])),
+            (1, page(&["Eight nine."])),
+        ]);
+        let keymap = crate::bindings::Keymaps::default().visual;
+        // The cursor on the "u" of "four".
+        let typed = |keys: &str| {
+            let mut visual = Visual::new(Kind::Characters, spot(0, 0, 16));
+            for key in keys.chars() {
+                let _ = visual.feed(Key::Char(key), &keymap, &text);
+            }
+            (visual.text(&text), visual.cursor())
+        };
+        assert_eq!(typed("is").0, "Three four\nfive.");
+        // The space after "five." is taken in.
+        assert_eq!(typed("as").1, spot(0, 1, 5));
+        assert_eq!(typed("isis").0, "Three four\nfive. Six seven.");
+        // On to the next page, and no further than the text read.
+        assert_eq!(
+            typed("isisis").0,
+            "Three four\nfive. Six seven.\nEight nine."
+        );
+        assert_eq!(typed("isisisis").1, spot(1, 0, 10));
+        // At the end, with no space after, the space before is taken in.
+        let mut last = Visual::new(Kind::Characters, spot(1, 0, 2));
+        for key in "as".chars() {
+            let _ = last.feed(Key::Char(key), &keymap, &text);
+        }
+        assert_eq!(last.text(&text), "Eight nine.");
     }
 
     #[test]

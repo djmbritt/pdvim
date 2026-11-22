@@ -147,6 +147,8 @@ pub enum Message {
     /// asked for, and as it is once made.
     Edited(u64, Edit, Step, Result<Edit, backend::Error>),
     /// The markings of the document with this number were found, as it
+    /// A table of contents was guessed for the document with this number.
+    OutlineGuessed(u64, Result<Vec<backend::Chapter>, backend::Error>),
     /// was at this edition, or could not be; and what they were wanted for.
     MarkingsFound(u64, u32, Wanted, Result<Vec<Marking>, backend::Error>),
     /// The fields of a form in the document with this number were found,
@@ -265,8 +267,9 @@ struct Document {
     /// render is not tried again and again.
     failed: HashMap<u32, RenderKey>,
     results: Results,
-    /// The table of contents, once read.
-    chapters: Option<Vec<backend::Chapter>>,
+    /// The table of contents, once read, or guessed for a document without
+    /// one.
+    chapters: Contents,
     /// The links on each page whose links have been asked for.
     links: HashMap<u32, Vec<Link>>,
     /// The pictures and figures on the pages looked at so far.
@@ -862,10 +865,8 @@ impl App {
                 self.on_saved(id, target.as_deref(), changes, result, after)
             }
             Message::FieldsFound(id, result) => self.on_fields(id, result),
-            Message::OutlineFound(id, result) => {
-                self.on_outline(id, result);
-                Task::none()
-            }
+            Message::OutlineFound(id, result) => self.on_outline(id, result),
+            Message::OutlineGuessed(id, result) => self.on_outline_guessed(id, result),
             Message::LinksFound(id, result) => {
                 self.on_links(id, result);
                 Task::none()
@@ -1453,7 +1454,11 @@ impl App {
         let Some(document) = self.document() else {
             return Task::none();
         };
-        if let Some(chapters) = &document.chapters {
+        if document.chapters == Contents::Guessing {
+            self.notice = Notice::Info("still guessing the table of contents".to_owned());
+            return Task::none();
+        }
+        if let Contents::Read(chapters) = &document.chapters {
             let page = document.reader.current_page();
             self.sidebar = Outline::new(chapters, page).map(Sidebar::Outline);
             if self.sidebar.is_none() {
@@ -1466,23 +1471,71 @@ impl App {
         Task::perform(reading, move |result| Message::OutlineFound(id, result))
     }
 
-    fn on_outline(&mut self, id: u64, result: Result<Vec<backend::Chapter>, backend::Error>) {
+    /// Keeps a document's table of contents, once read. A document without
+    /// one has one guessed from its text.
+    fn on_outline(
+        &mut self,
+        id: u64,
+        result: Result<Vec<backend::Chapter>, backend::Error>,
+    ) -> Task<Message> {
         let Some(document) = document_by_id(&mut self.tabs, id) else {
-            return;
+            return Task::none();
         };
         match result {
-            Ok(chapters) => document.chapters = Some(chapters),
+            Ok(chapters) if chapters.is_empty() => {
+                document.chapters = Contents::Guessing;
+                self.notice = Notice::Info(
+                    "no table of contents in the file: guessing one from its text".to_owned(),
+                );
+                let guessing = document.backend.guess_outline();
+                return Task::perform(guessing, move |result| Message::OutlineGuessed(id, result));
+            }
+            Ok(chapters) => document.chapters = Contents::Read(chapters),
             Err(error) => {
                 self.notice = Notice::Error(error.to_string());
-                return;
+                return Task::none();
             }
         }
-        // Only if the document is still the one in view.
-        if self.document().is_some_and(|document| document.id == id) {
-            let _ = match self.chapter_wanted.take() {
-                Some((forward, times)) => self.step_chapter(forward, times),
-                None => self.show_outline(),
-            };
+        self.outline_read(id)
+    }
+
+    /// Keeps the table of contents guessed for a document.
+    fn on_outline_guessed(
+        &mut self,
+        id: u64,
+        result: Result<Vec<backend::Chapter>, backend::Error>,
+    ) -> Task<Message> {
+        let Some(document) = document_by_id(&mut self.tabs, id) else {
+            return Task::none();
+        };
+        let chapters = result.unwrap_or_default();
+        let found = !chapters.is_empty();
+        document.chapters = Contents::Read(chapters);
+        if !found {
+            self.chapter_wanted = None;
+            self.notice = Notice::Info(
+                "this document has no table of contents, and none could be guessed from its text"
+                    .to_owned(),
+            );
+            return Task::none();
+        }
+        let task = self.outline_read(id);
+        if matches!(self.notice, Notice::Info(_)) && self.sidebar.is_some() {
+            self.notice =
+                Notice::Info("this table of contents is guessed from the text".to_owned());
+        }
+        task
+    }
+
+    /// Goes on with what the table of contents was read for, if the
+    /// document is still the one in view.
+    fn outline_read(&mut self, id: u64) -> Task<Message> {
+        if self.document().is_none_or(|document| document.id != id) {
+            return Task::none();
+        }
+        match self.chapter_wanted.take() {
+            Some((forward, times)) => self.step_chapter(forward, times),
+            None => self.show_outline(),
         }
     }
 
@@ -2392,7 +2445,7 @@ impl App {
             rendering_small: HashMap::new(),
             failed: HashMap::new(),
             results: Results::default(),
-            chapters: None,
+            chapters: Contents::Unread,
             links: HashMap::new(),
             figures: HashMap::new(),
             fields: None,
@@ -3589,6 +3642,17 @@ struct Paging {
     mode: PageMode,
     /// Whether a line is drawn round every page.
     borders: bool,
+}
+
+/// A document's table of contents.
+#[derive(Debug, Clone, PartialEq)]
+enum Contents {
+    /// Not read yet.
+    Unread,
+    /// The file has none, and one is being guessed from its text.
+    Guessing,
+    /// Read, or guessed; empty when there is none.
+    Read(Vec<backend::Chapter>),
 }
 
 /// The layer that draws the pages, and listens to the mouse.

@@ -116,6 +116,36 @@ impl Rotation {
     }
 }
 
+/// How pages are put into rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Arrangement {
+    /// So many pages to a row, 1 or more.
+    Columns(usize),
+    /// The first page alone, as a book's cover, then two pages to a row,
+    /// so that facing pages sit side by side as in the printed book.
+    Spreads,
+}
+
+impl Arrangement {
+    /// How many pages each row holds, in turn, for a number of pages.
+    fn row_lengths(self, pages: usize) -> Vec<usize> {
+        let (first, rest) = match self {
+            Self::Columns(columns) => (columns.max(1), columns.max(1)),
+            Self::Spreads => (1, 2),
+        };
+        let mut lengths = Vec::new();
+        let mut left = pages;
+        let mut length = first;
+        while left > 0 {
+            let taken = length.min(left);
+            lengths.push(taken);
+            left = left.saturating_sub(taken);
+            length = rest;
+        }
+        lengths
+    }
+}
+
 /// The position of every page in the column.
 #[derive(Debug, Clone, Default)]
 pub struct Layout {
@@ -127,8 +157,10 @@ pub struct Layout {
     offsets: Vec<f32>,
     /// The width and height of each row.
     rows: Vec<PageSize>,
-    /// How many pages a row holds, 1 or more.
-    columns: usize,
+    /// The row each page is in.
+    row_of: Vec<usize>,
+    /// The first page of each row.
+    firsts: Vec<usize>,
     /// The width of the widest row.
     width: f32,
     /// The bottom edge of the last row.
@@ -144,20 +176,32 @@ impl Layout {
     /// Lays out pages of the given unturned sizes, so many to a row, side
     /// by side and aligned at the top. Fewer than one is one.
     pub fn in_columns(pages: &[PageSize], rotation: Rotation, columns: usize) -> Self {
-        let columns = columns.max(1);
+        Self::arranged(pages, rotation, Arrangement::Columns(columns))
+    }
+
+    /// Lays out pages of the given unturned sizes in rows as arranged, side
+    /// by side and aligned at the top.
+    pub fn arranged(pages: &[PageSize], rotation: Rotation, arrangement: Arrangement) -> Self {
         let sizes: Vec<PageSize> = pages.iter().map(|size| rotation.turn_size(*size)).collect();
         let mut tops = Vec::with_capacity(sizes.len());
         let mut offsets = Vec::with_capacity(sizes.len());
+        let mut row_of = Vec::with_capacity(sizes.len());
+        let mut firsts = Vec::new();
         let mut rows = Vec::new();
         let mut cursor = 0.0_f32;
         let mut width = 0.0_f32;
         let mut height = 0.0_f32;
-        for row in sizes.chunks(columns) {
+        let mut rest = sizes.as_slice();
+        for length in arrangement.row_lengths(sizes.len()) {
+            let (row, after) = rest.split_at(length.min(rest.len()));
+            rest = after;
+            firsts.push(tops.len());
             let mut left = 0.0_f32;
             let mut tallest = 0.0_f32;
             for size in row {
                 tops.push(cursor);
                 offsets.push(left);
+                row_of.push(rows.len());
                 left += size.width + GAP;
                 tallest = tallest.max(size.height);
             }
@@ -175,7 +219,8 @@ impl Layout {
             tops,
             offsets,
             rows,
-            columns,
+            row_of,
+            firsts,
             width,
             height,
         }
@@ -203,9 +248,40 @@ impl Layout {
 
     /// The size of the row a page is in.
     pub fn row_size(&self, page: u32) -> Option<PageSize> {
-        self.rows
-            .get(num::index(page).checked_div(self.columns)?)
+        self.rows.get(*self.row_of.get(num::index(page))?).copied()
+    }
+
+    /// The top and bottom edges of the row a page is in.
+    pub fn row_band(&self, page: u32) -> Option<(f32, f32)> {
+        let top = *self.tops.get(num::index(page))?;
+        Some((top, top + self.row_size(page)?.height))
+    }
+
+    /// The pages of the row a page is in.
+    pub fn row_pages(&self, page: u32) -> Range<u32> {
+        let Some(&row) = self.row_of.get(num::index(page)) else {
+            return 0..0;
+        };
+        self.pages_of_row(row)
+    }
+
+    /// The first page of the row so many rows after, or before, the row a
+    /// page is in, if there is such a row.
+    pub fn row_page_by(&self, page: u32, rows: i64) -> Option<u32> {
+        let row = i64::try_from(*self.row_of.get(num::index(page))?).ok()?;
+        let target = usize::try_from(row.checked_add(rows)?).ok()?;
+        self.firsts.get(target).map(|first| num::len(*first))
+    }
+
+    /// The pages of a row, counted from 0.
+    fn pages_of_row(&self, row: usize) -> Range<u32> {
+        let first = self.firsts.get(row).copied().unwrap_or(0);
+        let end = self
+            .firsts
+            .get(row.saturating_add(1))
             .copied()
+            .unwrap_or(self.sizes.len());
+        num::len(first)..num::len(end)
     }
 
     /// The rectangle a page occupies in the column.
@@ -225,7 +301,11 @@ impl Layout {
 
     /// The first page of the row a page is in.
     fn row_start(&self, page: usize) -> usize {
-        page.saturating_sub(page.checked_rem(self.columns).unwrap_or(0))
+        self.row_of
+            .get(page)
+            .and_then(|row| self.firsts.get(*row))
+            .copied()
+            .unwrap_or(0)
     }
 
     /// The first page of the row at a height in the column. A height in
@@ -242,9 +322,8 @@ impl Layout {
             return 0..0;
         }
         let first = self.page_at(top);
-        let last_row = num::index(self.page_at(bottom));
-        let end = last_row.saturating_add(self.columns).min(self.sizes.len());
-        first..num::len(end)
+        let end = self.row_pages(self.page_at(bottom)).end;
+        first..end
     }
 }
 
@@ -322,6 +401,36 @@ mod tests {
         assert!(close(row.height, 842.0));
         let empty = Layout::in_columns(&[], Rotation::None, 0);
         assert!(empty.row_size(0).is_none());
+    }
+
+    #[test]
+    fn spreads_put_the_cover_alone_and_then_pages_in_pairs() {
+        let layout = Layout::arranged(&[A4; 6], Rotation::None, Arrangement::Spreads);
+        // Rows: 0 | 1 2 | 3 4 | 5.
+        assert_eq!(layout.row_pages(0), 0..1);
+        assert_eq!(layout.row_pages(1), 1..3);
+        assert_eq!(layout.row_pages(2), 1..3);
+        assert_eq!(layout.row_pages(4), 3..5);
+        assert_eq!(layout.row_pages(5), 5..6);
+        assert!(close(layout.width(), 595.0 + GAP + 595.0));
+        // The cover and the last page sit alone, centred.
+        let cover = layout.page_rect(0).unwrap();
+        assert!(close(cover.left, (layout.width() - 595.0) / 2.0));
+        let right = layout.page_rect(2).unwrap();
+        assert!(close(right.left, 595.0 + GAP) && close(right.top, 842.0 + GAP));
+        assert_eq!(layout.page_at(842.0 + GAP + 1.0), 1);
+        assert_eq!(layout.pages_between(0.0, 842.0 + GAP + 1.0), 0..3);
+        let (top, bottom) = layout.row_band(2).unwrap();
+        assert!(close(top, 842.0 + GAP) && close(bottom, 2.0_f32.mul_add(842.0, GAP)));
+        // Stepping by rows, and off either end.
+        assert_eq!(layout.row_page_by(0, 1), Some(1));
+        assert_eq!(layout.row_page_by(2, 1), Some(3));
+        assert_eq!(layout.row_page_by(2, -1), Some(0));
+        assert_eq!(layout.row_page_by(5, 1), None);
+        assert_eq!(layout.row_page_by(0, -1), None);
+        // A document of one page is the cover alone.
+        let one = Layout::arranged(&[A4], Rotation::None, Arrangement::Spreads);
+        assert_eq!(one.row_pages(0), 0..1);
     }
 
     #[test]

@@ -7,7 +7,7 @@
 use std::ops::Range;
 
 use crate::history::{Fit, View};
-use crate::layout::{Layout, PageSize, Rect, Rotation};
+use crate::layout::{Arrangement, Layout, PageSize, Rect, Rotation};
 use crate::num;
 
 /// The smallest and largest zoom, in screen pixels per point.
@@ -18,6 +18,10 @@ pub const MOST_COLUMNS: usize = 4;
 
 /// How much one zoom step enlarges the page.
 const ZOOM_STEP: f32 = 1.1;
+
+/// How near the edge of a page, in points, the window must be for scrolling
+/// on to turn to the next page or spread.
+const EDGE: f32 = 0.5;
 
 /// The part of a full screen that stays visible after scrolling by one, so
 /// the reader keeps their place.
@@ -30,6 +34,48 @@ enum Anchor {
     Centre,
     /// The top of the window, for when the window changes size.
     Top,
+}
+
+/// How pages are shown: one after another in a column to scroll through, or
+/// a page or a spread at a time, to turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PageMode {
+    /// Every page in a column, in rows as wide as the columns say.
+    #[default]
+    Continuous,
+    /// One page at a time.
+    Single,
+    /// Two facing pages at a time, after the cover alone, as in a book.
+    Double,
+}
+
+impl PageMode {
+    /// The names `page-mode` takes.
+    pub const NAMES: [&str; 3] = ["continuous", "single", "double"];
+
+    /// The mode a name says, if it says one.
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "continuous" => Some(Self::Continuous),
+            "single" => Some(Self::Single),
+            "double" => Some(Self::Double),
+            _ => None,
+        }
+    }
+
+    /// The mode after this one, going round.
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Continuous => Self::Single,
+            Self::Single => Self::Double,
+            Self::Double => Self::Continuous,
+        }
+    }
+
+    /// Whether a page or a spread shows at a time, rather than a column.
+    pub const fn paged(self) -> bool {
+        !matches!(self, Self::Continuous)
+    }
 }
 
 /// A place in a document, whatever the zoom: a page, and how far down it
@@ -66,8 +112,12 @@ pub struct Reader {
     y: f32,
     /// The width and height of the window, in screen pixels.
     window: (f32, f32),
-    /// How many pages sit side by side.
+    /// How many pages sit side by side, when continuous.
     columns: usize,
+    mode: PageMode,
+    /// The page shown, when a page or a spread shows at a time: the window
+    /// stays on its row.
+    shown: u32,
 }
 
 impl Reader {
@@ -85,6 +135,8 @@ impl Reader {
             y: 0.0,
             window,
             columns: 1,
+            mode: PageMode::Continuous,
+            shown: 0,
         };
         reader.refit(Anchor::Top);
         reader
@@ -104,9 +156,36 @@ impl Reader {
         self.go_to_place(place);
     }
 
-    /// How many pages sit side by side.
+    /// How many pages sit side by side when continuous.
     pub const fn columns(&self) -> usize {
         self.columns
+    }
+
+    /// How many pages a row holds at most, as shown now: the columns when
+    /// continuous, one page or two facing pages when not.
+    pub const fn pages_per_row(&self) -> usize {
+        match self.mode {
+            PageMode::Continuous => self.columns,
+            PageMode::Single => 1,
+            PageMode::Double => 2,
+        }
+    }
+
+    pub const fn page_mode(&self) -> PageMode {
+        self.mode
+    }
+
+    /// Shows pages in a column, or a page or a spread at a time, staying at
+    /// the same place.
+    pub fn set_page_mode(&mut self, mode: PageMode) {
+        if mode == self.mode {
+            return;
+        }
+        let place = self.place();
+        self.mode = mode;
+        self.lay_out();
+        self.refit(Anchor::Top);
+        self.go_to_place(place);
     }
 
     /// Puts the view back the way it was left.
@@ -118,6 +197,7 @@ impl Reader {
         self.fit = view.fit;
         self.x = view.x;
         self.y = view.y;
+        self.shown = self.layout.page_at(self.y);
         self.refit(Anchor::Top);
     }
 
@@ -179,13 +259,20 @@ impl Reader {
         self.layout.page_count()
     }
 
-    /// The page at the top of the window, counted from 0.
+    /// The page at the top of the window, counted from 0; a page or a
+    /// spread at a time, the one shown.
     pub fn current_page(&self) -> u32 {
+        if self.mode.paged() {
+            return self.shown;
+        }
         self.layout.page_at(self.y)
     }
 
     /// The pages at least partly inside the window.
     pub fn visible_pages(&self) -> Range<u32> {
+        if self.mode.paged() {
+            return self.layout.row_pages(self.shown);
+        }
         self.layout
             .pages_between(self.y, self.y + self.window.1 / self.zoom)
     }
@@ -197,8 +284,25 @@ impl Reader {
     }
 
     /// Scrolls by a distance in screen pixels: right and down are positive.
+    /// A page or a spread at a time, scrolling on from the bottom of it
+    /// turns to the next, and from the top to the one before.
     pub fn scroll_by(&mut self, right: f32, down: f32) {
         self.x += right / self.zoom;
+        if self.mode.paged()
+            && let Some((top, bottom)) = self.shown_band()
+        {
+            let rows = if down > 0.0 && self.y >= bottom - EDGE {
+                1
+            } else if down < 0.0 && self.y <= top + EDGE {
+                -1
+            } else {
+                0
+            };
+            if rows != 0 {
+                self.turn(rows, rows < 0);
+                return;
+            }
+        }
         self.y += down / self.zoom;
         self.clamp();
     }
@@ -214,6 +318,15 @@ impl Reader {
     /// Moves to the top of the page a number of pages away; with pages
     /// side by side, a number of rows away.
     pub fn page_by(&mut self, pages: i32) {
+        if self.mode.paged() {
+            // Past the first or last row, go as far as there is.
+            let mut rows = i64::from(pages);
+            while rows != 0 && self.layout.row_page_by(self.shown, rows).is_none() {
+                rows = rows.saturating_sub(rows.signum());
+            }
+            self.turn(rows, false);
+            return;
+        }
         let current = i64::from(self.current_page());
         let last = i64::from(self.page_count().saturating_sub(1));
         let columns = i64::try_from(self.columns).unwrap_or(1);
@@ -228,9 +341,40 @@ impl Reader {
     pub fn go_to_page(&mut self, page: u32) {
         let page = page.min(self.page_count().saturating_sub(1));
         if let Some(area) = self.layout.page_rect(page) {
+            self.shown = page;
             self.y = area.top;
             self.clamp();
         }
+    }
+
+    /// Turns so many rows on, or back, a page or a spread at a time: to the
+    /// top of the row, or with `at_bottom` to its bottom. Past either end,
+    /// the view stays where it is.
+    fn turn(&mut self, rows: i64, at_bottom: bool) {
+        let Some(page) = self.layout.row_page_by(self.shown, rows) else {
+            return;
+        };
+        self.shown = page;
+        self.y = if at_bottom {
+            f32::INFINITY
+        } else {
+            f32::NEG_INFINITY
+        };
+        self.clamp();
+    }
+
+    /// The highest and lowest the top of the window goes on the row shown,
+    /// a page or a spread at a time: the same, centring the row, when the
+    /// whole row fits.
+    fn shown_band(&self) -> Option<(f32, f32)> {
+        let (top, bottom) = self.layout.row_band(self.shown)?;
+        let spare = (bottom - top) - self.window.1 / self.zoom;
+        Some(if spare <= 0.0 {
+            let centred = top + spare / 2.0;
+            (centred, centred)
+        } else {
+            (top, top + spare)
+        })
     }
 
     /// Goes to a spot on a page, given how far down the unturned page it
@@ -375,6 +519,10 @@ impl Reader {
     /// window. An area that is already in view is left where it is; one
     /// that is not is centred.
     pub fn reveal(&mut self, page: u32, area: Rect) {
+        // A page or a spread at a time, the page must be the one shown.
+        if self.mode.paged() && !self.layout.row_pages(self.shown).contains(&page) {
+            self.go_to_page(page);
+        }
         let Some(on_screen) = self.area_on_screen(page, area) else {
             return;
         };
@@ -404,7 +552,13 @@ impl Reader {
                     .collect()
             },
         );
-        self.layout = Layout::in_columns(&shown, self.rotation, self.columns);
+        let arrangement = match self.mode {
+            PageMode::Continuous => Arrangement::Columns(self.columns),
+            PageMode::Single => Arrangement::Columns(1),
+            PageMode::Double => Arrangement::Spreads,
+        };
+        self.layout = Layout::arranged(&shown, self.rotation, arrangement);
+        self.shown = self.shown.min(self.page_count().saturating_sub(1));
     }
 
     /// Converts a rectangle in the document to screen pixels.
@@ -462,7 +616,10 @@ impl Reader {
         } else {
             self.x.clamp(0.0, spare)
         };
-        self.y = self.y.clamp(0.0, (self.layout.height() - height).max(0.0));
+        self.y = match self.shown_band().filter(|_| self.mode.paged()) {
+            Some((top, bottom)) => self.y.clamp(top, bottom),
+            None => self.y.clamp(0.0, (self.layout.height() - height).max(0.0)),
+        };
         if !self.x.is_finite() {
             self.x = 0.0;
         }
@@ -517,6 +674,102 @@ mod tests {
         reader.go_to_spot(5, None);
         let page = reader.page_on_screen(5).unwrap();
         assert!(close(page.top, 0.0), "{page:?}");
+    }
+
+    #[test]
+    fn a_page_at_a_time_scrolls_within_it_and_turns_at_its_edges() {
+        let mut reader = reader();
+        reader.set_page_mode(PageMode::Single);
+        // Fitted to the width, a page is taller than the window: 1600
+        // pixels against 1000.
+        assert_eq!(reader.visible_pages(), 0..1);
+        reader.scroll_by(0.0, 400.0);
+        assert_eq!(reader.current_page(), 0);
+        assert_eq!(reader.visible_pages(), 0..1, "only the page shown");
+        // Scrolling on stops at the bottom of the page, then turns.
+        reader.scroll_by(0.0, 400.0);
+        let page = reader.page_on_screen(0).unwrap();
+        assert!(close(page.bottom, 1000.0), "{page:?}");
+        reader.scroll_by(0.0, 1.0);
+        assert_eq!(reader.current_page(), 1);
+        assert!(close(reader.page_on_screen(1).unwrap().top, 0.0));
+        // Back from the top of a page turns to the bottom of the one before.
+        reader.scroll_by(0.0, -1.0);
+        assert_eq!(reader.current_page(), 0);
+        assert!(close(reader.page_on_screen(0).unwrap().bottom, 1000.0));
+        // Not past either end.
+        reader.go_to_page(9);
+        reader.scroll_by(0.0, 5000.0);
+        reader.scroll_by(0.0, 5000.0);
+        assert_eq!(reader.current_page(), 9);
+        reader.page_by(-100);
+        assert_eq!(reader.current_page(), 0);
+        reader.scroll_by(0.0, -1.0);
+        assert_eq!(reader.current_page(), 0);
+    }
+
+    #[test]
+    fn a_page_that_fits_is_centred_and_any_scroll_turns_it() {
+        let mut reader = reader();
+        reader.set_page_mode(PageMode::Single);
+        reader.fit(Fit::Page);
+        let page = reader.page_on_screen(0).unwrap();
+        assert!(
+            close(page.top, 0.0) && close(page.bottom, 1000.0),
+            "{page:?}"
+        );
+        reader.zoom_to(1.0);
+        let page = reader.page_on_screen(0).unwrap();
+        assert!(
+            close(page.top, 100.0) && close(page.bottom, 900.0),
+            "{page:?}"
+        );
+        reader.scroll_by(0.0, 40.0);
+        assert_eq!(reader.current_page(), 1);
+        assert_eq!(reader.visible_pages(), 1..2);
+    }
+
+    #[test]
+    fn two_pages_at_a_time_face_each_other_after_the_cover() {
+        let mut reader = reader();
+        reader.set_page_mode(PageMode::Double);
+        assert_eq!(reader.pages_per_row(), 2);
+        assert_eq!(reader.visible_pages(), 0..1, "the cover alone");
+        reader.page_by(1);
+        assert_eq!(reader.visible_pages(), 1..3);
+        reader.page_by(2);
+        assert_eq!(reader.visible_pages(), 5..7);
+        // Going to a page shows its spread.
+        reader.go_to_page(4);
+        assert_eq!(reader.visible_pages(), 3..5);
+        assert_eq!(reader.current_page(), 4);
+        // A search hit on another page turns to it.
+        let hit = Rect {
+            left: 10.0,
+            top: 10.0,
+            right: 20.0,
+            bottom: 20.0,
+        };
+        reader.reveal(8, hit);
+        assert_eq!(reader.visible_pages(), 7..9);
+        reader.page_by(5);
+        assert_eq!(reader.visible_pages(), 9..10, "the last page alone");
+    }
+
+    #[test]
+    fn changing_how_pages_show_keeps_the_place() {
+        let mut reader = reader();
+        reader.go_to_page(6);
+        reader.set_page_mode(PageMode::Single);
+        assert_eq!(reader.current_page(), 6);
+        reader.set_page_mode(PageMode::Double);
+        assert_eq!(reader.current_page(), 6);
+        assert_eq!(reader.visible_pages(), 5..7);
+        reader.set_page_mode(PageMode::Continuous);
+        assert_eq!(reader.current_page(), 6);
+        assert_eq!(reader.page_mode().next(), PageMode::Single);
+        assert_eq!(PageMode::from_name("double"), Some(PageMode::Double));
+        assert_eq!(PageMode::from_name("book"), None);
     }
 
     #[test]

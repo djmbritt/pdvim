@@ -53,6 +53,18 @@ fontsize = 12
 # and each document remembers its own.
 columns = 1
 
+# How pages show: "continuous", every page in a column to scroll through,
+# side by side as columns says; "single", one page at a time; or "double",
+# two facing pages at a time, after the first page alone, as a printed book
+# has them. A page or two at a time, scrolling past the bottom of the page
+# turns to the next, and past its top to the one before. z m goes from one
+# to the next, for every tab.
+page-mode = "continuous"
+
+# Draw a thin line round every page, in the theme's border color. z f
+# turns it on or off.
+page-borders = false
+
 # Ask "quit pdvim? (y/n)" before quitting: when the last tab is closed,
 # with :qa, or when the window is closed. Press y to quit, any other key to
 # stay. Closing the window again while asked quits without asking.
@@ -192,6 +204,8 @@ note-color = "#fdd835"
 # Hide the tab bar and status bar while reading, or show them again
 "z b" = "toggle-bars"
 "z c" = "toggle-columns"
+"z m" = "cycle-page-mode"
+"z f" = "toggle-borders"
 "f11" = "toggle-fullscreen"
 
 # Search and prompts

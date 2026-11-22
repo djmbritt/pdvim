@@ -93,12 +93,13 @@ pub fn complete(line: &str) -> Completion {
         }
         Some("set") if words_before == 1 => match rest.split_whitespace().next() {
             Some(
-                "autosave" | "confirm-quit" | "confirm-tab-close" | "incsearch" | "statusbar"
-                | "tabbar" | "trim",
+                "autosave" | "confirm-quit" | "confirm-tab-close" | "incsearch" | "page-borders"
+                | "statusbar" | "tabbar" | "trim",
             ) => {
                 words(last_word, ["true", "false"])
             }
             Some("recolor") => words(last_word, ["true", "false", "auto"]),
+            Some("page-mode") => words(last_word, crate::reader::PageMode::NAMES),
             Some("theme") => words(last_word, std::iter::once("auto").chain(Theme::names())),
             Some("theme-dark" | "theme-light") => words(last_word, Theme::names()),
             Some("recolor-darkcolor" | "recolor-lightcolor") => words(last_word, ["theme"]),

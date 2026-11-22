@@ -23,7 +23,7 @@ use crate::keymap::{self, Counts, Pending};
 use crate::layout::{PageSize, Rect, Rotation};
 use crate::num;
 use crate::outline::{self, Outline};
-use crate::reader::Reader;
+use crate::reader::{PageMode, Reader};
 use crate::picker::{Choice, Entry, Picker};
 use crate::overview::Overview;
 use crate::visual::{self, Kind, Spot, Text, Visual};
@@ -506,7 +506,7 @@ pub fn reader(data: &[u8]) {
     while !bytes.0.is_empty() {
         let amount = f32::from(bytes.byte()) - 128.0;
         let whole = u32::from(bytes.byte());
-        match bytes.byte().checked_rem(18).unwrap_or(0) {
+        match bytes.byte().checked_rem(19).unwrap_or(0) {
             0 => reader.scroll_by(amount, 0.0),
             1 => reader.scroll_by(0.0, amount * 40.0),
             2 => reader.scroll_screens(amount / 16.0),
@@ -552,6 +552,11 @@ pub fn reader(data: &[u8]) {
                 },
             ),
             16 => reader.set_columns(usize::from(bytes.byte() & 7)),
+            17 => reader.set_page_mode(match bytes.byte() % 3 {
+                0 => PageMode::Continuous,
+                1 => PageMode::Single,
+                _ => PageMode::Double,
+            }),
             _ => {
                 // A view from the history, which is only as sound as the
                 // database it was read from.
@@ -597,6 +602,13 @@ fn check_reader(reader: &Reader, count: usize) {
     assert!(current < pages, "page {current} of {pages}");
     let visible = reader.visible_pages();
     assert!(visible.end <= pages, "pages {visible:?} of {pages}");
+    // A page or a spread at a time, the page shown is the one in view.
+    if reader.page_mode().paged() {
+        assert!(
+            visible.contains(&current) && visible.len() <= 2,
+            "page {current} shown, but pages {visible:?} in view"
+        );
+    }
     for page in visible {
         let _ = reader.page_on_screen(page);
     }

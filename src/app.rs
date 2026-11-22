@@ -28,7 +28,7 @@ use crate::keymap::{self, Counts, Fed, Match, Pending};
 use crate::layout::Rect;
 use crate::num;
 use crate::outline::{self, Outline};
-use crate::reader::{Place, Reader};
+use crate::reader::{PageMode, Place, Reader};
 use crate::recall::{Lines, Recall};
 use crate::picker::{self, Choice, Entry, Picker};
 use crate::recolor::{Palette, Rgb};
@@ -553,6 +553,8 @@ pub struct App {
     awaiting_mark: Option<MarkVerb>,
     /// Whether matches are highlighted while a search is typed.
     incsearch: bool,
+    /// How every tab shows its pages.
+    paging: Paging,
     /// The matches in view for the search being typed.
     preview: Option<incsearch::Preview>,
     /// The last command line run, typed or bound to keys, for `.`.
@@ -657,6 +659,7 @@ impl App {
             closed: Vec::new(),
             last_line: None,
             incsearch: true,
+            paging: Paging::default(),
             preview: None,
             chapter_wanted: None,
             note_at: None,
@@ -2130,6 +2133,8 @@ impl App {
             Setting::ConfirmTabClose(confirm) => self.care.confirm_tab_close = confirm,
             Setting::TabBar(shown) => self.bars.tabs = shown,
             Setting::Incsearch(on) => self.incsearch = on,
+            Setting::PageMode(mode) => return self.set_page_mode(mode),
+            Setting::PageBorders(on) => self.paging.borders = on,
             Setting::HintChars(letters) => self.hint_chars = letters,
             Setting::StatusBar(shown) => self.bars.status = shown,
         }
@@ -2198,6 +2203,18 @@ impl App {
                     .document()
                     .map_or(1, |document| document.reader.columns());
                 return self.set_columns(if columns == 1 { 2 } else { 1 });
+            }
+            Action::CyclePageMode => return self.set_page_mode(self.paging.mode.next()),
+            Action::ToggleBorders => {
+                self.paging.borders = !self.paging.borders;
+                self.notice = Notice::Info(
+                    if self.paging.borders {
+                        "page borders on"
+                    } else {
+                        "page borders off"
+                    }
+                    .to_owned(),
+                );
             }
             Action::ToggleFullscreen => return self.bars.toggle_fullscreen(),
             Action::ZoomIn
@@ -2295,7 +2312,7 @@ impl App {
             }
         };
         let id = self.next_id();
-        let mut reader = Reader::new(opened.sizes, (self.area.width, self.area.height));
+        let mut reader = self.new_reader(opened.sizes);
         let Fresh {
             mut recolor,
             mut trim,
@@ -3539,6 +3556,15 @@ fn list<'a, T: Clone>(
         .into()
 }
 
+/// How every tab shows its pages.
+#[derive(Debug, Clone, Copy, Default)]
+struct Paging {
+    /// In a column, one at a time, or two at a time.
+    mode: PageMode,
+    /// Whether a line is drawn round every page.
+    borders: bool,
+}
+
 /// The layer that draws the pages, and listens to the mouse.
 struct Pages<'a>(&'a App);
 
@@ -3603,6 +3629,17 @@ impl canvas::Program<Message> for Pages<'_> {
                 && key.trimmed == trimmed
             {
                 frame.draw_image(area, canvas::Image::new(handle.clone()).snap(true));
+            }
+            // Just outside the page: images are drawn over shapes in the
+            // same layer, so a line on the page itself would not show.
+            if app.paging.borders {
+                frame.stroke_rectangle(
+                    Point::new(area.x - 0.5, area.y - 0.5),
+                    Size::new(area.width + 1.0, area.height + 1.0),
+                    canvas::Stroke::default()
+                        .with_width(1.0)
+                        .with_color(app.chrome().list_border),
+                );
             }
         }
         vec![frame.into_geometry()]
@@ -3856,6 +3893,8 @@ fn move_view(document: &mut Document, action: Action, step: f32) {
         | Action::ToggleTrim
         | Action::ToggleBars
         | Action::ToggleColumns
+        | Action::CyclePageMode
+        | Action::ToggleBorders
         | Action::ToggleFullscreen => {}
     }
 }

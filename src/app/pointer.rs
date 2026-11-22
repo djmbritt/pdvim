@@ -375,7 +375,8 @@ mod tests {
         ))));
         let text = selected(&app);
         assert!(text.starts_with("Hello, world."), "{text:?}");
-        assert!(text.contains("\nsec"), "{text:?}");
+        // Copied as running text, the second line goes on after a space.
+        assert!(text.contains("text sec"), "{text:?}");
     }
 
     #[test]

@@ -1756,22 +1756,19 @@ fn text_within(lines: &[TextLine], areas: &[Rect]) -> String {
             (around.left..=around.right).contains(&x) && (around.top..=around.bottom).contains(&y)
         })
     };
-    let mut text = String::new();
-    for line in lines {
-        let mut started = false;
-        for character in line
-            .chars
-            .iter()
-            .filter(|character| inside(&character.area))
-        {
-            if !started && !text.is_empty() {
-                text.push(' ');
-            }
-            started = true;
-            text.push(character.character);
-        }
-    }
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
+    // The part of each line under the marking, joined as running text,
+    // words broken over lines made whole.
+    let parts: Vec<String> = lines
+        .iter()
+        .map(|line| {
+            line.chars
+                .iter()
+                .filter(|character| inside(&character.area))
+                .map(|character| character.character)
+                .collect()
+        })
+        .collect();
+    crate::prose::join(parts.iter().map(|part| (part.as_str(), false)))
 }
 
 /// Puts an annotation over areas of a page, measured from its corner: a

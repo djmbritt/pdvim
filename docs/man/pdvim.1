@@ -242,7 +242,9 @@ one, as vim's
 .B *
 does for the word under the cursor.
 .B y
-copies the selection;
+copies the selection, as running text: the lines of a paragraph joined
+with spaces, a word broken over two lines with a hyphen made whole, and
+paragraphs kept apart by a blank line;
 .BR H ,
 .BR U ,
 .B S
@@ -318,7 +320,9 @@ Copy the path of the document's file.
 Copy the document's title, or its file name without one.
 .TP
 .B yp
-Copy the text of the page in view.
+Copy the text of the page in view, as running text, as
+.B y
+copies a selection.
 .TP
 .B yh
 Copy the text of the marking picked.

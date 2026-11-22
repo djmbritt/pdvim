@@ -24,7 +24,7 @@ impl App {
         let Some((Prompt::SearchForward | Prompt::SearchBackward, line)) = &self.prompt else {
             return Task::none();
         };
-        if !self.incsearch || line.is_empty() {
+        if !self.finding.incsearch || line.is_empty() {
             self.preview = None;
             return Task::none();
         }
@@ -34,7 +34,9 @@ impl App {
         let id = document.id;
         let needle = line.clone();
         let pages = document.reader.visible_pages().collect();
-        let finding = document.backend.search_pages(needle.clone(), pages);
+        let finding = document
+            .backend
+            .search_pages(self.finding.needle(&needle, false), pages);
         Task::perform(finding, move |result| {
             Message::Previewed(id, needle, result)
         })

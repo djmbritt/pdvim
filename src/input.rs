@@ -169,6 +169,8 @@ pub enum Action {
     ShowRecent,
     /// Show the open tabs, to pick one to go to.
     ShowTabs,
+    /// List every match of the last search, with its line.
+    ShowMatches,
     /// Show the key bindings.
     ShowHelp,
     /// Show what the document says about itself.
@@ -191,6 +193,11 @@ pub enum Action {
     },
     /// Ask for text in view to start selecting at, as flash.nvim's `s`.
     Flash,
+    /// Select the last selection again, as vim's `gv`.
+    SelectAgain,
+    /// Go this far through the document, in percent, as vim's `50%`; with
+    /// no count, nowhere.
+    GotoPercent(Option<u32>),
     /// Go to a field of a form, to fill it in.
     Field(FieldPick),
     /// Copy something about the document in view.
@@ -244,6 +251,8 @@ bindable! {
         FirstPage = "first-page", "Go to the first page, or page n";
         /// The last page, or the page given by a count.
         LastPage = "last-page", "Go to the last page, or page n";
+        /// As vim's `%` with a count.
+        Percent = "percent", "Go n percent of the way through the document";
         PageTop = "page-top", "Go to the top of the page";
         PageBottom = "page-bottom", "Go to the bottom of the page";
         NextChapter = "next-chapter", "Go to the next chapter or section";
@@ -289,6 +298,8 @@ bindable! {
         VisualLine = "visual-line", "Select whole lines from a line picked by label";
         /// As flash.nvim's `s`.
         Flash = "flash", "Type text in view, then its label, to start selecting there";
+        /// As vim's `gv`.
+        SelectAgain = "select-again", "Select the last selection again";
         /// As `gi` in Vimium: tab then goes from field to field.
         FirstField = "first-field", "Fill in the first field of a form in view; tab goes to the next";
         LastField = "last-field", "Fill in the last field of a form in view";
@@ -314,6 +325,8 @@ bindable! {
         PreviousTab = "previous-tab", "Go to the previous tab";
         /// As Tridactyl's `b`.
         Tabs = "tabs", "List the open tabs; type to narrow, enter to go to one";
+        /// As vim's quickfix list.
+        Matches = "matches", "List every match of the last search; type to narrow, enter to go to one";
         /// As Tridactyl's `u`, which here takes back markings.
         ReopenTab = "reopen-tab", "Open the tab closed last again, where it was";
         /// The letter is the next key: a to z for this document, A to Z
@@ -383,6 +396,7 @@ impl Binding {
             Self::Repeat => Action::Repeat(count.unwrap_or(1)),
             Self::Recent => Action::ShowRecent,
             Self::Tabs => Action::ShowTabs,
+            Self::Matches => Action::ShowMatches,
             Self::NextTab => count.map_or(Action::NextTab, Action::GotoTab),
             Self::PreviousTab => Action::PreviousTab(count.unwrap_or(1)),
             Self::ReopenTab => Action::ReopenTab(count.unwrap_or(1)),
@@ -406,6 +420,8 @@ impl Binding {
             Self::Visual => Action::Visual { lines: false },
             Self::VisualLine => Action::Visual { lines: true },
             Self::Flash => Action::Flash,
+            Self::SelectAgain => Action::SelectAgain,
+            Self::Percent => Action::GotoPercent(count),
             Self::FirstField => Action::Field(FieldPick::First),
             Self::LastField => Action::Field(FieldPick::Last),
             Self::FieldAgain => Action::Field(FieldPick::Again),

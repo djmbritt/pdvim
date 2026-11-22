@@ -45,11 +45,14 @@ mod incsearch;
 mod info;
 mod links;
 mod markings;
+mod matches;
 mod mode;
 mod overview;
 mod pointer;
 mod reflow;
 mod tabs;
+#[cfg(test)]
+mod testing;
 mod unlock;
 
 use markings::{Edit, Step, Wanted};
@@ -212,6 +215,30 @@ pub struct RenderKey {
 pub struct Search {
     needle: String,
     forward: bool,
+    /// Whether only whole words are found, as `*` searches.
+    whole_word: bool,
+}
+
+/// How searches are made.
+#[derive(Debug, Clone, Copy)]
+struct Finding {
+    /// Whether matches are highlighted while a search is typed.
+    incsearch: bool,
+    /// Whether a search with a capital letter in it matches case.
+    smartcase: bool,
+}
+
+impl Finding {
+    /// What to search for, for text typed: in its case if it has a capital
+    /// and smartcase is on, unless only whole words are wanted, as `*` and
+    /// `#` search, which find any case, as in vim.
+    fn needle(self, text: &str, whole_word: bool) -> backend::Needle {
+        backend::Needle {
+            text: text.to_owned(),
+            match_case: self.smartcase && !whole_word && text.chars().any(char::is_uppercase),
+            whole_word,
+        }
+    }
 }
 
 /// The results of the last search.
@@ -481,6 +508,10 @@ pub struct App {
     picker: Option<Picker<PathBuf>>,
     /// The list of open tabs, by their places, while it is shown.
     tab_list: Option<Picker<usize>>,
+    /// Whether the tabs left open are opened again at the next start.
+    session: bool,
+    /// Every match of the last search, listed, and what was searched for.
+    match_list: Option<(String, Picker<usize>)>,
     /// The cheat sheet, while it is shown.
     help: Option<Help>,
     /// Every page of a document small, to pick one: the document's number,
@@ -500,6 +531,8 @@ pub struct App {
     hints_wanted: Option<u64>,
     /// What the mouse is doing over the pages.
     mouse: pointer::Mouse,
+    /// The last selection made, and the document it was made in, for `gv`.
+    last_selection: Option<(u64, Visual)>,
     /// What to do with the link picked.
     link_goal: LinkGoal,
     /// The letters labels are made of.
@@ -565,8 +598,8 @@ pub struct App {
     fields_wanted: Option<(u64, forms::FieldGoal)>,
     /// Whether the next key is the letter of a mark to set, or to go to.
     awaiting_mark: Option<MarkVerb>,
-    /// Whether matches are highlighted while a search is typed.
-    incsearch: bool,
+    /// How searches are made.
+    finding: Finding,
     /// How every tab shows its pages.
     paging: Paging,
     /// The matches in view for the search being typed.
@@ -634,6 +667,8 @@ impl App {
             completing: None,
             picker: None,
             tab_list: None,
+            match_list: None,
+            session: false,
             help: None,
             overview: None,
             info: None,
@@ -642,6 +677,7 @@ impl App {
             marking_hints: None,
             hints_wanted: None,
             mouse: pointer::Mouse::default(),
+            last_selection: None,
             link_goal: LinkGoal::Follow,
             hint_chars: crate::hints::HOME_ROW.chars().collect(),
             line_hints: None,
@@ -674,7 +710,10 @@ impl App {
             path_rules: Vec::new(),
             closed: Vec::new(),
             last_line: None,
-            incsearch: true,
+            finding: Finding {
+                incsearch: true,
+                smartcase: true,
+            },
             paging: Paging::default(),
             preview: None,
             chapter_wanted: None,
@@ -698,6 +737,13 @@ impl App {
         // The documents are still opening, so the defaults set here apply
         // to them, and a problem here is shown over the opening notice.
         app.configure();
+        // Started without a document, with sessions on, the tabs left open
+        // last open again, in place of the list.
+        let tasks = if tasks.is_empty() && app.session {
+            app.restore_session()
+        } else {
+            tasks
+        };
         // The theme is also told on every change, but not always at start.
         let theme = iced::system::theme().map(Message::SystemTheme);
         (app, Task::batch(tasks.into_iter().chain([theme])))
@@ -970,6 +1016,9 @@ impl App {
                 } else if self.tab_list.is_some() {
                     self.on_tab_list_key(key);
                     Task::none()
+                } else if self.match_list.is_some() {
+                    self.on_match_list_key(key);
+                    Task::none()
                 } else if self.prompt.is_some() {
                     self.on_prompt_key(key)
                 } else if let Some(verb) = self.awaiting_mark.take() {
@@ -1079,6 +1128,7 @@ impl App {
             let ready = match then {
                 TextFor::Copy(page) => read(page),
                 TextFor::Lines(_) | TextFor::Flash => document.reader.visible_pages().all(read),
+                TextFor::Matches => self.matches_read(),
             };
             if !ready {
                 return Task::none();
@@ -1088,6 +1138,7 @@ impl App {
                 TextFor::Lines(kind) => self.show_line_hints(kind),
                 TextFor::Flash => self.flash = Some(crate::flash::Flash::new()),
                 TextFor::Copy(page) => return self.copy_page(page),
+                TextFor::Matches => self.list_matches(),
             }
         }
         Task::none()
@@ -1211,6 +1262,32 @@ impl App {
         }
     }
 
+    /// Leaves visual mode, keeping the selection for `gv` to select again.
+    fn leave_visual(&mut self) {
+        let Some(visual) = self.visual.take() else {
+            return;
+        };
+        if let Some(document) = self.document() {
+            self.last_selection = Some((document.id, visual));
+        }
+    }
+
+    /// Selects the last selection again, if it was made in the document in
+    /// view.
+    fn select_again(&mut self) -> Task<Message> {
+        let id = self.document().map(|document| document.id);
+        match &self.last_selection {
+            Some((made_in, last)) if Some(*made_in) == id => {
+                self.visual = Some(last.again());
+                self.follow_cursor()
+            }
+            _ => {
+                self.notice = Notice::Error("no selection to select again".to_owned());
+                Task::none()
+            }
+        }
+    }
+
     /// Moves the selection, copies it, or leaves visual mode.
     fn on_visual_key(&mut self, key: Key) -> Task<Message> {
         let (Some(visual), Some(document)) = (
@@ -1219,35 +1296,43 @@ impl App {
                 .get(self.current)
                 .and_then(|tab| tab.document.as_ref()),
         ) else {
-            self.visual = None;
+            self.leave_visual();
             return Task::none();
         };
         match visual.feed(key, &self.keymaps.visual, &document.text) {
             visual::Outcome::Stay => self.follow_cursor(),
             visual::Outcome::Leave => {
-                self.visual = None;
+                self.leave_visual();
                 Task::none()
             }
             visual::Outcome::Flash => self.start_flash(),
             visual::Outcome::Mark(kind, areas) => {
-                self.visual = None;
+                self.leave_visual();
                 self.highlight(kind, areas)
             }
             visual::Outcome::Unmark(areas) => {
-                self.visual = None;
+                self.leave_visual();
                 self.with_markings(Wanted::DeleteIn(areas))
             }
             visual::Outcome::Note(page, area) => {
-                self.visual = None;
+                self.leave_visual();
                 self.ask_for_note(page, area);
                 Task::none()
             }
             visual::Outcome::ChangeNote(page, area) => {
-                self.visual = None;
+                self.leave_visual();
                 self.with_markings(Wanted::ChangeAt(page, area))
             }
+            visual::Outcome::Search {
+                text,
+                forward,
+                whole_word,
+            } => {
+                self.leave_visual();
+                self.search_for(&text, forward, whole_word)
+            }
             visual::Outcome::Copy(text) => {
-                self.visual = None;
+                self.leave_visual();
                 let count = text.chars().count();
                 self.notice = Notice::Info(format!(
                     "copied {count} character{}",
@@ -1794,6 +1879,19 @@ impl App {
         }
     }
 
+    /// How many entries of a list in the middle of the window fit in it,
+    /// below its heading.
+    fn list_rows(&self) -> usize {
+        // The room left by the margins (24 above and below), the frame (8)
+        // and the heading (16), and the height of a row: its type, its
+        // padding and the gap between.
+        let room = self.area.height - 96.0;
+        let row = LIST_TEXT_SIZE.mul_add(1.3, 7.0);
+        usize::try_from(num::round((room / row).floor()))
+            .unwrap_or(1)
+            .max(1)
+    }
+
     /// How many entries of the table of contents fit in the window.
     fn sidebar_rows(&self) -> usize {
         // Room is kept for the heading and the line at the foot.
@@ -2206,9 +2304,11 @@ impl App {
             }
             Setting::ConfirmQuit(confirm) => self.care.confirm_quit = confirm,
             Setting::Autosave(autosave) => self.care.autosave = autosave,
+            Setting::Session(on) => self.session = on,
             Setting::ConfirmTabClose(confirm) => self.care.confirm_tab_close = confirm,
             Setting::TabBar(shown) => self.bars.tabs = shown,
-            Setting::Incsearch(on) => self.incsearch = on,
+            Setting::Incsearch(on) => self.finding.incsearch = on,
+            Setting::Smartcase(on) => self.finding.smartcase = on,
             Setting::PageMode(mode) => return self.set_page_mode(mode),
             Setting::PageBorders(on) => self.paging.borders = on,
             Setting::HintChars(letters) => self.hint_chars = letters,
@@ -2242,6 +2342,7 @@ impl App {
                 self.prompt_pending = Pending::new();
                 return Task::none();
             }
+            Action::ShowMatches => return self.show_matches(),
             Action::ShowRecent | Action::ShowHelp | Action::ShowInfo | Action::ShowTabs => {
                 self.show_panel(action);
                 return Task::none();
@@ -2255,6 +2356,7 @@ impl App {
             Action::Marking(what) => return self.on_marking_action(what),
             Action::Visual { lines } => return self.start_visual(lines),
             Action::Flash => return self.start_flash(),
+            Action::SelectAgain => return self.select_again(),
             Action::Field(pick) => return self.go_to_field(pick.into()),
             Action::Copy(what) => return self.copy(what),
             Action::ShowOutline => return self.show_outline(),
@@ -2434,7 +2536,7 @@ impl App {
         returning = returning.filter(|_| trim);
         if index == self.current {
             // The selection and labels were for the document leaving.
-            self.visual = None;
+            self.leave_visual();
             self.line_hints = None;
         }
         let Some(tab) = self.tabs.get_mut(index) else {
@@ -2667,22 +2769,33 @@ impl App {
 
     /// Starts a search. An empty needle repeats the last one.
     fn search(&mut self, needle: &str, forward: bool) -> Task<Message> {
+        self.search_for(needle, forward, false)
+    }
+
+    /// Starts a search, for whole words only if asked. An empty needle
+    /// repeats the last search.
+    fn search_for(&mut self, needle: &str, forward: bool, whole_word: bool) -> Task<Message> {
+        let finding = self.finding;
         let Some(document) = current_document(&mut self.tabs, self.current) else {
             return Task::none();
         };
         let id = document.id;
-        let needle = if needle.is_empty() {
+        let (needle, whole_word) = if needle.is_empty() {
             match &document.results.search {
-                Some(last) => last.needle.clone(),
+                Some(last) => (last.needle.clone(), last.whole_word),
                 None => return Task::none(),
             }
         } else {
-            needle.to_owned()
+            (needle.to_owned(), whole_word)
         };
         self.notice = Notice::Info(format!("searching for {needle}"));
-        let finding = document.backend.search(needle.clone());
-        let search = Search { needle, forward };
-        Task::perform(finding, move |result| Message::Found(id, search, result))
+        let found = document.backend.search(finding.needle(&needle, whole_word));
+        let search = Search {
+            needle,
+            forward,
+            whole_word,
+        };
+        Task::perform(found, move |result| Message::Found(id, search, result))
     }
 
     fn on_found(&mut self, id: u64, search: Search, result: Result<Vec<Hit>, backend::Error>) {
@@ -2902,8 +3015,42 @@ impl App {
             .filter(|document| document.modified())
     }
 
-    /// Records where every document is being left, and closes the program.
+    /// Opens the documents left open in tabs when pdvim was last quit, the
+    /// one in view then in view again. None when there were none.
+    fn restore_session(&mut self) -> Vec<Task<Message>> {
+        let Some(Ok((paths, current))) = self.history.as_ref().map(History::session) else {
+            return Vec::new();
+        };
+        if paths.is_empty() {
+            return Vec::new();
+        }
+        self.picker = None;
+        let tasks = paths
+            .into_iter()
+            .map(|path| self.open_in_tab(path))
+            .collect();
+        self.current = current.min(self.tabs.len().saturating_sub(1));
+        tasks
+    }
+
+    /// Records where every document is being left, and the tabs open, and
+    /// closes the program.
     fn exit(&mut self) -> Task<Message> {
+        let open: Vec<PathBuf> = self
+            .tabs
+            .iter()
+            .filter_map(|tab| {
+                tab.document
+                    .as_ref()
+                    .map(|document| document.path.clone())
+                    .or_else(|| tab.opening.as_ref().map(|(_, path)| path.clone()))
+            })
+            .collect();
+        if let Some(history) = &mut self.history
+            && let Err(error) = history.save_session(&open, self.current)
+        {
+            eprintln!("pdvim: cannot remember the tabs open: {error}");
+        }
         let documents: Vec<_> = self
             .tabs
             .iter_mut()
@@ -2957,10 +3104,26 @@ impl App {
                 picker,
                 chrome,
                 pointer::Click::Recent,
+                self.list_rows(),
             ));
         }
         if let Some(tabs) = &self.tab_list {
-            layers = layers.push(list("Tabs", tabs, chrome, pointer::Click::TabList));
+            layers = layers.push(list(
+                "Tabs",
+                tabs,
+                chrome,
+                pointer::Click::TabList,
+                self.list_rows(),
+            ));
+        }
+        if let Some((needle, matches)) = &self.match_list {
+            layers = layers.push(list(
+                needle,
+                matches,
+                chrome,
+                pointer::Click::Match,
+                self.list_rows(),
+            ));
         }
         if let Some(completing) = &self.completing {
             layers = layers.push(completions(completing, chrome));
@@ -3239,6 +3402,8 @@ enum TextFor {
     Flash,
     /// Copy the text of this page.
     Copy(u32),
+    /// List every match of the last search, with its line.
+    Matches,
 }
 
 /// What `f` labels: a link to follow, or a marking to pick.
@@ -3604,6 +3769,7 @@ fn list<'a, T: Clone>(
     picker: &'a Picker<T>,
     chrome: Colours,
     click: fn(usize) -> pointer::Click,
+    rows: usize,
 ) -> Element<'a, Message> {
     let label = |content: String, colour: Color| {
         text(content)
@@ -3623,9 +3789,19 @@ fn list<'a, T: Clone>(
         .spacing(16),
     )
     .padding([4, 10]);
+    // A list too long for the window shows the rows that hold the entry
+    // selected, a window's worth at a time.
+    let rows = rows.max(1);
+    let top = picker
+        .selected()
+        .checked_div(rows)
+        .unwrap_or(0)
+        .saturating_mul(rows);
     let mut entries: Vec<Element<'a, Message>> = picker
         .shown()
         .enumerate()
+        .skip(top)
+        .take(rows)
         .map(|(index, entry)| {
             let selected = index == picker.selected();
             clickable(
@@ -4056,6 +4232,18 @@ fn move_view(document: &mut Document, action: Action, step: f32) {
         Action::GotoPage(page) => leap(document, page.saturating_sub(1)),
         Action::GotoFirst => leap(document, 0),
         Action::GotoLast => leap(document, u32::MAX),
+        // As vim does: the page that far through, rounded up.
+        Action::GotoPercent(Some(percent)) => {
+            let pages = u64::from(document.reader.page_count());
+            let page = u64::from(percent.min(100))
+                .saturating_mul(pages)
+                .saturating_add(99)
+                / 100;
+            leap(
+                document,
+                u32::try_from(page).unwrap_or(u32::MAX).saturating_sub(1),
+            );
+        }
         Action::PageTop => reader.page_top(),
         Action::PageBottom => reader.page_bottom(),
         Action::ZoomIn => reader.zoom_in(),
@@ -4069,6 +4257,7 @@ fn move_view(document: &mut Document, action: Action, step: f32) {
         Action::Quit
         | Action::OpenPrompt(_)
         | Action::ShowRecent
+        | Action::ShowMatches
         | Action::ShowTabs
         | Action::ShowHelp
         | Action::ShowInfo
@@ -4082,6 +4271,8 @@ fn move_view(document: &mut Document, action: Action, step: f32) {
         | Action::FollowLink(_)
         | Action::Visual { .. }
         | Action::Flash
+        | Action::SelectAgain
+        | Action::GotoPercent(None)
         | Action::Field(_)
         | Action::Copy(_)
         | Action::Undo

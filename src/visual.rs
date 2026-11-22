@@ -54,6 +54,13 @@ bindable! {
         /// As vim's `ap`. A PDF has no blank lines after paragraphs, so the
         /// text copied ends with one instead.
         AroundParagraph = "around-paragraph", "Select the paragraph and the gap after it";
+        /// As vim's `iw`; again, or with a count, takes in the next words.
+        InnerWord = "inner-word", "Select the word, or the next too";
+        /// As vim's `aw`: the spaces after the word, or else before it.
+        AroundWord = "around-word", "Select the word and the space after it";
+        /// As vim's `*`, for the selection: a word is found only whole.
+        SearchSelection = "search-selection", "Search forward for the selection, and leave";
+        SearchSelectionBack = "search-selection-back", "Search backward for the selection, and leave";
     }
 }
 
@@ -120,6 +127,13 @@ pub enum Outcome {
     Leave,
     /// Ask for text to jump the cursor to.
     Flash,
+    /// Search for this text, forward or backward, as a whole word if it
+    /// is one, and leave.
+    Search {
+        text: String,
+        forward: bool,
+        whole_word: bool,
+    },
 }
 
 /// Where across the page `j` and `k` take the cursor.
@@ -168,6 +182,60 @@ impl Visual {
 
     pub const fn cursor(&self) -> Spot {
         self.cursor
+    }
+
+    /// The same selection afresh, as `gv` selects it again: nothing typed
+    /// towards a key is kept.
+    pub const fn again(&self) -> Self {
+        let mut again = Self::new(self.kind, self.anchor);
+        again.cursor = self.cursor;
+        again
+    }
+
+    /// Selects whole words, as vim's `iw` and `aw` do: the word at the
+    /// cursor, or, with a selection already made or a count, the words
+    /// after it too; around them, the spaces after the last, or else those
+    /// before the first.
+    fn words(&mut self, text: &Text, times: u32, around: bool) {
+        let mut more = times;
+        if self.anchor == self.cursor {
+            let (first, last) = word_at(text, self.cursor);
+            self.anchor = first;
+            self.cursor = last;
+            more = more.saturating_sub(1);
+        }
+        for _ in 0..more {
+            match self.horizontal(Binding::WordEnd, text) {
+                Some(moved) if moved != self.cursor => self.cursor = moved,
+                _ => break,
+            }
+        }
+        if !around {
+            return;
+        }
+        let space = |spot: Spot| {
+            line(text, spot.page, spot.line)
+                .and_then(|line| line.chars.get(spot.index))
+                .is_some_and(|c| c.character.is_whitespace())
+        };
+        let after = |spot: Spot| Spot {
+            index: spot.index.saturating_add(1),
+            ..spot
+        };
+        if space(after(self.cursor)) {
+            while space(after(self.cursor)) {
+                self.cursor = after(self.cursor);
+            }
+        } else {
+            while let Some(index) = self.anchor.index.checked_sub(1)
+                && space(Spot {
+                    index,
+                    ..self.anchor
+                })
+            {
+                self.anchor.index = index;
+            }
+        }
     }
 
     /// Puts the cursor at the end of its line, and keeps it at the end of
@@ -248,6 +316,22 @@ impl Visual {
                     copied.push_str("\n\n");
                 }
                 return Outcome::Copy(copied);
+            }
+            Binding::InnerWord | Binding::AroundWord => {
+                self.words(text, times, binding == Binding::AroundWord);
+            }
+            Binding::SearchSelection | Binding::SearchSelectionBack => {
+                let selected = self.text(text);
+                let selected = selected.split_whitespace().collect::<Vec<_>>().join(" ");
+                if selected.is_empty() {
+                    return Outcome::Leave;
+                }
+                let whole_word = selected.chars().all(|c| c.is_alphanumeric() || c == '_');
+                return Outcome::Search {
+                    text: selected,
+                    forward: binding == Binding::SearchSelection,
+                    whole_word,
+                };
             }
             Binding::InnerParagraph | Binding::AroundParagraph => {
                 self.paragraphs(text, times);
@@ -1106,6 +1190,41 @@ mod tests {
         assert_eq!(spot_at(&text, 2, (5.0, -40.0)), Some(spot(2, 0, 0)));
         assert_eq!(spot_at(&text, 1, (5.0, 5.0)), None);
         assert_eq!(spot_at(&text, 7, (5.0, 5.0)), None);
+    }
+
+    #[test]
+    fn inner_and_around_word_select_words_and_their_spaces() {
+        let text = text();
+        let keymap = crate::bindings::Keymaps::default().visual;
+        let typed = |keys: &str| {
+            let mut visual = Visual::new(Kind::Characters, spot(0, 0, 5));
+            let mut outcome = Outcome::Stay;
+            for key in keys.chars() {
+                outcome = visual.feed(Key::Char(key), &keymap, &text);
+            }
+            (visual.text(&text), outcome, visual.cursor())
+        };
+        assert_eq!(typed("iw").0, "two");
+        // The space after it is selected too, though copying leaves out
+        // spaces at the end.
+        assert_eq!(typed("aw").2, spot(0, 0, 7));
+        assert_eq!(typed("iwiw").0, "two three");
+        assert_eq!(
+            typed("iw*").1,
+            Outcome::Search {
+                text: "two".to_owned(),
+                forward: true,
+                whole_word: true
+            }
+        );
+        assert_eq!(
+            typed("aw#").1,
+            Outcome::Search {
+                text: "two".to_owned(),
+                forward: false,
+                whole_word: true
+            }
+        );
     }
 
     #[test]

@@ -44,6 +44,8 @@ pub enum Click {
     Marking(usize),
     /// A small page in the overview.
     Overview(u32),
+    /// An entry shown in the list of matches, by its place.
+    Match(usize),
 }
 
 /// What the mouse is doing over the pages.
@@ -99,11 +101,13 @@ impl App {
     fn close_panels(&mut self) -> bool {
         let open = self.picker.is_some()
             || self.tab_list.is_some()
+            || self.match_list.is_some()
             || self.help.is_some()
             || self.info.is_some()
             || self.overview.is_some();
         self.picker = None;
         self.tab_list = None;
+        self.match_list = None;
         self.help = None;
         self.info = None;
         self.overview = None;
@@ -207,7 +211,7 @@ impl App {
     /// Follows the link clicked, once the page's links are known; a click
     /// elsewhere ends the selection.
     fn click_page(&mut self, page: u32, spot: (f32, f32)) -> Task<Message> {
-        self.visual = None;
+        self.leave_visual();
         let Some(document) = self.document() else {
             return Task::none();
         };
@@ -222,7 +226,7 @@ impl App {
     /// Follows a link clicked, or, a click missing every link, ends the
     /// selection.
     fn follow_click(&mut self, link: Option<Link>) -> Task<Message> {
-        self.visual = None;
+        self.leave_visual();
         let Some(link) = link else {
             return Task::none();
         };
@@ -316,6 +320,16 @@ impl App {
             }
             Click::Marking(index) => self.on_marking_list(markings::Outcome::Go(index)),
             Click::Overview(page) => self.go_from_overview(page),
+            Click::Match(index) => {
+                let chosen = self
+                    .match_list
+                    .as_mut()
+                    .and_then(|(_, list)| list.choose(index));
+                if let Some(hit) = chosen {
+                    self.go_to_match(hit);
+                }
+                Task::none()
+            }
         }
     }
 }
@@ -334,65 +348,10 @@ fn link_at(links: &[Link], (across, down): (f32, f32)) -> Option<Link> {
 
 #[cfg(test)]
 mod tests {
-    use iced::Size;
     use iced::futures::executor::block_on;
 
     use super::*;
-    use crate::layout::Rect;
-
-    /// The app, with no history, so that tests leave the reader's alone,
-    /// showing a fixture document in a window half a page high, so that
-    /// the last page can be scrolled to the top.
-    fn showing(fixture: &str) -> (App, u64) {
-        let (mut app, _) = App::boot(Vec::new());
-        app.history = None;
-        let _ = app.update(Message::Resized(Size::new(612.0, 400.0)));
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("fuzz/seeds/pdf")
-            .join(fixture);
-        let _ = app.open_in_tab(path.clone());
-        let request = app
-            .tabs
-            .get(app.current)
-            .and_then(|tab| tab.opening.as_ref())
-            .map(|(request, _)| *request)
-            .unwrap();
-        let flow = app.flow_for(&path);
-        let opened = block_on(crate::backend::open(path.clone(), None, flow));
-        let _ = app.update(Message::Opened(request, path, opened));
-        // Started without a file, the app lists the recent documents.
-        app.picker = None;
-        let id = app.document().unwrap().id;
-        (app, id)
-    }
-
-    /// Where a spot of a page is in the window.
-    fn on_screen(app: &App, page: u32, (across, down): (f32, f32)) -> Point {
-        let spot = Rect {
-            left: across,
-            top: down,
-            right: across,
-            bottom: down,
-        };
-        let area = app
-            .document()
-            .unwrap()
-            .reader
-            .area_on_screen(page, spot)
-            .unwrap();
-        Point::new(area.left, area.top)
-    }
-
-    /// Gives the app the text of a page, as the backend answers.
-    fn read(app: &mut App, id: u64, page: u32) {
-        let text = block_on(app.document().unwrap().backend.text(vec![page]));
-        let _ = app.update(Message::TextFound(id, vec![page], text));
-    }
-
-    fn selected(app: &App) -> String {
-        let document = app.document().unwrap();
-        app.visual.as_ref().unwrap().text(&document.text)
-    }
+    use crate::app::testing::{on_screen, read, selected, showing};
 
     #[test]
     fn dragging_over_text_selects_it() {

@@ -88,6 +88,11 @@ confirm-tab-close = true
 # instead), and pdvim asks before closing a document with unsaved ones.
 autosave = false
 
+# Open the tabs left open when pdvim was last quit, the one in view in view
+# again, when it starts without a file, as a vim session; off, it lists the
+# documents read lately instead.
+session = false
+
 # The letters the labels on links and lines are made of, the first ones
 # used most; more of the alphabet is added when there are too many links
 # for two letters to label. Lower-case letters or digits, each once.
@@ -95,6 +100,11 @@ hintchars = "asdfghjkl"
 
 # Highlight the matches in view while a search is typed after / or ?.
 incsearch = true
+
+# Make a search match case when it has a capital letter in it, as vim's
+# smartcase: /pdf finds PDF and pdf, /PDF only PDF. * and # in visual mode
+# find any case, as in vim.
+smartcase = true
 
 # Show the tab bar along the top when more than one tab is open.
 tabbar = true
@@ -181,6 +191,7 @@ note-color = "#fdd835"
 "g g" = "first-page"
 "home" = "first-page"
 "G" = "last-page"
+"%" = "percent"
 "end" = "last-page"
 "H" = "page-top"
 "L" = "page-bottom"
@@ -221,6 +232,7 @@ note-color = "#fdd835"
 "?" = "search-backward"
 "n" = "search-next"
 "N" = "search-previous"
+"g /" = "matches"
 ":" = "command-prompt"
 # Run the last command line again, typed after : or bound to keys
 "." = "repeat"
@@ -246,6 +258,7 @@ note-color = "#fdd835"
 # Selecting text: label every line in view, type a label to start there,
 # move with h j k l, w b e, 0 $, and press y to copy
 "v" = "visual"
+"g v" = "select-again"
 "V" = "visual-line"
 # As flash.nvim's s: type some of the text in view, and each match gets a
 # label; type a label to start selecting there, or enter for the nearest
@@ -350,6 +363,10 @@ note-color = "#fdd835"
 "," = "repeat-find-reversed"
 "i p" = "inner-paragraph"
 "a p" = "around-paragraph"
+"i w" = "inner-word"
+"a w" = "around-word"
+"*" = "search-selection"
+"#" = "search-selection-back"
 
 [keys.hints]
 

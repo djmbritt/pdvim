@@ -27,6 +27,18 @@ pub struct Rect {
     pub bottom: f32,
 }
 
+impl Rect {
+    /// The smallest rectangle that holds both.
+    pub const fn union(self, other: Self) -> Self {
+        Self {
+            left: self.left.min(other.left),
+            top: self.top.min(other.top),
+            right: self.right.max(other.right),
+            bottom: self.bottom.max(other.bottom),
+        }
+    }
+}
+
 /// How far every page is turned clockwise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Rotation {

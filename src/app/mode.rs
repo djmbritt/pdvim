@@ -36,6 +36,8 @@ pub(super) enum Mode {
     Help,
     Recent,
     Tabs,
+    /// Every match of the last search, from `g /`.
+    Matches,
     Info,
 }
 
@@ -60,6 +62,7 @@ impl Mode {
             Self::Help => "HELP",
             Self::Recent => "RECENT",
             Self::Tabs => "TABS",
+            Self::Matches => "MATCHES",
             Self::Info => "INFO",
         }
     }
@@ -78,6 +81,7 @@ impl Mode {
             | Self::Help
             | Self::Recent
             | Self::Tabs
+            | Self::Matches
             | Self::Info => modes.list,
         }
     }
@@ -119,6 +123,8 @@ impl App {
             Mode::Recent
         } else if self.tab_list.is_some() {
             Mode::Tabs
+        } else if self.match_list.is_some() {
+            Mode::Matches
         } else {
             match self.prompt.as_ref().map(|(prompt, _)| *prompt) {
                 Some(Prompt::Command) => Mode::Command,

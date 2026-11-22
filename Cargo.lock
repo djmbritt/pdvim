@@ -2978,7 +2978,7 @@ dependencies = [
 
 [[package]]
 name = "pdvim"
-version = "0.1.38"
+version = "0.1.39"
 dependencies = [
  "arboard",
  "font-kit",

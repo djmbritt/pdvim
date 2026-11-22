@@ -1,0 +1,60 @@
+# Runs the tests with coverage turned on after each push to main and on
+# every pull request, through coverage.sh, as on a machine of one's own.
+# The table of how much of each file the tests reach goes in the run's
+# summary, and the report to browse line by line is kept as the run's
+# artifact, "coverage".
+name: Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch makes an older run moot.
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  coverage:
+    name: Test coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # MuPDF is compiled from source, and its bindings are made with
+      # bindgen, which needs libclang.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libclang-dev libfontconfig1-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: coverage
+
+      - name: Measure
+        run: |
+          ./coverage.sh > coverage.md
+          {
+            echo "## Test coverage"
+            echo
+            cat coverage.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            coverage.md
+            target/coverage/html

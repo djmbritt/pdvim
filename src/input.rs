@@ -183,6 +183,12 @@ pub enum Action {
         forward: bool,
         times: u32,
     },
+    /// Bring the start of the next paragraph, or the previous, to the top
+    /// of the window, a number of times over, as vim's `}` and `{`.
+    Paragraph {
+        forward: bool,
+        times: u32,
+    },
     /// Label the links in view, to follow one, open it in a new tab, or
     /// copy it.
     FollowLink(LinkGoal),
@@ -257,6 +263,10 @@ bindable! {
         PageBottom = "page-bottom", "Go to the bottom of the page";
         NextChapter = "next-chapter", "Go to the next chapter or section";
         PreviousChapter = "previous-chapter", "Go to the previous chapter or section";
+        /// As vim's `}`.
+        NextParagraph = "next-paragraph", "Bring the next paragraph to the top of the window";
+        /// As vim's `{`.
+        PreviousParagraph = "previous-paragraph", "Bring the paragraph above to the top of the window";
         /// Show the table of contents in a sidebar.
         Outline = "outline", "Show the table of contents, to go to a chapter";
         Overview = "overview", "Show every page small, side by side, to go to one";
@@ -411,6 +421,10 @@ impl Binding {
             },
             Self::PreviousChapter => Action::Chapter {
                 forward: false,
+                times: count.unwrap_or(1),
+            },
+            Self::NextParagraph | Self::PreviousParagraph => Action::Paragraph {
+                forward: self == Self::NextParagraph,
                 times: count.unwrap_or(1),
             },
             Self::FollowLink => Action::FollowLink(LinkGoal::Follow),

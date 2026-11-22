@@ -636,7 +636,6 @@ impl Visual {
         // Each line's part, and whether a paragraph starts there.
         let mut lines: Vec<(String, bool)> = Vec::new();
         let mut starts: HashMap<u32, Vec<usize>> = HashMap::new();
-        let mut previous_page = None;
         let mut at = Some((first.page, first.line));
         while let Some((page, line_index)) = at {
             if (page, line_index) > (last.page, last.line) {
@@ -661,16 +660,7 @@ impl Visual {
                     .map(|character| character.character)
                     .collect();
                 let paragraph = if line_index == 0 {
-                    // A page's first line goes on with the page before,
-                    // unless that ended a sentence on a short last line,
-                    // and this starts one.
-                    lines.last().is_some_and(|(before, _)| {
-                        prose::ends_sentence(before)
-                            && content.trim_start().starts_with(char::is_uppercase)
-                            && previous_page
-                                .and_then(|before| text.get(&before))
-                                .is_some_and(|lines| ends_short(lines))
-                    })
+                    !lines.is_empty() && page_starts_paragraph(text, page)
                 } else {
                     starts
                         .entry(page)
@@ -682,7 +672,6 @@ impl Visual {
                         .contains(&line_index)
                 };
                 lines.push((content, paragraph));
-                previous_page = Some(page);
             }
             at = next_line(text, (page, line_index));
         }
@@ -1178,6 +1167,30 @@ fn next_line(text: &Text, (page, line): (u32, usize)) -> Option<(u32, usize)> {
         }
         page = page.checked_add(1)?;
     }
+}
+
+/// Whether a page's first line starts a paragraph, rather than going on
+/// with the one the page before ends with: only when that ended a
+/// sentence on a short last line, and this starts one with a capital. A
+/// page with no page of text before it, as far as is read, starts one.
+pub fn page_starts_paragraph(text: &Text, page: u32) -> bool {
+    let Some(first) = line(text, page, 0) else {
+        return true;
+    };
+    let Some((before, row)) = previous_line(text, (page, 0)) else {
+        return true;
+    };
+    let Some(lines) = text.get(&before) else {
+        return true;
+    };
+    let last: String = lines
+        .get(row)
+        .map(|line| line.chars.iter().map(|c| c.character).collect())
+        .unwrap_or_default();
+    let opening: String = first.chars.iter().map(|c| c.character).collect();
+    prose::ends_sentence(&last)
+        && ends_short(lines)
+        && opening.trim_start().starts_with(char::is_uppercase)
 }
 
 /// Whether the last line of a page stops well short of the right edge the

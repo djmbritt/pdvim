@@ -48,6 +48,7 @@ mod markings;
 mod matches;
 mod mode;
 mod overview;
+mod paragraphs;
 mod pointer;
 mod reflow;
 mod tabs;
@@ -1129,6 +1130,7 @@ impl App {
                 TextFor::Copy(page) => read(page),
                 TextFor::Lines(_) | TextFor::Flash => document.reader.visible_pages().all(read),
                 TextFor::Matches => self.matches_read(),
+                TextFor::Paragraph { forward, times } => self.paragraphs_read(forward, times),
             };
             if !ready {
                 return Task::none();
@@ -1139,6 +1141,7 @@ impl App {
                 TextFor::Flash => self.flash = Some(crate::flash::Flash::new()),
                 TextFor::Copy(page) => return self.copy_page(page),
                 TextFor::Matches => self.list_matches(),
+                TextFor::Paragraph { forward, times } => self.go_to_paragraph(forward, times),
             }
         }
         Task::none()
@@ -2351,6 +2354,9 @@ impl App {
             Action::FollowLink(goal) => return self.label_links(goal),
             Action::Write => return self.write(None, false),
             Action::Chapter { forward, times } => return self.step_chapter(forward, times),
+            Action::Paragraph { forward, times } => {
+                return self.step_paragraph(forward, times);
+            }
             Action::Undo => return self.undo(),
             Action::Redo => return self.redo(),
             Action::Marking(what) => return self.on_marking_action(what),
@@ -3404,6 +3410,8 @@ enum TextFor {
     Copy(u32),
     /// List every match of the last search, with its line.
     Matches,
+    /// Go to a paragraph, once the pages around are read.
+    Paragraph { forward: bool, times: u32 },
 }
 
 /// What `f` labels: a link to follow, or a marking to pick.
@@ -4263,6 +4271,7 @@ fn move_view(document: &mut Document, action: Action, step: f32) {
         | Action::ShowInfo
         | Action::Write
         | Action::Chapter { .. }
+        | Action::Paragraph { .. }
         | Action::ShowOutline
         | Action::ShowOverview
         | Action::Mark(_)

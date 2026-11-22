@@ -203,6 +203,8 @@ note-color = "#fdd835"
 # The start of the next or previous chapter or section in it
 "] ]" = "next-chapter"
 "[ [" = "previous-chapter"
+"}" = "next-paragraph"
+"{" = "previous-paragraph"
 
 # Zoom and view
 "+" = "zoom-in"

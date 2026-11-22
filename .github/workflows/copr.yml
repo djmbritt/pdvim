@@ -1,0 +1,34 @@
+# Asks Fedora Copr to build the RPMs of a release when it is published.
+#
+# Off unless the repository variable COPR_ENABLED is "true" and the secret
+# COPR_WEBHOOK_URL holds the package's custom webhook URL from Copr
+# (Settings -> Integrations,
+# https://copr.fedorainfracloud.org/webhooks/custom/<ID>/<UUID>/pdvim/).
+# It is an alternative to Copr's GitHub webhook; use one, not both. See
+# packaging/rpm/README.md.
+#
+# Copr builds the latest v* tag of its clone (see .copr/Makefile), which by
+# the time a release is published is the one just released.
+name: Copr
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  trigger:
+    if: vars.COPR_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger the Copr build
+        env:
+          COPR_WEBHOOK_URL: ${{ secrets.COPR_WEBHOOK_URL }}
+        run: |
+          if [ -z "$COPR_WEBHOOK_URL" ]; then
+            echo "::error::the COPR_WEBHOOK_URL secret is not set"
+            exit 1
+          fi
+          curl --fail --silent --show-error -X POST "$COPR_WEBHOOK_URL"

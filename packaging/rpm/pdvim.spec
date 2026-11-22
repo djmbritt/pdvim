@@ -11,6 +11,12 @@
 # Rust binary (the AUR PKGBUILD has options=('!lto') for the same reason).
 %global _lto_cflags %{nil}
 
+%if !(0%{?fedora} || 0%{?rhel})
+# Outside Fedora, cargo's release profile is used, which has no debugging
+# information, so there would be only an empty debugsource package.
+%global debug_package %{nil}
+%endif
+
 Name:           pdvim
 Version:        0.1.31
 Release:        1%{?dist}

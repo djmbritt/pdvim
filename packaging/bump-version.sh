@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Raises pdvim's version in Cargo.toml and both lockfiles, and prints the
-# new version.
+# Raises pdvim's version in Cargo.toml, both lockfiles and the RPM spec,
+# and prints the new version.
 #
 # usage: packaging/bump-version.sh [patch|minor|major]   (patch by default)
 #
@@ -32,6 +32,8 @@ sed -i.bak "0,/^version = \".*\"/s//version = \"$next\"/" Cargo.toml
 for lock in Cargo.lock fuzz/Cargo.lock; do
     sed -i.bak "/^name = \"pdvim\"\$/{n;s/^version = \".*\"/version = \"$next\"/;}" "$lock"
 done
-rm -f Cargo.toml.bak Cargo.lock.bak fuzz/Cargo.lock.bak
+# The RPM spec (packaging/rpm/make-srpm.sh sets it again from Cargo.toml).
+sed -i.bak "s/^Version:\( *\).*/Version:\1$next/" packaging/rpm/pdvim.spec
+rm -f Cargo.toml.bak Cargo.lock.bak fuzz/Cargo.lock.bak packaging/rpm/pdvim.spec.bak
 
 echo "$next"

@@ -149,6 +149,18 @@ impl Outline {
             .collect()
     }
 
+    /// Goes to the entry shown in this row of the rows shown, as a click on
+    /// it does; one that leads nowhere opens or closes instead.
+    pub fn click(&mut self, row: usize, rows: usize) -> Outcome {
+        let visible = self.visible();
+        let top = self.first(&visible, rows);
+        let Some(&index) = visible.get(top.saturating_add(row)) else {
+            return Outcome::Stay;
+        };
+        self.selected = index;
+        self.act(Binding::Go, 1, rows)
+    }
+
     /// Takes a key, bound as in the keymap, given how many rows are shown.
     pub fn feed(&mut self, key: Key, keymap: &Keymap<Binding>, rows: usize) -> Outcome {
         match self.pending.feed(key, keymap, Counts::Taken) {

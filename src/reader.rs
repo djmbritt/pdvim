@@ -532,6 +532,33 @@ impl Reader {
         }))
     }
 
+    /// The page under a point of the window, in screen pixels, and where on
+    /// the unturned page the point is, in points from its top-left corner,
+    /// as [`Self::area_on_screen`] has it. None off the pages.
+    pub fn spot_on_page(&self, x: f32, y: f32) -> Option<(u32, f32, f32)> {
+        let page = self.visible_pages().find(|&page| {
+            self.page_on_screen(page).is_some_and(|area| {
+                (area.left..=area.right).contains(&x) && (area.top..=area.bottom).contains(&y)
+            })
+        })?;
+        let page_area = self.layout.page_rect(page)?;
+        let stretch = self.stretch(page);
+        // Where on the turned page, as it is laid out, before enlarging.
+        let across = (x / self.zoom + self.x - page_area.left) / stretch;
+        let down = (y / self.zoom + self.y - page_area.top) / stretch;
+        let crop = self.crop(page);
+        let size = match crop {
+            Some(crop) => PageSize {
+                width: crop.right - crop.left,
+                height: crop.bottom - crop.top,
+            },
+            None => *self.sizes.get(num::index(page))?,
+        };
+        let (left, top) = self.rotation.unturn_point((across, down), size);
+        let (left, top) = crop.map_or((left, top), |crop| (left + crop.left, top + crop.top));
+        Some((page, left, top))
+    }
+
     /// Scrolls just enough to bring an area of an unturned page into the
     /// window. An area that is already in view is left where it is; one
     /// that is not is centred.
@@ -814,6 +841,35 @@ mod tests {
         assert_eq!(reader.page_mode().next(), PageMode::Single);
         assert_eq!(PageMode::from_name("double"), Some(PageMode::Double));
         assert_eq!(PageMode::from_name("book"), None);
+    }
+
+    #[test]
+    fn a_point_on_screen_is_found_on_its_page_however_the_page_is_turned() {
+        for turns in 0..4 {
+            let mut reader = reader();
+            for _ in 0..turns {
+                reader.rotate();
+            }
+            reader.go_to_page(2);
+            reader.scroll_by(30.0, 50.0);
+            let area = Rect {
+                left: 100.0,
+                top: 200.0,
+                right: 130.0,
+                bottom: 260.0,
+            };
+            let on_screen = reader.area_on_screen(2, area).unwrap();
+            let middle = (
+                f32::midpoint(on_screen.left, on_screen.right),
+                f32::midpoint(on_screen.top, on_screen.bottom),
+            );
+            let (page, left, top) = reader.spot_on_page(middle.0, middle.1).unwrap();
+            assert_eq!(page, 2, "turned {turns} times");
+            assert!(
+                close(left, 115.0) && close(top, 230.0),
+                "{left}, {top} turned {turns} times"
+            );
+        }
     }
 
     #[test]

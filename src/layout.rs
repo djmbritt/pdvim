@@ -91,6 +91,17 @@ impl Rotation {
 
     /// Where a rectangle on an unturned page of the given size ends up once
     /// the page is turned.
+    /// Where a point of the turned page, of this unturned size, is on the
+    /// page unturned: the reverse of [`Self::turn_rect`] for a point.
+    pub fn unturn_point(self, (across, down): (f32, f32), size: PageSize) -> (f32, f32) {
+        match self {
+            Self::None => (across, down),
+            Self::Quarter => (down, size.height - across),
+            Self::Half => (size.width - across, size.height - down),
+            Self::ThreeQuarters => (size.width - down, across),
+        }
+    }
+
     pub fn turn_rect(self, rect: Rect, size: PageSize) -> Rect {
         match self {
             Self::None => rect,

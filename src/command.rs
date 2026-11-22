@@ -141,6 +141,8 @@ pub enum Setting {
     ThemeLight(Theme),
     /// How far one press of `j` scrolls, in pixels.
     ScrollStep(f32),
+    /// How much faster than usual the mouse wheel and touchpad scroll.
+    WheelSpeed(f32),
     /// Whether to ask before quitting.
     ConfirmQuit(bool),
     /// Whether to ask before closing a tab, when others are left.
@@ -212,6 +214,8 @@ pub enum Error {
     NotColumns(String),
     #[error("`{0}` is not continuous, single or double")]
     NotPageMode(String),
+    #[error("`{0}` is not a speed above 0 and up to 20")]
+    NotWheelSpeed(String),
     #[error("no manual page {0}; there are pdvim(1) and pdvim(5)")]
     NoManual(String),
     #[error("`{0}` is not a size of type from 4 to 72")]
@@ -276,7 +280,7 @@ pub fn canonical(name: &str) -> Option<&'static str> {
 }
 
 /// The names of the settings `:set` knows.
-pub const SETTINGS: [&str; 24] = [
+pub const SETTINGS: [&str; 25] = [
     "autosave",
     "columns",
     "confirm-quit",
@@ -301,7 +305,11 @@ pub const SETTINGS: [&str; 24] = [
     "theme-light",
     "trim",
     "underline-color",
+    "wheel-speed",
 ];
+
+/// The fastest the wheel can be made to scroll, times its usual speed.
+const MOST_WHEEL_SPEED: f32 = 20.0;
 
 /// Parses the text typed after `:`. Blank input is no command at all.
 pub fn parse(line: &str) -> Result<Option<Command>, Error> {
@@ -621,6 +629,12 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
             Ok(step) if step.is_finite() && step > 0.0 => Ok(Setting::ScrollStep(step)),
             _ => Err(Error::NotPositive(value.to_owned())),
         },
+        "wheel-speed" => match value.parse::<f32>() {
+            Ok(speed) if speed.is_finite() && speed > 0.0 && speed <= MOST_WHEEL_SPEED => {
+                Ok(Setting::WheelSpeed(speed))
+            }
+            _ => Err(Error::NotWheelSpeed(value.to_owned())),
+        },
         other => Err(Error::UnknownSetting(other.to_owned())),
     }
 }
@@ -850,6 +864,20 @@ mod tests {
             parse("set page-borders true"),
             Ok(Some(Command::Set(Setting::PageBorders(true))))
         );
+    }
+
+    #[test]
+    fn the_wheel_speeds_up_or_slows_down_within_reason() {
+        assert_eq!(
+            parse("set wheel-speed 0.5"),
+            Ok(Some(Command::Set(Setting::WheelSpeed(0.5))))
+        );
+        for bad in ["0", "-1", "21", "fast", "NaN"] {
+            assert_eq!(
+                parse(&format!("set wheel-speed {bad}")),
+                Err(Error::NotWheelSpeed(bad.to_owned()))
+            );
+        }
     }
 
     #[test]

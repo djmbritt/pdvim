@@ -47,6 +47,7 @@ mod links;
 mod markings;
 mod mode;
 mod overview;
+mod pointer;
 mod reflow;
 mod tabs;
 mod unlock;
@@ -114,6 +115,10 @@ pub enum Message {
     Pasted(Option<String>),
     /// The mouse wheel turned over the pages.
     Wheel(mouse::ScrollDelta),
+    /// A mouse button went down, moved or went up over the pages.
+    Pointer(pointer::Pointer),
+    /// An entry of a list, a tab or a small page was clicked.
+    Clicked(pointer::Click),
     /// The window was asked to close.
     CloseRequested,
     /// The system's preference for a light or dark theme became known, or
@@ -142,13 +147,13 @@ pub enum Message {
     /// The table of contents of the document with this number was read, or
     /// could not be.
     OutlineFound(u64, Result<Vec<backend::Chapter>, backend::Error>),
+    /// A table of contents was guessed for the document with this number.
+    OutlineGuessed(u64, Result<Vec<backend::Chapter>, backend::Error>),
     /// A change to the markings of the document with this number was
     /// made, taken back or put back, or failed to be: the change as it was
     /// asked for, and as it is once made.
     Edited(u64, Edit, Step, Result<Edit, backend::Error>),
     /// The markings of the document with this number were found, as it
-    /// A table of contents was guessed for the document with this number.
-    OutlineGuessed(u64, Result<Vec<backend::Chapter>, backend::Error>),
     /// was at this edition, or could not be; and what they were wanted for.
     MarkingsFound(u64, u32, Wanted, Result<Vec<Marking>, backend::Error>),
     /// The fields of a form in the document with this number were found,
@@ -272,6 +277,8 @@ struct Document {
     chapters: Contents,
     /// The links on each page whose links have been asked for.
     links: HashMap<u32, Vec<Link>>,
+    /// The pages whose links the mouse has asked for.
+    asked_links: std::collections::HashSet<u32>,
     /// The pictures and figures on the pages looked at so far.
     figures: HashMap<u32, Vec<Rect>>,
     /// The fields of its forms, in reading order, once found.
@@ -491,6 +498,8 @@ pub struct App {
     /// The document whose links are being found so that they can be
     /// labelled, by its number.
     hints_wanted: Option<u64>,
+    /// What the mouse is doing over the pages.
+    mouse: pointer::Mouse,
     /// What to do with the link picked.
     link_goal: LinkGoal,
     /// The letters labels are made of.
@@ -520,6 +529,8 @@ pub struct App {
     markup_colours: MarkupColours,
     /// How far one press of `j` scrolls, in logical pixels.
     scroll_step: f32,
+    /// How much faster than usual the wheel and touchpad scroll.
+    wheel_speed: f32,
     /// The size of type books are laid out in, in points.
     font_size: f32,
     /// The size of type set, which the zoom keys go back to in a book.
@@ -630,6 +641,7 @@ impl App {
             hints: None,
             marking_hints: None,
             hints_wanted: None,
+            mouse: pointer::Mouse::default(),
             link_goal: LinkGoal::Follow,
             hint_chars: crate::hints::HOME_ROW.chars().collect(),
             line_hints: None,
@@ -644,6 +656,7 @@ impl App {
             theme_light: theme::Theme::PdvimLight,
             markup_colours: MarkupColours::default(),
             scroll_step: 40.0,
+            wheel_speed: 1.0,
             font_size: 12.0,
             font_base: 12.0,
             fresh: Fresh {
@@ -869,8 +882,10 @@ impl App {
             Message::OutlineGuessed(id, result) => self.on_outline_guessed(id, result),
             Message::LinksFound(id, result) => {
                 self.on_links(id, result);
-                Task::none()
+                self.links_arrived(id)
             }
+            Message::Pointer(pointer) => self.on_pointer(pointer),
+            Message::Clicked(click) => self.on_click(click),
             Message::FiguresFound(id, result) => self.on_figures(id, result),
             Message::PictureCopied(result) => self.on_picture_copied(result),
             Message::Measured(id, result) => {
@@ -1759,7 +1774,14 @@ impl App {
             }
             None => return Task::none(),
         };
-        match sidebar.feed(key, &self.keymaps.outline, rows) {
+        let outcome = sidebar.feed(key, &self.keymaps.outline, rows);
+        self.on_outline_outcome(outcome);
+        Task::none()
+    }
+
+    /// Does what a key or a click in the table of contents comes to.
+    fn on_outline_outcome(&mut self, outcome: outline::Outcome) {
+        match outcome {
             outline::Outcome::Stay => {}
             outline::Outcome::Close => self.sidebar = None,
             outline::Outcome::Go(page, top) => {
@@ -1770,7 +1792,6 @@ impl App {
                 }
             }
         }
-        Task::none()
     }
 
     /// How many entries of the table of contents fit in the window.
@@ -2172,6 +2193,7 @@ impl App {
             Setting::SquigglyColour(colour) => self.markup_colours.squiggly = colour,
             Setting::NoteColour(colour) => self.markup_colours.note = colour,
             Setting::ScrollStep(step) => self.scroll_step = step,
+            Setting::WheelSpeed(speed) => self.wheel_speed = speed,
             Setting::FontSize(size) => {
                 self.font_base = size;
                 return self.set_font_size(size);
@@ -2290,10 +2312,11 @@ impl App {
     }
 
     fn on_wheel(&mut self, delta: mouse::ScrollDelta) -> Task<Message> {
-        let line = self.scroll_step * WHEEL_STEPS;
+        let line = self.scroll_step * WHEEL_STEPS * self.wheel_speed;
+        let pixel = self.wheel_speed;
         let (right, down) = match delta {
             mouse::ScrollDelta::Lines { x, y } => (-x * line, -y * line),
-            mouse::ScrollDelta::Pixels { x, y } => (-x, -y),
+            mouse::ScrollDelta::Pixels { x, y } => (-x * pixel, -y * pixel),
         };
         let zooming = self.modifiers.control();
         if zooming && down != 0.0 && self.in_book() {
@@ -2409,10 +2432,6 @@ impl App {
         let arriving = self.arrive(&path, &mut reader, returning.is_some());
         self.starting_look(&path, &mut reader, &mut recolor, &mut trim);
         returning = returning.filter(|_| trim);
-        let Some(tab) = self.tabs.get_mut(index) else {
-            return Task::none();
-        };
-        tab.opening = None;
         if index == self.current {
             // The selection and labels were for the document leaving.
             self.visual = None;
@@ -2421,6 +2440,7 @@ impl App {
         let Some(tab) = self.tabs.get_mut(index) else {
             return Task::none();
         };
+        tab.opening = None;
         let left = tab.document.replace(Document {
             id,
             path,
@@ -2447,6 +2467,7 @@ impl App {
             results: Results::default(),
             chapters: Contents::Unread,
             links: HashMap::new(),
+            asked_links: std::collections::HashSet::new(),
             figures: HashMap::new(),
             fields: None,
             last_field: None,
@@ -2931,10 +2952,15 @@ impl App {
         let marks = Canvas::new(Marks(self)).width(Fill).height(Fill);
         let mut layers = stack![pages, marks];
         if let Some(picker) = &self.picker {
-            layers = layers.push(list("Recent documents", picker, chrome));
+            layers = layers.push(list(
+                "Recent documents",
+                picker,
+                chrome,
+                pointer::Click::Recent,
+            ));
         }
         if let Some(tabs) = &self.tab_list {
-            layers = layers.push(list("Tabs", tabs, chrome));
+            layers = layers.push(list("Tabs", tabs, chrome, pointer::Click::TabList));
         }
         if let Some(completing) = &self.completing {
             layers = layers.push(completions(completing, chrome));
@@ -3025,18 +3051,20 @@ impl App {
                     chrome.tab_text
                 })
                 .wrapping(text::Wrapping::None);
-            container(label)
-                .padding([3, 8])
-                .width(Fill)
-                .clip(true)
-                .style(move |_| {
-                    container::background(if current {
-                        chrome.tab_current
-                    } else {
-                        chrome.tabs
-                    })
-                })
-                .into()
+            clickable(
+                container(label)
+                    .padding([3, 8])
+                    .width(Fill)
+                    .clip(true)
+                    .style(move |_| {
+                        container::background(if current {
+                            chrome.tab_current
+                        } else {
+                            chrome.tabs
+                        })
+                    }),
+                pointer::Click::Tab(index),
+            )
         });
         Some(
             container(Row::with_children(tabs).spacing(1))
@@ -3484,7 +3512,8 @@ fn contents<'a>(
             .color(colour)
             .wrapping(text::Wrapping::None)
     };
-    let entries = sidebar.shown(rows).into_iter().map(|shown| {
+    let shown = sidebar.shown(rows);
+    let entries = shown.into_iter().enumerate().map(|(row, shown)| {
         let entry = shown.entry;
         let marker = match (entry.has_sections, shown.unfolded) {
             (false, _) => " ",
@@ -3513,19 +3542,21 @@ fn contents<'a>(
         ]
         .spacing(6);
         let selected = shown.selected;
-        container(line)
-            .height(HELP_ROW)
-            .width(Fill)
-            .padding([0, 6])
-            .align_y(iced::alignment::Vertical::Center)
-            .style(move |_| {
-                if selected {
-                    container::background(chrome.tab_current)
-                } else {
-                    container::Style::default()
-                }
-            })
-            .into()
+        clickable(
+            container(line)
+                .height(HELP_ROW)
+                .width(Fill)
+                .padding([0, 6])
+                .align_y(iced::alignment::Vertical::Center)
+                .style(move |_| {
+                    if selected {
+                        container::background(chrome.tab_current)
+                    } else {
+                        container::Style::default()
+                    }
+                }),
+            pointer::Click::Outline(row),
+        )
     });
     let (top, count) = sidebar.position(rows);
     let last = top.saturating_add(rows).min(count);
@@ -3572,6 +3603,7 @@ fn list<'a, T: Clone>(
     title: &'a str,
     picker: &'a Picker<T>,
     chrome: Colours,
+    click: fn(usize) -> pointer::Click,
 ) -> Element<'a, Message> {
     let label = |content: String, colour: Color| {
         text(content)
@@ -3596,18 +3628,20 @@ fn list<'a, T: Clone>(
         .enumerate()
         .map(|(index, entry)| {
             let selected = index == picker.selected();
-            container(label(entry.text.clone(), chrome.bar_text))
-                .padding([3, 10])
-                .width(Fill)
-                .clip(true)
-                .style(move |_| {
-                    if selected {
-                        container::background(chrome.list_selected)
-                    } else {
-                        container::Style::default()
-                    }
-                })
-                .into()
+            clickable(
+                container(label(entry.text.clone(), chrome.bar_text))
+                    .padding([3, 10])
+                    .width(Fill)
+                    .clip(true)
+                    .style(move |_| {
+                        if selected {
+                            container::background(chrome.list_selected)
+                        } else {
+                            container::Style::default()
+                        }
+                    }),
+                click(index),
+            )
         })
         .collect();
     if entries.is_empty() {
@@ -3635,6 +3669,17 @@ fn list<'a, T: Clone>(
         .into()
 }
 
+/// Something that does this when clicked, with the pointer showing so.
+fn clickable<'a>(
+    content: impl Into<Element<'a, Message>>,
+    click: pointer::Click,
+) -> Element<'a, Message> {
+    iced::widget::mouse_area(content)
+        .on_press(Message::Clicked(click))
+        .interaction(mouse::Interaction::Pointer)
+        .into()
+}
+
 /// How every tab shows its pages.
 #[derive(Debug, Clone, Copy, Default)]
 struct Paging {
@@ -3659,11 +3704,13 @@ enum Contents {
 struct Pages<'a>(&'a App);
 
 impl canvas::Program<Message> for Pages<'_> {
-    type State = ();
+    /// Whether a button is held down over the pages: the left, or the
+    /// middle.
+    type State = Option<bool>;
 
     fn update(
         &self,
-        _state: &mut (),
+        held: &mut Option<bool>,
         event: &Event,
         bounds: Rectangle,
         cursor: mouse::Cursor,
@@ -3676,17 +3723,84 @@ impl canvas::Program<Message> for Pages<'_> {
         {
             return Some(canvas::Action::publish(Message::Resized(area)));
         }
+        // Where the pointer is on the canvas, even dragged off it.
+        let at = cursor
+            .position()
+            .map(|position| Point::new(position.x - bounds.x, position.y - bounds.y));
+        let publish =
+            |pointer| Some(canvas::Action::publish(Message::Pointer(pointer)).and_capture());
         match event {
             Event::Mouse(mouse::Event::WheelScrolled { delta }) if cursor.is_over(bounds) => {
                 Some(canvas::Action::publish(Message::Wheel(*delta)).and_capture())
+            }
+            Event::Mouse(mouse::Event::ButtonPressed(button)) if cursor.is_over(bounds) => {
+                let left = match button {
+                    mouse::Button::Left => true,
+                    mouse::Button::Middle => false,
+                    _ => return None,
+                };
+                *held = Some(left);
+                publish(pointer::Pointer::Press(at?, left))
+            }
+            Event::Mouse(mouse::Event::CursorMoved { .. }) if held.is_some() => {
+                publish(pointer::Pointer::Drag(at?))
+            }
+            Event::Mouse(mouse::Event::ButtonReleased(button))
+                if matches!(
+                    (*held, button),
+                    (Some(true), mouse::Button::Left) | (Some(false), mouse::Button::Middle)
+                ) =>
+            {
+                *held = None;
+                publish(pointer::Pointer::Release(at.unwrap_or(Point::ORIGIN)))
             }
             _ => None,
         }
     }
 
+    fn mouse_interaction(
+        &self,
+        held: &Option<bool>,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> mouse::Interaction {
+        let app = self.0;
+        if held.is_some() && app.mouse.panning() {
+            return mouse::Interaction::Grabbing;
+        }
+        let Some(at) = cursor.position_in(bounds) else {
+            return mouse::Interaction::default();
+        };
+        let Some(document) = app.document() else {
+            return mouse::Interaction::default();
+        };
+        let Some((page, across, down)) = document.reader.spot_on_page(at.x, at.y) else {
+            return mouse::Interaction::default();
+        };
+        let over = |area: Rect| {
+            (area.left..=area.right).contains(&across) && (area.top..=area.bottom).contains(&down)
+        };
+        if document
+            .links
+            .get(&page)
+            .is_some_and(|links| links.iter().any(|link| over(link.area)))
+        {
+            mouse::Interaction::Pointer
+        } else if document.text.get(&page).is_some_and(|lines| {
+            lines
+                .iter()
+                .flat_map(|line| &line.chars)
+                .any(|character| over(character.area))
+        }) {
+            mouse::Interaction::Text
+        } else {
+            mouse::Interaction::default()
+        }
+    }
+
     fn draw(
         &self,
-        _state: &(),
+        _state: &Option<bool>,
         renderer: &Renderer,
         _theme: &Theme,
         bounds: Rectangle,

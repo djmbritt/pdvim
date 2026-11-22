@@ -121,14 +121,17 @@ impl App {
                 self.overview = None;
                 Task::none()
             }
-            Outcome::Go(page) => {
-                self.overview = None;
-                if let Some(document) = self.document_mut() {
-                    leap(document, page);
-                }
-                Task::none()
-            }
+            Outcome::Go(page) => self.go_from_overview(page),
         }
+    }
+
+    /// Leaves the overview for a page, picked by key or by a click.
+    pub(super) fn go_from_overview(&mut self, page: u32) -> Task<Message> {
+        self.overview = None;
+        if let Some(document) = self.document_mut() {
+            leap(document, page);
+        }
+        Task::none()
     }
 
     /// Asks for the small pages in view, and the rows around them, that
@@ -276,7 +279,7 @@ fn small_page(
     } else {
         chrome.list_number
     };
-    column![
+    let small = column![
         container(picture)
             .padding(FRAME)
             .style(move |_| container::background(frame)),
@@ -291,6 +294,6 @@ fn small_page(
         .center_x(Length::Fixed(width))
         .clip(true),
     ]
-    .width(Length::Shrink)
-    .into()
+    .width(Length::Shrink);
+    super::clickable(small, super::pointer::Click::Overview(page))
 }

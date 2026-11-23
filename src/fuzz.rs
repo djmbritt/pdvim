@@ -48,8 +48,13 @@ const NAMED: [Key; 16] = [
     Key::End,
 ];
 
-/// Characters beyond ASCII, for keys and for text on pages.
-const WIDE: [char; 8] = ['é', 'ß', 'Ω', '中', '—', '\u{a0}', '\u{301}', '😀'];
+/// Characters beyond ASCII, for keys and for text on pages: a letter, a
+/// mark or a stop of each kind of script, and the characters that join or
+/// turn text. Sixteen, one for each byte that picks one.
+const WIDE: [char; 16] = [
+    'é', 'ß', 'Ω', '中', '—', '\u{a0}', '\u{301}', '😀', 'ς', 'ı', 'ي', 'א', '\u{93e}', '\u{e31}',
+    '\u{3002}', '\u{200f}',
+];
 
 /// The letters held with control that the reader gives a meaning to, and a
 /// few it does not.
@@ -59,7 +64,15 @@ const CONTROL: [char; 16] = [
 
 /// Characters a line of text on a page is made of: letters, spaces and
 /// punctuation, which the motions over words tell apart.
-const PRINTED: [char; 12] = ['a', 'b', 'x', 'A', ' ', ' ', '.', ',', '-', '\'', 'é', '中'];
+/// Beyond ASCII: Greek and Turkish letters whose case is unusual, Arabic
+/// and Hebrew letters and an Arabic vowel mark, a Devanagari letter and
+/// vowel sign and its full stop, a Thai letter and mark, Chinese, kana and
+/// Hangul, the ideographic stop and comma, and a right-to-left mark.
+const PRINTED: [char; 31] = [
+    'a', 'b', 'x', 'A', ' ', ' ', '.', ',', '-', '\'', 'é', '中', 'ς', 'ı', 'İ', 'ي', 'א',
+    '\u{64b}', 'क', '\u{93f}', '\u{964}', 'ก', '\u{e31}', 'あ', 'ア', '한', '\u{3002}', '\u{ff0c}',
+    '\u{200f}', '\u{301}', ' ',
+];
 
 /// The most pages a document is read through, so that one input does not
 /// take long.

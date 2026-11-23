@@ -213,8 +213,15 @@ Label the lines in view; type a label to start selecting characters, or
 whole lines, from there.
 .TP
 .B s
-Type some text in view, then the label beside a match, to start selecting
-there.
+Type some text in view, then the label beside a match, to put a cursor
+there; it moves without selecting until
+.B v
+or
+.B V
+starts a selection from it.
+In visual mode,
+.B s
+moves the cursor to the match instead.
 .TP
 .B gv
 Select the last selection again.
@@ -266,6 +273,20 @@ changes the note on a marking, and
 takes markings away.
 .B Esc
 leaves.
+.PP
+.B I
+labels the pictures and figures in view; typing a label selects one as a
+box.
+.B y
+then copies it as a picture, as
+.B yi
+does,
+.BR H ,
+.BR U ,
+.B S
+and
+.B W
+mark its area, and a motion goes back to selecting text from the cursor.
 .SS Highlights and other markings
 .TP 18
 .BR ]h ", " [h

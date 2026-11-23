@@ -2,6 +2,7 @@
 //! backend at once, rather than by a task the runtime would carry out.
 
 use iced::futures::executor::block_on;
+use iced::keyboard::{self, Location, Modifiers, key};
 use iced::{Point, Size};
 
 use super::{App, Message};
@@ -54,6 +55,28 @@ pub fn on_screen(app: &App, page: u32, (across, down): (f32, f32)) -> Point {
 pub fn read(app: &mut App, id: u64, page: u32) {
     let text = block_on(app.document().unwrap().backend.text(vec![page]));
     let _ = app.update(Message::TextFound(id, vec![page], text));
+}
+
+/// Types characters at the app, a key press each, as the keyboard would:
+/// a capital with shift held.
+pub fn typing(app: &mut App, characters: &str) {
+    for character in characters.chars() {
+        let typed = keyboard::Key::Character(character.to_string().into());
+        let modifiers = if character.is_uppercase() {
+            Modifiers::SHIFT
+        } else {
+            Modifiers::empty()
+        };
+        let _ = app.update(Message::Keyboard(keyboard::Event::KeyPressed {
+            key: typed.clone(),
+            modified_key: typed,
+            physical_key: key::Physical::Unidentified(key::NativeCode::Unidentified),
+            location: Location::Standard,
+            modifiers,
+            text: Some(character.to_string().into()),
+            repeat: false,
+        }));
+    }
 }
 
 pub fn selected(app: &App) -> String {

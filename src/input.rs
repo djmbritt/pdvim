@@ -83,6 +83,8 @@ pub enum LinkGoal {
     Copy,
     /// Copy a picture or figure, labelled instead of the links.
     Picture,
+    /// Select a picture or figure in visual mode, labelled the same way.
+    SelectFigure,
 }
 
 /// What to copy about the document in view.

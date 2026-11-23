@@ -410,7 +410,7 @@ fn visual_key(selection: &mut Visual, keymaps: &Keymaps, key: Key, text: &Text) 
     let selected = selection.text(text);
     let _ = selection.neighbours(PAGES);
     match outcome {
-        visual::Outcome::Stay | visual::Outcome::Flash => true,
+        visual::Outcome::Stay | visual::Outcome::Flash | visual::Outcome::Figure => true,
         // Spaces at the ends of lines are left out, so a selection of
         // spaces copies nothing.
         visual::Outcome::Copy(copied) => {
@@ -443,7 +443,9 @@ fn visual_key(selection: &mut Visual, keymaps: &Keymaps, key: Key, text: &Text) 
             );
             false
         }
-        visual::Outcome::Leave => false,
+        // Only a figure picked from labels is copied as a picture, and the
+        // keys alone pick none.
+        visual::Outcome::Leave | visual::Outcome::CopyPicture(..) => false,
     }
 }
 

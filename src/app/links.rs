@@ -2,7 +2,7 @@
 //! one in a new tab, and `;y` copies one's address. Typing `/` and some of
 //! a link's text narrows the labels to the links that hold it. `yi`
 //! labels the pictures and figures in view instead, to copy one as a
-//! picture.
+//! picture, and `I` in visual mode does too, to select one.
 
 use std::path::PathBuf;
 
@@ -29,7 +29,7 @@ impl App {
         };
         let id = document.id;
         let visible: Vec<u32> = document.reader.visible_pages().collect();
-        if goal == LinkGoal::Picture {
+        if matches!(goal, LinkGoal::Picture | LinkGoal::SelectFigure) {
             let missing: Vec<u32> = visible
                 .iter()
                 .copied()
@@ -122,7 +122,7 @@ impl App {
             return;
         };
         let following = self.link_goal == LinkGoal::Follow;
-        let pictures = self.link_goal == LinkGoal::Picture;
+        let pictures = matches!(self.link_goal, LinkGoal::Picture | LinkGoal::SelectFigure);
         let (width, height) = (self.area.width, self.area.height);
         let reader = &document.reader;
         let on_screen = |page: u32, area: Rect| {
@@ -182,7 +182,9 @@ impl App {
             self.notice = Notice::Info(
                 match self.link_goal {
                     LinkGoal::Follow => "no links, fields or markings in view",
-                    LinkGoal::Picture => "no pictures or figures in view",
+                    LinkGoal::Picture | LinkGoal::SelectFigure => {
+                        "no pictures or figures in view"
+                    }
                     LinkGoal::NewTab | LinkGoal::Copy => "no links in view",
                 }
                 .to_owned(),
@@ -236,6 +238,12 @@ impl App {
                         self.pick_marking(&marking);
                         return Task::none();
                     }
+                    Labelled::Picture(area) if self.link_goal == LinkGoal::SelectFigure => {
+                        if let Some(visual) = &mut self.visual {
+                            visual.select_figure(hint.page, area);
+                        }
+                        return Task::none();
+                    }
                     Labelled::Picture(area) => return self.copy_picture(hint.page, area),
                 }
             }
@@ -270,7 +278,7 @@ impl App {
     /// Copies a picture or figure to the clipboard, as it is printed, at
     /// least twice as sharp as a point to a pixel, and turned as it is
     /// shown.
-    fn copy_picture(&mut self, page: u32, area: Rect) -> Task<Message> {
+    pub(super) fn copy_picture(&mut self, page: u32, area: Rect) -> Task<Message> {
         let scale_factor = self.scale_factor;
         let Some(document) = self.document() else {
             return Task::none();
@@ -389,8 +397,52 @@ fn text_within(lines: &[TextLine], area: Rect) -> String {
 
 #[cfg(test)]
 mod tests {
+    use iced::futures::executor::block_on;
+
     use super::*;
+    use crate::app::mode::Mode;
+    use crate::app::testing::{read, showing, typing};
     use crate::backend::TextChar;
+    use crate::visual::{Spot, Visual};
+
+    /// Labels the figures from visual mode, as `I` does, once the backend
+    /// has found them, and types the first label.
+    fn select_first_figure(app: &mut App, id: u64) {
+        typing(app, "I");
+        let figures = block_on(app.document().unwrap().backend.figures(vec![0]));
+        let _ = app.update(Message::FiguresFound(id, figures));
+        let hints = app.hints.as_ref().unwrap();
+        let label: String = hints.shown().next().unwrap().label.iter().collect();
+        typing(app, &label);
+    }
+
+    #[test]
+    fn a_figure_is_selected_from_visual_mode_by_its_label() {
+        let (mut app, id) = showing("drawn.pdf");
+        read(&mut app, id, 0);
+        app.visual = Some(Visual::cursor_at(Spot::line_start(0, 0)));
+        select_first_figure(&mut app, id);
+        assert!(app.hints.is_none());
+        let (page, area) = app.visual.as_ref().unwrap().figure().unwrap();
+        assert_eq!(page, 0);
+        assert!(area.right > area.left && area.bottom > area.top);
+        assert_eq!(app.mode(), Mode::Figure);
+        // A motion goes back to the text, from the cursor.
+        typing(&mut app, "l");
+        assert!(app.visual.as_ref().unwrap().figure().is_none());
+        assert_ne!(app.mode(), Mode::Figure);
+    }
+
+    #[test]
+    fn a_figure_selected_is_copied_as_a_picture_and_leaves() {
+        let (mut app, id) = showing("drawn.pdf");
+        read(&mut app, id, 0);
+        app.visual = Some(Visual::cursor_at(Spot::line_start(0, 0)));
+        select_first_figure(&mut app, id);
+        typing(&mut app, "y");
+        assert!(app.visual.is_none());
+        assert!(matches!(&app.notice, Notice::Info(said) if said == "copying the picture"));
+    }
 
     fn line(text: &str, top: f32) -> TextLine {
         TextLine {

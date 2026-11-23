@@ -37,6 +37,8 @@ mod history;
 mod input;
 mod jumps;
 mod keymap;
+#[cfg(test)]
+mod languages;
 mod layout;
 mod manual;
 mod markings;

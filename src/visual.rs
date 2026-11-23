@@ -396,7 +396,8 @@ impl Visual {
             (self.cursor, self.anchor)
         };
         match self.kind {
-            Kind::Characters => (first, last),
+            // The last letter with its marks.
+            Kind::Characters => (first, with_marks(text, last)),
             Kind::Lines => (
                 Spot::line_start(first.page, first.line),
                 Spot {
@@ -464,6 +465,10 @@ impl Visual {
             }
         }
         let outcome = self.act_on_selection(binding, times, text);
+        // Never on a mark, apart from the letter it belongs to: on to the
+        // next letter going forward, back to its own letter otherwise.
+        let forward = matches!(binding, Binding::Right | Binding::NextWord);
+        self.cursor = settled(text, self.cursor, forward);
         // With only a cursor, the selection is wherever it goes.
         if !self.selecting {
             self.anchor = self.cursor;
@@ -901,7 +906,6 @@ pub fn sentence_start(text: &Text, at: Spot) -> Spot {
 /// as a heading or a paragraph's last line, starts one too, if it starts
 /// with a capital.
 fn every_sentence_start(lines: &[TextLine]) -> Vec<(usize, usize)> {
-    const ENDS: &[char] = &['.', '!', '?', '\u{2026}'];
     const CLOSERS: &[char] = &['"', '\'', ')', ']', '\u{201d}', '\u{2019}', '\u{bb}'];
     const OPENERS: &[char] = &['"', '\'', '(', '[', '\u{201c}', '\u{2018}', '\u{ab}'];
     const ABBREVIATIONS: &[&str] = &[
@@ -942,7 +946,12 @@ fn every_sentence_start(lines: &[TextLine]) -> Vec<(usize, usize)> {
                 word.clear();
                 continue;
             }
+            // A capital, or in a script without capitals any letter.
+            let caseless = character.is_alphabetic()
+                && !character.is_lowercase()
+                && !character.is_uppercase();
             let opens = character.is_uppercase()
+                || caseless
                 || character.is_ascii_digit()
                 || OPENERS.contains(&character);
             if ended && gap && opens {
@@ -951,9 +960,10 @@ fn every_sentence_start(lines: &[TextLine]) -> Vec<(usize, usize)> {
             let shortened = character == '.'
                 && (word.chars().count() == 1
                     || ABBREVIATIONS.contains(&word.to_lowercase().as_str()));
-            if ENDS.contains(&character) && !shortened {
+            if prose::SENTENCE_ENDS.contains(&character) && !shortened {
                 ended = true;
-                gap = false;
+                // The ideographic full stop needs no space after it.
+                gap = prose::ends_without_space(character);
             } else if !(ended && !gap && CLOSERS.contains(&character)) {
                 ended = false;
                 gap = false;
@@ -1181,13 +1191,24 @@ pub fn word_at(text: &Text, spot: Spot) -> (Spot, Spot) {
     };
     let kind = |index: usize| {
         chars.get(index).map(|c| {
-            if c.character.is_alphanumeric() || c.character == '_' {
-                1
-            } else if c.character.is_whitespace() {
-                0
-            } else {
-                2
-            }
+            // A script without spaces gives each kind of its characters a
+            // word of its own, as the motions do.
+            prose::unspaced(c.character).map_or_else(
+                || {
+                    // A mark is in the word of the letter it belongs to.
+                    if c.character.is_alphanumeric()
+                        || c.character == '_'
+                        || prose::is_mark(c.character)
+                    {
+                        1
+                    } else if c.character.is_whitespace() {
+                        0
+                    } else {
+                        2
+                    }
+                },
+                |script| 3_u8.saturating_add(script),
+            )
         })
     };
     let Some(wanted) = kind(spot.index) else {
@@ -1231,26 +1252,83 @@ fn is_space(text: &Text, spot: Spot) -> bool {
 }
 
 /// Whether a word starts at a spot: a character that is not a space, first
-/// in its line or after a space.
+/// in its line or after a space, or where a script written without spaces
+/// goes from one kind of character to another. A mark starts none.
 fn starts_word(text: &Text, spot: Spot) -> bool {
+    let before = spot.index.checked_sub(1).map(|index| Spot { index, ..spot });
     !is_space(text, spot)
-        && spot
-            .index
-            .checked_sub(1)
-            .is_none_or(|index| is_space(text, Spot { index, ..spot }))
+        && !char_at(text, spot).is_some_and(prose::is_mark)
+        && before.is_none_or(|before| is_space(text, before) || kinds_differ(text, before, spot))
 }
 
 /// Whether a word ends at a spot: a character that is not a space, last in
-/// its line or before a space.
+/// its line or before a space, or before another kind of character in a
+/// script without spaces. A word ends after its letters' marks.
 fn ends_word(text: &Text, spot: Spot) -> bool {
+    let after = Spot {
+        index: spot.index.saturating_add(1),
+        ..spot
+    };
     !is_space(text, spot)
-        && is_space(
-            text,
-            Spot {
-                index: spot.index.saturating_add(1),
-                ..spot
-            },
-        )
+        && !char_at(text, after).is_some_and(prose::is_mark)
+        && (is_space(text, after) || kinds_differ(text, spot, after))
+}
+
+/// The character at a spot, if there is one.
+fn char_at(text: &Text, spot: Spot) -> Option<char> {
+    line(text, spot.page, spot.line)?
+        .chars
+        .get(spot.index)
+        .map(|character| character.character)
+}
+
+/// Whether two characters side by side are of different kinds in a script
+/// written without spaces, such as a Chinese character and the hiragana
+/// after it, so that a word ends between them.
+fn kinds_differ(text: &Text, one: Spot, other: Spot) -> bool {
+    let kind = |spot| char_at(text, spot).and_then(prose::unspaced);
+    let (one, other) = (kind(one), kind(other));
+    (one.is_some() || other.is_some()) && one != other
+}
+
+/// A spot moved off a mark: forward to the next letter, if there is one on
+/// its line, or else back to the letter the mark belongs to.
+fn settled(text: &Text, spot: Spot, forward: bool) -> Spot {
+    let Some(line) = line(text, spot.page, spot.line) else {
+        return spot;
+    };
+    let is_mark = |index: usize| {
+        line.chars
+            .get(index)
+            .is_some_and(|character| prose::is_mark(character.character))
+    };
+    if !is_mark(spot.index) {
+        return spot;
+    }
+    if forward
+        && let Some(index) = (spot.index..line.chars.len()).find(|&index| !is_mark(index))
+    {
+        return Spot { index, ..spot };
+    }
+    let index = (0..spot.index).rev().find(|&index| !is_mark(index)).unwrap_or(0);
+    Spot { index, ..spot }
+}
+
+/// A spot moved on over the marks after it, so that a selection ending at
+/// a letter takes in its marks.
+fn with_marks(text: &Text, spot: Spot) -> Spot {
+    let Some(line) = line(text, spot.page, spot.line) else {
+        return spot;
+    };
+    let mut index = spot.index;
+    while line
+        .chars
+        .get(index.saturating_add(1))
+        .is_some_and(|character| prose::is_mark(character.character))
+    {
+        index = index.saturating_add(1);
+    }
+    Spot { index, ..spot }
 }
 
 /// The first spot past `from`, stepping with `step`, that `wanted` accepts.

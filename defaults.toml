@@ -263,7 +263,8 @@ note-color = "#fdd835"
 "g v" = "select-again"
 "V" = "visual-line"
 # As flash.nvim's s: type some of the text in view, and each match gets a
-# label; type a label to start selecting there, or enter for the nearest
+# label; type a label to put a cursor there, or enter for the nearest.
+# The cursor moves without selecting until v or V starts a selection
 "s" = "flash"
 
 # Highlights and other markings: go to the next or previous one, take away
@@ -336,7 +337,8 @@ note-color = "#fdd835"
 "ctrl+c" = "leave"
 "ctrl+[" = "leave"
 "o" = "other-end"
-# Type some of the text in view, then a match's label, to move there
+# Type some of the text in view, then a match's label, to move the cursor
+# there; the selection runs to it
 "s" = "flash"
 "v" = "characters"
 "V" = "lines"

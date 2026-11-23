@@ -28,7 +28,7 @@ bindable! {
         ChangeNote = "change-note", "Change the note on the marking at the cursor, and leave";
         Leave = "leave", "Leave without copying";
         /// As flash.nvim's `s`: type some text, then a match's label.
-        Flash = "flash", "Jump the cursor to text typed next, by its label";
+        Flash = "flash", "Move the cursor to text typed next, by its label";
         OtherEnd = "other-end", "Go to the other end of the selection";
         /// The kind in force leaves; the other kind switches to it.
         Characters = "characters", "Select characters; leave if already";
@@ -168,6 +168,10 @@ pub struct Visual {
     /// Whether `ap` selected the paragraphs, so that the text copied ends
     /// with a blank line.
     around: bool,
+    /// Whether the selection runs from where it started to the cursor, or
+    /// there is only the cursor, after a jump with flash, until `v` or `V`
+    /// starts selecting from it.
+    selecting: bool,
 }
 
 impl Visual {
@@ -182,6 +186,7 @@ impl Visual {
             finding: None,
             last_find: None,
             around: false,
+            selecting: true,
         }
     }
 
@@ -335,6 +340,30 @@ impl Visual {
         self.goal = None;
     }
 
+    /// Just a cursor at a spot, as a jump with flash leaves: it moves
+    /// without selecting until `v` or `V` starts a selection from it.
+    pub const fn cursor_at(at: Spot) -> Self {
+        let mut visual = Self::new(Kind::Characters, at);
+        visual.selecting = false;
+        visual
+    }
+
+    /// Puts just the cursor at a spot, letting go of the selection, as a
+    /// jump with flash does.
+    pub const fn place_at(&mut self, spot: Spot) {
+        self.kind = Kind::Characters;
+        self.anchor = spot;
+        self.cursor = spot;
+        self.goal = None;
+        self.around = false;
+        self.selecting = false;
+    }
+
+    /// Whether text is selected, or there is only the cursor.
+    pub const fn selecting(&self) -> bool {
+        self.selecting
+    }
+
     /// What has been typed so far, for the status bar.
     pub fn typed(&self) -> String {
         self.pending.display()
@@ -385,6 +414,44 @@ impl Visual {
     /// Does what a binding says, a number of times where that means
     /// anything.
     fn act(&mut self, binding: Binding, times: u32, text: &Text) -> Outcome {
+        if !self.selecting {
+            match binding {
+                // `v` and `V` start selecting from the cursor.
+                Binding::Characters | Binding::Lines => {
+                    self.selecting = true;
+                    self.anchor = self.cursor;
+                    self.kind = if binding == Binding::Characters {
+                        Kind::Characters
+                    } else {
+                        Kind::Lines
+                    };
+                    // As `V` starts it from a label: at the line's end.
+                    if self.kind == Kind::Lines {
+                        self.stick_to_line_end(text);
+                    }
+                    return Outcome::Stay;
+                }
+                // A text object is selected, from the cursor.
+                Binding::InnerWord
+                | Binding::AroundWord
+                | Binding::InnerSentence
+                | Binding::AroundSentence
+                | Binding::InnerParagraph
+                | Binding::AroundParagraph => self.selecting = true,
+                _ => {}
+            }
+        }
+        let outcome = self.act_on_selection(binding, times, text);
+        // With only a cursor, the selection is wherever it goes.
+        if !self.selecting {
+            self.anchor = self.cursor;
+            self.kind = Kind::Characters;
+        }
+        outcome
+    }
+
+    /// Does what a binding says to the selection.
+    fn act_on_selection(&mut self, binding: Binding, times: u32, text: &Text) -> Outcome {
         // Anything but copying, or taking in more paragraphs, makes the
         // selection something other than whole paragraphs and their gaps.
         let around = std::mem::take(&mut self.around);
@@ -433,6 +500,14 @@ impl Visual {
                     return Outcome::Leave;
                 }
                 self.kind = kind;
+                // Lines are selected with the cursor at the end of its
+                // line, where it stays as it goes up and down; characters
+                // let it go.
+                if kind == Kind::Lines {
+                    self.stick_to_line_end(text);
+                } else {
+                    self.goal = None;
+                }
             }
             Binding::FindForward => self.finding = Some((true, false, times)),
             Binding::FindBackward => self.finding = Some((false, false, times)),
@@ -1735,6 +1810,61 @@ mod tests {
         assert_eq!(visual.kind, Kind::Characters);
         assert_eq!(keys(&mut visual, &text, "v"), Outcome::Leave);
         assert_eq!(visual.feed(Key::Escape, &keymap(), &text), Outcome::Leave);
+    }
+
+    #[test]
+    fn placing_the_cursor_lets_go_of_the_selection() {
+        let text = text();
+        let mut visual = Visual::new(Kind::Lines, spot(0, 0, 0));
+        keys(&mut visual, &text, "j");
+        visual.place_at(spot(0, 0, 4));
+        assert!(!visual.selecting());
+        assert_eq!(visual.kind, Kind::Characters);
+        assert_eq!(visual.cursor(), spot(0, 0, 4));
+        assert_eq!((visual.anchor, visual.cursor), (spot(0, 0, 4), spot(0, 0, 4)));
+    }
+
+    #[test]
+    fn selecting_lines_puts_the_cursor_at_the_end_of_its_line() {
+        let text = text();
+        let end = |line: usize| text[&0][line].chars.len() - 1;
+        let mut from_cursor = Visual::cursor_at(spot(0, 0, 2));
+        keys(&mut from_cursor, &text, "V");
+        assert_eq!(from_cursor.cursor(), spot(0, 0, end(0)));
+        keys(&mut from_cursor, &text, "j");
+        assert_eq!(from_cursor.cursor(), spot(0, 1, end(1)));
+        let mut switched = Visual::new(Kind::Characters, spot(0, 0, 2));
+        keys(&mut switched, &text, "V");
+        assert_eq!(switched.cursor(), spot(0, 0, end(0)));
+        assert_eq!(switched.anchor, spot(0, 0, 2));
+    }
+
+    #[test]
+    fn moving_the_cursor_while_selecting_keeps_where_it_started() {
+        let mut visual = Visual::new(Kind::Characters, spot(0, 0, 2));
+        visual.move_to(spot(0, 1, 5));
+        assert!(visual.selecting());
+        assert_eq!((visual.anchor, visual.cursor), (spot(0, 0, 2), spot(0, 1, 5)));
+    }
+
+    #[test]
+    fn just_a_cursor_moves_without_selecting_until_v() {
+        let text = text();
+        let mut visual = Visual::cursor_at(spot(0, 0, 0));
+        keys(&mut visual, &text, "ll");
+        assert_eq!((visual.anchor, visual.cursor), (spot(0, 0, 2), spot(0, 0, 2)));
+        assert_eq!(keys(&mut visual, &text, "v"), Outcome::Stay);
+        assert!(visual.selecting());
+        keys(&mut visual, &text, "l");
+        assert_eq!((visual.anchor, visual.cursor), (spot(0, 0, 2), spot(0, 0, 3)));
+        let mut lines = Visual::cursor_at(spot(0, 0, 2));
+        keys(&mut lines, &text, "V");
+        assert!(lines.selecting());
+        assert_eq!(lines.kind, Kind::Lines);
+        let mut word = Visual::cursor_at(spot(0, 0, 0));
+        keys(&mut word, &text, "iw");
+        assert!(word.selecting());
+        assert_ne!(word.anchor, word.cursor);
     }
 
     #[test]

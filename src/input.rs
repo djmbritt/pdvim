@@ -197,7 +197,7 @@ pub enum Action {
     Visual {
         lines: bool,
     },
-    /// Ask for text in view to start selecting at, as flash.nvim's `s`.
+    /// Ask for text in view to put the cursor at, as flash.nvim's `s`.
     Flash,
     /// Select the last selection again, as vim's `gv`.
     SelectAgain,
@@ -307,7 +307,7 @@ bindable! {
         /// Label the lines in view, to start selecting whole lines at one.
         VisualLine = "visual-line", "Select whole lines from a line picked by label";
         /// As flash.nvim's `s`.
-        Flash = "flash", "Type text in view, then its label, to start selecting there";
+        Flash = "flash", "Type text in view, then its label, to put a cursor there";
         /// As vim's `gv`.
         SelectAgain = "select-again", "Select the last selection again";
         /// As `gi` in Vimium: tab then goes from field to field.

@@ -2071,24 +2071,38 @@ impl App {
 
     /// What can be done next in visual mode, each with its key: `y copy
     /// H highlight ...`. Taking markings away and changing a note are
-    /// offered where there is a marking.
+    /// offered where there is a marking. With only a cursor, what is
+    /// offered is starting a selection, jumping again, and notes.
     fn visual_actions(&self) -> String {
         use visual::Binding as B;
-        let mut actions = vec![
-            (B::Yank, "copy"),
-            (B::Highlight, "highlight"),
-            (B::Underline, "underline"),
-            (B::StrikeOut, "strike out"),
-            (B::Squiggly, "squiggle"),
-            (B::Note, "note"),
-        ];
-        if self.selection_marked() {
+        let selecting = self.visual.as_ref().is_none_or(Visual::selecting);
+        let mut actions = if selecting {
+            vec![
+                (B::Yank, "copy"),
+                (B::Highlight, "highlight"),
+                (B::Underline, "underline"),
+                (B::StrikeOut, "strike out"),
+                (B::Squiggly, "squiggle"),
+                (B::Note, "note"),
+            ]
+        } else {
+            vec![
+                (B::Characters, "select"),
+                (B::Lines, "select lines"),
+                (B::Flash, "jump"),
+                (B::Note, "note"),
+            ]
+        };
+        if selecting && self.selection_marked() {
             actions.push((B::Unmark, "unmark"));
         }
         if self.marking_at_cursor().is_some() {
             actions.push((B::ChangeNote, "change note"));
         }
-        actions.extend([(B::OtherEnd, "other end"), (B::Leave, "leave")]);
+        if selecting {
+            actions.push((B::OtherEnd, "other end"));
+        }
+        actions.push((B::Leave, "leave"));
         let keymap = &self.keymaps.visual;
         actions
             .into_iter()
@@ -4079,7 +4093,12 @@ impl canvas::Program<Message> for Marks<'_> {
             markings::draw_labels(&mut frame, document, hints);
         }
         if let Some(visual) = &self.0.visual {
-            for (page, area) in visual.areas(&document.text) {
+            let selected = if visual.selecting() {
+                visual.areas(&document.text)
+            } else {
+                Vec::new()
+            };
+            for (page, area) in selected {
                 if let Some(area) = document.reader.area_on_screen(page, area) {
                     let area = rectangle(area);
                     frame.fill_rectangle(area.position(), area.size(), SELECTION);

@@ -12,6 +12,8 @@ use crate::visual::Kind;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Mode {
     Normal,
+    /// Just a cursor over the text, after a jump with flash.
+    Cursor,
     Visual,
     VisualLine,
     /// Labels on the lines in view, to start selecting at one.
@@ -45,6 +47,7 @@ impl Mode {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Normal => "NORMAL",
+            Self::Cursor => "CURSOR",
             Self::Visual => "VISUAL",
             Self::VisualLine => "V-LINE",
             Self::Select => "SELECT",
@@ -71,7 +74,9 @@ impl Mode {
     pub const fn colour(self, modes: &ModeColours) -> Color {
         match self {
             Self::Normal => modes.normal,
-            Self::Visual | Self::VisualLine | Self::Select | Self::Jump => modes.visual,
+            Self::Cursor | Self::Visual | Self::VisualLine | Self::Select | Self::Jump => {
+                modes.visual
+            }
             Self::Insert => modes.insert,
             Self::Command | Self::Search | Self::Password | Self::Confirm => modes.command,
             Self::Follow | Self::Pick => modes.label,
@@ -100,6 +105,9 @@ impl App {
         } else if self.flash.is_some() {
             Mode::Jump
         } else if let Some(visual) = &self.visual {
+            if !visual.selecting() {
+                return Mode::Cursor;
+            }
             match visual.kind {
                 Kind::Lines => Mode::VisualLine,
                 Kind::Characters => Mode::Visual,

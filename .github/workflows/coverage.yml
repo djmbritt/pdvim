@@ -2,7 +2,9 @@
 # every pull request, through coverage.sh, as on a machine of one's own.
 # The table of how much of each file the tests reach goes in the run's
 # summary, and the report to browse line by line is kept as the run's
-# artifact, "coverage".
+# artifact, "coverage". The run fails when the tests reach less of the
+# lines than the floor below; raise it as coverage grows, a point or so
+# under what is measured here, as it differs a little from run to run.
 name: Coverage
 
 on:
@@ -21,6 +23,8 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # The least share of the lines, in percent, the tests may reach.
+  COVERAGE_FLOOR: 90
 
 jobs:
   coverage:
@@ -43,16 +47,23 @@ jobs:
         with:
           key: coverage
 
+      # The table goes in the summary, and the report is kept, even when
+      # coverage is under the floor, to see where it fell.
       - name: Measure
         run: |
-          ./coverage.sh > coverage.md
+          status=0
+          ./coverage.sh --fail-under "$COVERAGE_FLOOR" > coverage.md || status=$?
           {
             echo "## Test coverage"
             echo
             cat coverage.md
+            echo
+            echo "The floor is ${COVERAGE_FLOOR}% of the lines."
           } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
 
       - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
         with:
           name: coverage
           path: |

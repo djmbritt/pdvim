@@ -337,8 +337,8 @@ note-color = "#fdd835"
 "ctrl+c" = "leave"
 "ctrl+[" = "leave"
 "o" = "other-end"
-# Type some of the text in view, then a match's label, to put just the
-# cursor there, letting go of the selection
+# Type some of the text in view, then a match's label, to move the cursor
+# there; the selection runs to it
 "s" = "flash"
 "v" = "characters"
 "V" = "lines"

@@ -1,7 +1,8 @@
 //! Jumping to text in view by typing some of it, then a match's label, as
-//! flash.nvim's `s` does. Just the cursor lands there, with nothing
-//! selected: it moves without selecting until `v` or `V` starts a selection
-//! from it.
+//! flash.nvim's `s` does. From normal mode just the cursor lands there,
+//! with nothing selected: it moves without selecting until `v` or `V`
+//! starts a selection from it. While selecting, the cursor moves there and
+//! the selection runs to it.
 
 use iced::widget::canvas;
 use iced::{Point, Task};
@@ -79,10 +80,15 @@ impl App {
         }
     }
 
-    /// Puts just a cursor at a spot, letting go of any selection.
+    /// Moves the cursor to a spot: the selection, if one is being made,
+    /// runs to it; otherwise just the cursor lands there.
     fn land(&mut self, spot: Spot) -> Task<Message> {
         if let Some(visual) = &mut self.visual {
-            visual.place_at(spot);
+            if visual.selecting() {
+                visual.move_to(spot);
+            } else {
+                visual.place_at(spot);
+            }
             return self.follow_cursor();
         }
         self.visual = Some(Visual::cursor_at(spot));

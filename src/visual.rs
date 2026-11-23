@@ -28,7 +28,7 @@ bindable! {
         ChangeNote = "change-note", "Change the note on the marking at the cursor, and leave";
         Leave = "leave", "Leave without copying";
         /// As flash.nvim's `s`: type some text, then a match's label.
-        Flash = "flash", "Jump to text typed next, with just the cursor; v or V selects";
+        Flash = "flash", "Move the cursor to text typed next, by its label";
         OtherEnd = "other-end", "Go to the other end of the selection";
         /// The kind in force leaves; the other kind switches to it.
         Characters = "characters", "Select characters; leave if already";
@@ -1810,6 +1810,14 @@ mod tests {
         assert_eq!(visual.kind, Kind::Characters);
         assert_eq!(visual.cursor(), spot(0, 0, 4));
         assert_eq!((visual.anchor, visual.cursor), (spot(0, 0, 4), spot(0, 0, 4)));
+    }
+
+    #[test]
+    fn moving_the_cursor_while_selecting_keeps_where_it_started() {
+        let mut visual = Visual::new(Kind::Characters, spot(0, 0, 2));
+        visual.move_to(spot(0, 1, 5));
+        assert!(visual.selecting());
+        assert_eq!((visual.anchor, visual.cursor), (spot(0, 0, 2), spot(0, 1, 5)));
     }
 
     #[test]

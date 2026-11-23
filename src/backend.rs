@@ -20,6 +20,7 @@ use mupdf::{
 use crate::fonts;
 use crate::layout::{PageSize, Rect, Rotation};
 use crate::num;
+use crate::prose;
 use crate::recolor::{Palette, Rgb};
 
 /// The longest side a rendered page may have, in pixels. Graphics cards
@@ -1086,7 +1087,7 @@ pub fn text_hits(lines: &[TextLine], page: u32, needle: &Needle) -> Vec<Hit> {
         if needle.match_case {
             a == b
         } else {
-            a.to_lowercase().eq(b.to_lowercase())
+            folded(a) == folded(b)
         }
     };
     let is_word = |c: Option<&(char, Option<(usize, Rect)>)>| {
@@ -1131,6 +1132,15 @@ fn match_at(
 ) -> Option<usize> {
     let mut at = start;
     for &want in wanted {
+        // The end of a line in a script without spaces is no space: the
+        // text runs on to the next line.
+        if want != ' '
+            && at > start
+            && let Some((_, None)) = chars.get(at)
+            && prose::unspaced(want).is_some()
+        {
+            at = at.saturating_add(1);
+        }
         let (have, _) = *chars.get(at)?;
         if want == ' ' {
             if !have.is_whitespace() {
@@ -2681,6 +2691,17 @@ const fn write_pixel(into: &mut [u8], Rgb(red, green, blue): Rgb) {
         *r = red;
         *g = green;
         *b = blue;
+    }
+}
+
+/// A letter as it is compared when case does not matter: in small letters,
+/// with the Greek final sigma as any other, and the Turkish dotless and
+/// dotted i as plain i, so that a search typed in capitals finds them.
+fn folded(character: char) -> char {
+    match character {
+        '\u{3c2}' => '\u{3c3}',
+        '\u{131}' | '\u{130}' => 'i',
+        _ => character.to_lowercase().next().unwrap_or(character),
     }
 }
 

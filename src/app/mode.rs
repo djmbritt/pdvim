@@ -22,7 +22,7 @@ pub(super) enum Mode {
     Select,
     /// Typing text in view to jump to, as flash.nvim's `s`.
     Jump,
-    /// Labels on links, fields and markings, from `f`.
+    /// Labels on links, fields, and markings, from `f`.
     Follow,
     /// Labels on markings, from `gh`.
     Pick,

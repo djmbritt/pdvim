@@ -8,14 +8,14 @@ use std::path::PathBuf;
 
 use iced::Task;
 
-use super::{App, Labelled, Message, Notice, document_by_id, open_externally, tilde};
+use super::{App, Labelled, Message, Notice, Wanted, document_by_id, open_externally, tilde};
 use crate::backend::{self, Link, Target, TextLine};
 use crate::hints::{Hints, Outcome};
 use crate::input::LinkGoal;
 use crate::keymap::Pending;
 use crate::layout::Rect;
 use crate::reader::Place;
-use crate::visual::Text;
+use crate::visual::{self, Text, Visual};
 
 impl App {
     /// Labels the links in view, to do this with the one picked. The links
@@ -230,6 +230,10 @@ impl App {
                 self.notice = Notice::Error("no such label".to_owned());
                 return Task::none();
             }
+            Outcome::Figures => {
+                self.hints = None;
+                return self.label_links(LinkGoal::SelectFigure);
+            }
             Outcome::Picked(hint) => {
                 self.hints = None;
                 match hint.item {
@@ -239,10 +243,7 @@ impl App {
                         return Task::none();
                     }
                     Labelled::Picture(area) if self.link_goal == LinkGoal::SelectFigure => {
-                        if let Some(visual) = &mut self.visual {
-                            visual.select_figure(hint.page, area);
-                        }
-                        return Task::none();
+                        return self.select_figure(hint.page, area);
                     }
                     Labelled::Picture(area) => return self.copy_picture(hint.page, area),
                 }
@@ -273,6 +274,24 @@ impl App {
             }
             (_, Target::Field(field)) => self.fill_field(field, link.area),
         }
+    }
+
+    /// Selects a picture or figure in visual mode, starting it if need
+    /// be with the cursor on the line of text nearest the figure, for a
+    /// motion to go on from.
+    fn select_figure(&mut self, page: u32, area: Rect) -> Task<Message> {
+        if let Some(visual) = &mut self.visual {
+            visual.select_figure(page, area);
+            return Task::none();
+        }
+        let Some(document) = self.document() else {
+            return Task::none();
+        };
+        let mut visual = Visual::cursor_at(visual::spot_near(&document.text, page, area));
+        visual.select_figure(page, area);
+        self.visual = Some(visual);
+        // Known, so that the bottom line can show the note at the cursor.
+        self.with_markings(Wanted::Refresh)
     }
 
     /// Copies a picture or figure to the clipboard, as it is printed, at
@@ -403,12 +422,18 @@ mod tests {
     use crate::app::mode::Mode;
     use crate::app::testing::{read, showing, typing};
     use crate::backend::TextChar;
-    use crate::visual::{Spot, Visual};
+    use crate::visual::Spot;
 
-    /// Labels the figures from visual mode, as `I` does, once the backend
-    /// has found them, and types the first label.
+    /// Labels the figures, as `I` does, once the backend has found them,
+    /// and types the first label.
     fn select_first_figure(app: &mut App, id: u64) {
         typing(app, "I");
+        pick_first_figure(app, id);
+    }
+
+    /// Gives the app the figures of the first page, which the labels wait
+    /// for, and types the first label.
+    fn pick_first_figure(app: &mut App, id: u64) {
         let figures = block_on(app.document().unwrap().backend.figures(vec![0]));
         let _ = app.update(Message::FiguresFound(id, figures));
         let hints = app.hints.as_ref().unwrap();
@@ -431,6 +456,33 @@ mod tests {
         typing(&mut app, "l");
         assert!(app.visual.as_ref().unwrap().figure().is_none());
         assert_ne!(app.mode(), Mode::Figure);
+    }
+
+    #[test]
+    fn a_figure_is_selected_from_normal_mode_and_visual_mode_starts() {
+        let (mut app, id) = showing("drawn.pdf");
+        read(&mut app, id, 0);
+        assert!(app.visual.is_none());
+        select_first_figure(&mut app, id);
+        assert_eq!(app.mode(), Mode::Figure);
+        let visual = app.visual.as_ref().unwrap();
+        assert!(visual.figure().is_some());
+        // The cursor is on the page's text, for a motion to go on from.
+        assert_eq!(visual.cursor(), Spot::line_start(0, 0));
+        typing(&mut app, "l");
+        assert_eq!(app.mode(), Mode::Cursor);
+    }
+
+    #[test]
+    fn the_labels_on_lines_give_way_to_the_figures() {
+        let (mut app, id) = showing("drawn.pdf");
+        read(&mut app, id, 0);
+        typing(&mut app, "v");
+        assert!(app.line_hints.is_some());
+        typing(&mut app, "I");
+        assert!(app.line_hints.is_none());
+        pick_first_figure(&mut app, id);
+        assert_eq!(app.mode(), Mode::Figure);
     }
 
     #[test]

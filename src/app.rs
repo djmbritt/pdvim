@@ -1248,6 +1248,10 @@ impl App {
                 self.notice = Notice::Error("no such line".to_owned());
                 Task::none()
             }
+            Outcome::Figures => {
+                self.line_hints = None;
+                self.label_links(LinkGoal::SelectFigure)
+            }
             Outcome::Picked(hint) => {
                 self.line_hints = None;
                 let mut visual = Visual::new(kind, hint.item);

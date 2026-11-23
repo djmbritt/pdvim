@@ -438,7 +438,8 @@ impl App {
     /// Picks the marking whose label was typed, as `]h` would go to it.
     pub(super) fn on_marking_hint(&mut self, outcome: HintOutcome<Marking>) {
         match outcome {
-            HintOutcome::Wait => return,
+            // Markings are picked, not figures: the key is ignored.
+            HintOutcome::Wait | HintOutcome::Figures => return,
             HintOutcome::Cancel => {}
             HintOutcome::NoMatch => self.notice = Notice::Error("no such marking".to_owned()),
             HintOutcome::Picked(hint) => self.pick_marking(&hint.item),

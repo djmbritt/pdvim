@@ -1156,6 +1156,23 @@ pub fn spot_at(text: &Text, page: u32, (across, down): (f32, f32)) -> Option<Spo
     })
 }
 
+/// The start of the line of a page nearest the top of an area, as the
+/// cursor goes to with a picture or figure selected; the page's first line
+/// if its text is not read, or it has none.
+pub fn spot_near(text: &Text, page: u32, area: Rect) -> Spot {
+    let nearest = text.get(&page).and_then(|lines| {
+        lines
+            .iter()
+            .enumerate()
+            .filter_map(|(index, line)| Some((index, line.chars.first()?.area.top)))
+            .min_by(|(_, one), (_, other)| {
+                (one - area.top).abs().total_cmp(&(other - area.top).abs())
+            })
+            .map(|(index, _)| index)
+    });
+    Spot::line_start(page, nearest.unwrap_or(0))
+}
+
 /// The first and last characters of the word at a spot: letters and
 /// digits, or a run of other characters that are not spaces.
 pub fn word_at(text: &Text, spot: Spot) -> (Spot, Spot) {

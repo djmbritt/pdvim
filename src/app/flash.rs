@@ -1,6 +1,7 @@
 //! Jumping to text in view by typing some of it, then a match's label, as
-//! flash.nvim's `s` does. From normal mode, visual mode starts where it
-//! lands; in visual mode, the cursor moves there.
+//! flash.nvim's `s` does. Just the cursor lands there, with nothing
+//! selected: it moves without selecting until `v` or `V` starts a selection
+//! from it.
 
 use iced::widget::canvas;
 use iced::{Point, Task};
@@ -11,7 +12,7 @@ use super::{
 use crate::flash::{Flash, Outcome, Press};
 use crate::input::{Key, PromptBinding};
 use crate::keymap::Match;
-use crate::visual::{self, Kind, Spot, Visual};
+use crate::visual::{self, Spot, Visual};
 
 impl App {
     /// Asks for text to jump to, once the text in view is read.
@@ -78,14 +79,13 @@ impl App {
         }
     }
 
-    /// Puts visual mode's cursor at a spot, starting visual mode there if
-    /// need be.
+    /// Puts just a cursor at a spot, letting go of any selection.
     fn land(&mut self, spot: Spot) -> Task<Message> {
         if let Some(visual) = &mut self.visual {
-            visual.move_to(spot);
+            visual.place_at(spot);
             return self.follow_cursor();
         }
-        self.visual = Some(Visual::new(Kind::Characters, spot));
+        self.visual = Some(Visual::cursor_at(spot));
         // Known, so that the bottom line can show the note at the cursor.
         let markings = self.with_markings(Wanted::Refresh);
         Task::batch([self.follow_cursor(), markings])

@@ -1,3 +1,5 @@
+<p align="center"><img src="packaging/pdvim.svg" alt="pdvim logo" width="128"></p>
+
 # pdvim
 
 A keyboard-driven PDF reader with vi keys. pdvim also reads EPUB and FB2 books, CBZ comics, XPS documents, SVG drawings and images.
@@ -173,7 +175,7 @@ Type a label to pick its link or field. Web and mail links open in your default 
 
 ### Selecting text
 
-`v` selects characters and `V` selects whole lines. Each line in view gets a label, and typing one starts the selection there. `s` starts it at the text you type instead, as [flash.nvim](https://github.com/folke/flash.nvim) does.
+`v` selects characters and `V` selects whole lines. Each line in view gets a label, and typing one starts the selection there. `s` puts just a cursor at the text you type instead, which moves without selecting until `v` or `V` starts a selection from it, as [flash.nvim](https://github.com/folke/flash.nvim) does.
 
 | Key in visual mode         | Action                                                     |
 | -------------------------- | ---------------------------------------------------------- |

@@ -12,9 +12,9 @@ A PDF reader driven by vi keys. pdvim also opens EPUB and FB2 books, CBZ and CBT
   - `/` with smartcase and matches highlighted as you type;
   - `.` to repeat the last command line.
 - **Needs no mouse.** `f` labels every link and form field in view, and typing a label follows the link or fills in the field. A click and a drag work too.
-- **Selects text like vim.** `v` starts at a labelled line, and motions and text objects such as `w`, `iw`, `is` and `ip` grow the selection. `I` picks a picture or figure instead.
+- **Selects text like vim.** `v` starts at a labeled line, and motions and text objects such as `w`, `iw`, `is` and `ip` grow the selection. `I` picks a picture or figure instead.
 - **Copies clean text.** It joins the lines of a paragraph, mends words hyphenated across lines, and leaves a blank line between paragraphs. Pictures copy as images.
-- **Saves standard annotations.** Highlights, underlines, strike-outs, squiggles and notes go into the PDF with `:w`, so other readers show them. `u` undoes them.
+- **Saves standard annotations.** Highlights, underlines, strike-outs, squiggles, and notes go into the PDF with `:w`, so other readers show them. `u` undoes them.
 - **Reads well at night.** It recolors pages to match a dark theme, follows the system's light or dark setting, and can trim blank margins. The four [Catppuccin](https://catppuccin.com) flavors are built in.
 - **Finds its way around:**
   - a table of contents, guessed from the text when a PDF has none;

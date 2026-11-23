@@ -5,6 +5,11 @@
 # target/coverage/html/index.html.
 #
 #   ./coverage.sh
+#   ./coverage.sh --fail-under 90
+#
+# With --fail-under, it fails, after printing the table, when less than
+# that share of the lines is reached: CI uses it to keep coverage from
+# falling unnoticed.
 #
 # Needs llvm-tools for the toolchain in use:
 #   rustup component add llvm-tools-preview
@@ -12,6 +17,13 @@
 # that the instrumented build does not replace them.
 set -eu
 cd "$(dirname "$0")"
+
+floor=0
+case "${1-}" in
+    --fail-under) floor=${2:?"coverage.sh: --fail-under needs a percentage"} ;;
+    "") ;;
+    *) echo "usage: coverage.sh [--fail-under PERCENT]" >&2; exit 2 ;;
+esac
 
 triple=$(rustc -vV | sed -n 's/^host: //p')
 bin=$(rustc --print sysroot)/lib/rustlib/$triple/bin
@@ -55,8 +67,8 @@ ignore="$ignore"'|/src/main\.rs|/src/clipboard\.rs)'
 # shellcheck disable=SC2086,SC2016
 "$bin/llvm-cov" export -summary-only -instr-profile "$out/tests.profdata" \
     -ignore-filename-regex "$ignore" $objects |
-    python3 -c '
-import json, sys
+    FLOOR="$floor" python3 -c '
+import json, os, sys
 
 data = json.load(sys.stdin)["data"][0]
 rows = []
@@ -79,4 +91,11 @@ for name, summary in rows:
 totals = data["totals"]
 print("| **Total** | **%s** | **%s** | **%s** |" % (
     share(totals["lines"]), share(totals["functions"]), share(totals["regions"])))
+floor = float(os.environ["FLOOR"])
+lines = totals["lines"]
+reached = 100 * lines["covered"] / max(lines["count"], 1)
+if reached < floor:
+    print("coverage.sh: %.1f%% of the lines reached, under the floor of %g%%" % (reached, floor),
+          file=sys.stderr)
+    sys.exit(1)
 '

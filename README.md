@@ -470,6 +470,15 @@ cargo install cargo-fuzz
 fuzz/run.sh pdf 600     # fuzz PDF loading for ten minutes
 ```
 
+## Benchmarks
+
+`benches/hot_paths.rs` times, with [criterion](https://github.com/criterion-rs/criterion.rs), the work pdvim does on every frame or key press: drawing and recolouring a page, reading and searching its text, jumping with flash, finding sentences and paragraphs, reading the configuration, and finding the pages in view of a 10,000-page document. The page timed is a dense page of prose that the benchmarks write themselves. Each run is compared with the last, and the reports to browse are in `target/criterion/report/index.html`.
+
+```sh
+cargo bench                       # everything, a few minutes
+cargo bench -- 'page/render'      # only what matches
+```
+
 ## License
 
 [AGPL-3.0-or-later](https://www.gnu.org/licenses/agpl-3.0.html)

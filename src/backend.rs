@@ -1063,7 +1063,7 @@ fn page_hits(document: &Document, number: u32, needle: &str) -> Result<Vec<Hit>,
 /// it match any run of space, and the end of a line counts as a space, so
 /// that text running on to the next line is found. A place over several
 /// lines is a hit on each.
-fn text_hits(lines: &[TextLine], page: u32, needle: &Needle) -> Vec<Hit> {
+pub fn text_hits(lines: &[TextLine], page: u32, needle: &Needle) -> Vec<Hit> {
     // The page's characters in reading order, each with its line and
     // area; the end of each line a space with neither.
     let mut chars: Vec<(char, Option<(usize, Rect)>)> = Vec::new();
@@ -1930,7 +1930,7 @@ fn quad_area(quad: &mupdf::Quad, bounds: &mupdf::Rect) -> Rect {
 
 /// The lines of text on a page, with each character's area measured from
 /// the corner of the page. Lines with no characters are left out.
-fn page_text(document: &Document, number: u32) -> Result<Vec<TextLine>, mupdf::Error> {
+pub fn page_text(document: &Document, number: u32) -> Result<Vec<TextLine>, mupdf::Error> {
     let page = document.load_page(page_number(number))?;
     let bounds = page.bounds()?;
     let text = page.to_text_page(TextPageFlags::empty())?;
@@ -2306,14 +2306,14 @@ struct Worker {
 /// What it takes to draw a page, recorded once: MuPDF reads the page and
 /// its annotations into a list of drawing operations, which can be played
 /// at any scale far faster than the page can be read again.
-struct Recording {
+pub struct Recording {
     page: u32,
     list: DisplayList,
     bounds: mupdf::Rect,
 }
 
 /// Records a page, with its annotations.
-fn record(document: &Document, page: u32) -> Result<Recording, mupdf::Error> {
+pub fn record(document: &Document, page: u32) -> Result<Recording, mupdf::Error> {
     let loaded = document.load_page(page_number(page))?;
     Ok(Recording {
         page,
@@ -2586,7 +2586,7 @@ fn content_box(
 
 /// Draws a recorded page, or the part of it the job asks for, to a bitmap
 /// whose longest side is at most `longest_side` pixels.
-fn render(
+pub fn render(
     recording: &Recording,
     job: RenderJob,
     longest_side: f32,

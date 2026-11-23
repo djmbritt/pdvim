@@ -1,0 +1,88 @@
+# Runs cargo-mutants on every pull request, over only the lines it
+# changes: each of those is changed in a small way, one at a time, and
+# the run fails when the tests notice no difference, so that new code
+# does not come in with tests that would not catch it broken. What is
+# left out and how the tests run is in .cargo/mutants.toml. The changes
+# missed are listed in the run's summary, and the whole of cargo-mutants'
+# output is kept as the run's artifact, "mutants".
+name: Mutants
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request makes an older run moot.
+concurrency:
+  group: mutants-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  mutants:
+    name: Mutation testing of what changed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The base of the pull request, to compare with.
+          fetch-depth: 0
+
+      # MuPDF is compiled from source, and its bindings are made with
+      # bindgen, which needs libclang.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libclang-dev libfontconfig1-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: mutants
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants
+
+      # Run by hand, there is no pull request: it is compared with main.
+      - name: Find what changed
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || 'origin/main' }}
+        run: git diff "$BASE...HEAD" > changes.diff
+
+      # In place: the checkout is the job's own, so there is no need to
+      # copy it first.
+      - name: Test
+        run: |
+          status=0
+          cargo mutants --in-place --in-diff changes.diff -j 2 || status=$?
+          {
+            echo "## Mutation testing"
+            echo
+            # With nothing in the diff to change, there is no output.
+            if [ ! -f mutants.out/caught.txt ]; then
+              echo "The pull request changes no code that cargo-mutants changes."
+            else
+              echo "Caught: $(wc -l < mutants.out/caught.txt)," \
+                "missed: $(wc -l < mutants.out/missed.txt)," \
+                "timed out: $(wc -l < mutants.out/timeout.txt)," \
+                "unviable: $(wc -l < mutants.out/unviable.txt)."
+              if [ -s mutants.out/missed.txt ]; then
+                echo
+                echo "Missed, so no test notices these changes:"
+                echo
+                sed 's/^/- `/; s/$/`/' mutants.out/missed.txt
+              fi
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: mutants
+          path: mutants.out
+          if-no-files-found: ignore

@@ -370,6 +370,13 @@ pub fn parse(line: &str) -> Result<Option<Command>, Error> {
     if let Ok(page) = line.parse::<u32>() {
         return Ok(Some(Command::Goto(page)));
     }
+    // As vim's `50%` in normal mode: that far through the document. 0% is
+    // the first page, as 1% is.
+    if let Some(percent) = line.strip_suffix('%')
+        && let Ok(percent) = percent.trim_end().parse::<u32>()
+    {
+        return Ok(Some(Command::Run(Binding::Percent, Some(percent.max(1)))));
+    }
     // As in vim, the rest of the line after `!` is the shell's.
     if let Some(shell) = line.strip_prefix('!') {
         let shell = shell.trim();
@@ -769,6 +776,15 @@ mod tests {
     #[test]
     fn a_number_goes_to_that_page() {
         assert_eq!(parse(" 42 "), Ok(Some(Command::Goto(42))));
+    }
+
+    #[test]
+    fn a_number_and_a_percent_sign_goes_that_far_through() {
+        assert_eq!(parse("40%"), Ok(Some(Command::Run(Binding::Percent, Some(40)))));
+        assert_eq!(parse(" 40 % "), Ok(Some(Command::Run(Binding::Percent, Some(40)))));
+        assert_eq!(parse("0%"), Ok(Some(Command::Run(Binding::Percent, Some(1)))));
+        assert_eq!(parse("%"), Err(Error::Unknown("%".into())));
+        assert_eq!(parse("x%"), Err(Error::Unknown("x%".into())));
     }
 
     #[test]

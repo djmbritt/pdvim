@@ -104,4 +104,21 @@ mod tests {
         assert!(zoom(&session) > twice);
         session.keys(":zoom-in; repeat<Enter>");
     }
+
+    #[test]
+    fn a_percentage_goes_as_far_through_as_in_normal_mode_and_is_a_jump() {
+        let page = |session: &Session| session.app.document().unwrap().reader.current_page();
+        let mut session = Session::open("outline.pdf");
+        let pages = session.app.document().unwrap().reader.page_count();
+        assert!(pages > 2, "the fixture has pages to go through");
+        session.keys("50%");
+        let typed = page(&session);
+        assert!(typed > 0);
+        session.keys("gg:50%<Enter>");
+        assert_eq!(page(&session), typed);
+        session.keys(":100%<Enter>");
+        assert_eq!(page(&session), pages - 1);
+        session.keys("<C-o>");
+        assert_eq!(page(&session), typed);
+    }
 }

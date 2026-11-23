@@ -399,36 +399,38 @@ The Flatpak reads the same configuration, but keeps its history in `~/.var/app/i
 ./coverage.sh
 ```
 
-Measured on 2026-11-22:
+Measured on 2026-11-23:
 
 <details>
 <summary>Lines, functions and regions covered, by file</summary>
 
 | File | Lines | Functions | Regions |
 |------|------:|----------:|--------:|
-| `src/app.rs` | 25% | 28% | 23% |
+| `src/app.rs` | 37% | 45% | 36% |
 | `src/app/bars.rs` | 61% | 50% | 60% |
-| `src/app/chapters.rs` | 0% | 0% | 0% |
+| `src/app/chapters.rs` | 84% | 100% | 90% |
 | `src/app/copy.rs` | 38% | 55% | 32% |
-| `src/app/flash.rs` | 0% | 0% | 0% |
+| `src/app/flash.rs` | 72% | 85% | 76% |
 | `src/app/forms.rs` | 39% | 49% | 40% |
-| `src/app/incsearch.rs` | 0% | 0% | 0% |
+| `src/app/incsearch.rs` | 77% | 75% | 74% |
 | `src/app/info.rs` | 46% | 61% | 49% |
-| `src/app/links.rs` | 21% | 18% | 18% |
-| `src/app/markings.rs` | 9% | 9% | 7% |
+| `src/app/links.rs` | 70% | 67% | 70% |
+| `src/app/markings.rs` | 13% | 16% | 11% |
 | `src/app/matches.rs` | 93% | 96% | 94% |
-| `src/app/mode.rs` | 31% | 67% | 33% |
+| `src/app/mode.rs` | 45% | 83% | 49% |
 | `src/app/overview.rs` | 18% | 29% | 17% |
+| `src/app/paragraphs.rs` | 92% | 82% | 90% |
 | `src/app/pointer.rs` | 85% | 85% | 86% |
 | `src/app/reflow.rs` | 64% | 52% | 58% |
-| `src/app/run.rs` | 0% | 0% | 0% |
+| `src/app/run.rs` | 27% | 25% | 29% |
 | `src/app/tabs.rs` | 22% | 25% | 18% |
-| `src/app/unlock.rs` | 0% | 0% | 0% |
-| `src/backend.rs` | 85% | 74% | 83% |
+| `src/app/unlock.rs` | 78% | 81% | 79% |
+| `src/backend.rs` | 90% | 81% | 88% |
+| `src/bench.rs` | 99% | 100% | 98% |
 | `src/bindings.rs` | 97% | 100% | 97% |
 | `src/clipboard.rs` | 0% | 0% | 0% |
 | `src/command.rs` | 99% | 96% | 99% |
-| `src/complete.rs` | 95% | 97% | 93% |
+| `src/complete.rs` | 95% | 97% | 92% |
 | `src/config.rs` | 92% | 89% | 89% |
 | `src/contents.rs` | 98% | 100% | 98% |
 | `src/dirs.rs` | 83% | 60% | 78% |
@@ -438,9 +440,10 @@ Measured on 2026-11-22:
 | `src/help.rs` | 99% | 100% | 99% |
 | `src/hints.rs` | 96% | 100% | 97% |
 | `src/history.rs` | 96% | 98% | 91% |
-| `src/input.rs` | 63% | 93% | 77% |
+| `src/input.rs` | 67% | 93% | 79% |
 | `src/jumps.rs` | 100% | 100% | 100% |
-| `src/keymap.rs` | 98% | 96% | 99% |
+| `src/keymap.rs` | 100% | 98% | 100% |
+| `src/languages.rs` | 93% | 100% | 94% |
 | `src/layout.rs` | 99% | 100% | 98% |
 | `src/main.rs` | 0% | 0% | 0% |
 | `src/manual.rs` | 90% | 96% | 90% |
@@ -450,14 +453,14 @@ Measured on 2026-11-22:
 | `src/overview.rs` | 96% | 86% | 97% |
 | `src/paths.rs` | 97% | 100% | 97% |
 | `src/picker.rs` | 99% | 100% | 98% |
-| `src/prose.rs` | 97% | 100% | 95% |
+| `src/prose.rs` | 97% | 100% | 91% |
 | `src/reader.rs` | 97% | 98% | 98% |
 | `src/recall.rs` | 100% | 100% | 100% |
 | `src/recolor.rs` | 100% | 100% | 100% |
 | `src/shell.rs` | 78% | 65% | 80% |
 | `src/theme.rs` | 46% | 67% | 45% |
 | `src/visual.rs` | 96% | 96% | 96% |
-| **Total** | **69%** | **71%** | **69%** |
+| **Total** | **75%** | **78%** | **75%** |
 
 </details>
 

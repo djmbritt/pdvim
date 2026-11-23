@@ -126,3 +126,45 @@ pub(super) fn draw(frame: &mut canvas::Frame, document: &Document, flash: &Flash
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::app::mode::Mode;
+    use crate::app::testing::Session;
+    use crate::visual::Spot;
+
+    #[test]
+    fn enter_puts_a_cursor_at_the_nearest_match() {
+        let mut session = Session::open("text.pdf");
+        session.keys("swor<Enter>");
+        assert_eq!(session.app.mode(), Mode::Cursor);
+        let cursor = session.app.visual.as_ref().unwrap().cursor();
+        assert_eq!(cursor, Spot { page: 0, line: 0, index: 7 });
+        // v starts selecting from the cursor; y copies and leaves.
+        session.keys("vey");
+        assert_eq!(session.copied, ["world."]);
+        assert!(session.app.visual.is_none());
+    }
+
+    #[test]
+    fn while_selecting_a_label_moves_the_cursor_and_the_selection_runs_to_it() {
+        let mut session = Session::open("text.pdf");
+        // The first line's label is the first one made.
+        session.keys("vaa");
+        assert_eq!(session.app.mode(), Mode::Visual);
+        session.keys("swor");
+        let flash = session.app.flash.as_ref().unwrap();
+        let words = flash.targets().iter().find(|target| target.start.line == 1).unwrap();
+        let label = words.label.clone();
+        session.keys(&label);
+        assert_eq!(session.selected(), "Hello, world. A line of text second line -- with w");
+    }
+
+    #[test]
+    fn escape_gives_up_the_jump() {
+        let mut session = Session::open("text.pdf");
+        session.keys("swo<Esc>");
+        assert!(session.app.flash.is_none());
+        assert!(session.app.visual.is_none());
+    }
+}

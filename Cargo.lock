@@ -3119,6 +3119,7 @@ dependencies = [
  "criterion",
  "font-kit",
  "iced",
+ "iced_runtime",
  "mupdf",
  "rusqlite",
  "serde",

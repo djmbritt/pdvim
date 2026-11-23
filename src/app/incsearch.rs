@@ -84,3 +84,28 @@ pub(super) fn draw(frame: &mut canvas::Frame, document: &Document, hits: &[Hit])
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::app::testing::Session;
+
+    #[test]
+    fn matches_show_while_a_search_is_typed_and_go_with_it() {
+        let mut session = Session::open("text.pdf");
+        session.keys("/lin");
+        let preview = session.app.preview.as_ref().unwrap();
+        assert_eq!(preview.needle, "lin");
+        assert_eq!(preview.hits.len(), 2);
+        session.keys("e -");
+        assert_eq!(session.app.preview.as_ref().unwrap().hits.len(), 1);
+        session.keys("<Esc>");
+        assert!(session.app.preview.is_none());
+    }
+
+    #[test]
+    fn nothing_is_shown_while_typing_with_incsearch_off() {
+        let mut session = Session::open("text.pdf");
+        session.keys(":set incsearch false<Enter>/line");
+        assert!(session.app.preview.is_none());
+    }
+}

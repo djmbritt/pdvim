@@ -29,6 +29,8 @@ bindable! {
         Leave = "leave", "Leave without copying";
         /// As flash.nvim's `s`: type some text, then a match's label.
         Flash = "flash", "Move the cursor to text typed next, by its label";
+        /// Then `y` copies it as a picture, and `H` and the rest mark it.
+        Figure = "figure", "Label the pictures and figures in view, to select one";
         OtherEnd = "other-end", "Go to the other end of the selection";
         /// The kind in force leaves; the other kind switches to it.
         Characters = "characters", "Select characters; leave if already";
@@ -132,6 +134,10 @@ pub enum Outcome {
     Leave,
     /// Ask for text to jump the cursor to.
     Flash,
+    /// Label the pictures and figures in view, to select one.
+    Figure,
+    /// Copy this area of this page as a picture, and leave.
+    CopyPicture(u32, Rect),
     /// Search for this text, forward or backward, as a whole word if it
     /// is one, and leave.
     Search {
@@ -172,6 +178,8 @@ pub struct Visual {
     /// there is only the cursor, after a jump with flash, until `v` or `V`
     /// starts selecting from it.
     selecting: bool,
+    /// A picture or figure selected instead of text: its page and area.
+    figure: Option<(u32, Rect)>,
 }
 
 impl Visual {
@@ -187,6 +195,7 @@ impl Visual {
             last_find: None,
             around: false,
             selecting: true,
+            figure: None,
         }
     }
 
@@ -359,6 +368,16 @@ impl Visual {
         self.selecting = false;
     }
 
+    /// Selects a picture or figure, the area of a page, instead of text.
+    pub const fn select_figure(&mut self, page: u32, area: Rect) {
+        self.figure = Some((page, area));
+    }
+
+    /// The picture or figure selected, if one is: its page and area.
+    pub const fn figure(&self) -> Option<(u32, Rect)> {
+        self.figure
+    }
+
     /// Whether text is selected, or there is only the cursor.
     pub const fn selecting(&self) -> bool {
         self.selecting
@@ -414,6 +433,9 @@ impl Visual {
     /// Does what a binding says, a number of times where that means
     /// anything.
     fn act(&mut self, binding: Binding, times: u32, text: &Text) -> Outcome {
+        if let Some(outcome) = self.act_on_figure(binding) {
+            return outcome;
+        }
         if !self.selecting {
             match binding {
                 // `v` and `V` start selecting from the cursor.
@@ -450,6 +472,33 @@ impl Visual {
         outcome
     }
 
+    /// Does what a binding says to a picture or figure selected: copying
+    /// or marking it, a note beside it, or leaving. Anything else lets it
+    /// go, and is done to the text from the cursor, so `None`.
+    fn act_on_figure(&mut self, binding: Binding) -> Option<Outcome> {
+        let (page, area) = self.figure?;
+        let mark = |kind| Some(Outcome::Mark(kind, vec![(page, area)]));
+        match binding {
+            Binding::Yank => Some(Outcome::CopyPicture(page, area)),
+            Binding::Highlight => mark(MarkupKind::Highlight),
+            Binding::Underline => mark(MarkupKind::Underline),
+            Binding::StrikeOut => mark(MarkupKind::StrikeOut),
+            Binding::Squiggly => mark(MarkupKind::Squiggly),
+            Binding::Unmark => Some(Outcome::Unmark(vec![(page, area)])),
+            Binding::Note => Some(Outcome::Note(page, area)),
+            Binding::Leave => Some(Outcome::Leave),
+            Binding::Figure => Some(Outcome::Figure),
+            // Neither has a meaning for a picture.
+            Binding::OtherEnd | Binding::SearchSelection | Binding::SearchSelectionBack => {
+                Some(Outcome::Stay)
+            }
+            _ => {
+                self.figure = None;
+                None
+            }
+        }
+    }
+
     /// Does what a binding says to the selection.
     fn act_on_selection(&mut self, binding: Binding, times: u32, text: &Text) -> Outcome {
         // Anything but copying, or taking in more paragraphs, makes the
@@ -458,6 +507,7 @@ impl Visual {
         match binding {
             Binding::Leave => return Outcome::Leave,
             Binding::Flash => return Outcome::Flash,
+            Binding::Figure => return Outcome::Figure,
             Binding::Yank => {
                 let mut copied = self.text(text);
                 if around {
@@ -1837,6 +1887,38 @@ mod tests {
         keys(&mut switched, &text, "V");
         assert_eq!(switched.cursor(), spot(0, 0, end(0)));
         assert_eq!(switched.anchor, spot(0, 0, 2));
+    }
+
+    #[test]
+    fn a_figure_selected_is_copied_or_marked_whole_and_a_motion_lets_it_go() {
+        let text = text();
+        let area = Rect {
+            left: 10.0,
+            top: 20.0,
+            right: 110.0,
+            bottom: 70.0,
+        };
+        let with_figure = || {
+            let mut visual = Visual::new(Kind::Characters, spot(0, 0, 2));
+            visual.select_figure(1, area);
+            visual
+        };
+        assert_eq!(keys(&mut with_figure(), &text, "y"), Outcome::CopyPicture(1, area));
+        assert_eq!(
+            keys(&mut with_figure(), &text, "H"),
+            Outcome::Mark(MarkupKind::Highlight, vec![(1, area)])
+        );
+        assert_eq!(keys(&mut with_figure(), &text, "d"), Outcome::Unmark(vec![(1, area)]));
+        assert_eq!(keys(&mut with_figure(), &text, "n"), Outcome::Note(1, area));
+        assert_eq!(keys(&mut with_figure(), &text, "I"), Outcome::Figure);
+        assert_eq!(keys(&mut with_figure(), &text, "o"), Outcome::Stay);
+        let mut moved = with_figure();
+        assert_eq!(keys(&mut moved, &text, "l"), Outcome::Stay);
+        assert_eq!(moved.figure(), None);
+        assert_eq!(moved.cursor(), spot(0, 0, 3));
+        // Without a figure, the same key asks for the labels.
+        let mut plain = Visual::new(Kind::Characters, spot(0, 0, 2));
+        assert_eq!(keys(&mut plain, &text, "I"), Outcome::Figure);
     }
 
     #[test]

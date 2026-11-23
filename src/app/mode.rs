@@ -14,6 +14,8 @@ pub(super) enum Mode {
     Normal,
     /// Just a cursor over the text, after a jump with flash.
     Cursor,
+    /// A picture or figure selected in visual mode.
+    Figure,
     Visual,
     VisualLine,
     /// Labels on the lines in view, to start selecting at one.
@@ -48,6 +50,7 @@ impl Mode {
         match self {
             Self::Normal => "NORMAL",
             Self::Cursor => "CURSOR",
+            Self::Figure => "FIGURE",
             Self::Visual => "VISUAL",
             Self::VisualLine => "V-LINE",
             Self::Select => "SELECT",
@@ -74,9 +77,12 @@ impl Mode {
     pub const fn colour(self, modes: &ModeColours) -> Color {
         match self {
             Self::Normal => modes.normal,
-            Self::Cursor | Self::Visual | Self::VisualLine | Self::Select | Self::Jump => {
-                modes.visual
-            }
+            Self::Cursor
+            | Self::Figure
+            | Self::Visual
+            | Self::VisualLine
+            | Self::Select
+            | Self::Jump => modes.visual,
             Self::Insert => modes.insert,
             Self::Command | Self::Search | Self::Password | Self::Confirm => modes.command,
             Self::Follow | Self::Pick => modes.label,
@@ -104,7 +110,12 @@ impl App {
             Mode::Insert
         } else if self.flash.is_some() {
             Mode::Jump
+        } else if self.hints.is_some() {
+            Mode::Follow
         } else if let Some(visual) = &self.visual {
+            if visual.figure().is_some() {
+                return Mode::Figure;
+            }
             if !visual.selecting() {
                 return Mode::Cursor;
             }
@@ -114,8 +125,6 @@ impl App {
             }
         } else if self.line_hints.is_some() {
             Mode::Select
-        } else if self.hints.is_some() {
-            Mode::Follow
         } else if self.marking_hints.is_some() {
             Mode::Pick
         } else if self.overview().is_some() {

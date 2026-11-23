@@ -340,6 +340,9 @@ note-color = "#fdd835"
 # Type some of the text in view, then a match's label, to move the cursor
 # there; the selection runs to it
 "s" = "flash"
+# Label the pictures and figures in view; type a label to select one, then
+# y copies it as a picture and H, U, S and W mark it
+"I" = "figure"
 "v" = "characters"
 "V" = "lines"
 "j" = "down"

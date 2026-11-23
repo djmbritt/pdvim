@@ -987,15 +987,17 @@ impl App {
                     self.on_field_key(key)
                 } else if self.flash.is_some() {
                     self.on_flash_key(key)
+                } else if let Some(hints) = &mut self.hints {
+                    // Before visual mode, which labels the figures in view
+                    // to select one.
+                    let outcome = hints.feed(key, &self.keymaps.hints);
+                    self.on_hint(outcome)
                 } else if self.visual.is_some() {
                     self.on_visual_key(key)
                 } else if let Some((kind, hints)) = &mut self.line_hints {
                     let kind = *kind;
                     let outcome = hints.feed(key, &self.keymaps.hints);
                     self.on_line_hint(kind, outcome)
-                } else if let Some(hints) = &mut self.hints {
-                    let outcome = hints.feed(key, &self.keymaps.hints);
-                    self.on_hint(outcome)
                 } else if let Some(hints) = &mut self.marking_hints {
                     let outcome = hints.feed(key, &self.keymaps.hints);
                     self.on_marking_hint(outcome);
@@ -1309,6 +1311,11 @@ impl App {
                 Task::none()
             }
             visual::Outcome::Flash => self.start_flash(),
+            visual::Outcome::Figure => self.label_links(LinkGoal::SelectFigure),
+            visual::Outcome::CopyPicture(page, area) => {
+                self.leave_visual();
+                self.copy_picture(page, area)
+            }
             visual::Outcome::Mark(kind, areas) => {
                 self.leave_visual();
                 self.highlight(kind, areas)
@@ -2075,6 +2082,18 @@ impl App {
     /// offered is starting a selection, jumping again, and notes.
     fn visual_actions(&self) -> String {
         use visual::Binding as B;
+        if self.visual.as_ref().and_then(Visual::figure).is_some() {
+            return self.listed_actions(&[
+                (B::Yank, "copy picture"),
+                (B::Highlight, "highlight"),
+                (B::Underline, "underline"),
+                (B::StrikeOut, "strike out"),
+                (B::Squiggly, "squiggle"),
+                (B::Note, "note"),
+                (B::Figure, "another"),
+                (B::Leave, "leave"),
+            ]);
+        }
         let selecting = self.visual.as_ref().is_none_or(Visual::selecting);
         let mut actions = if selecting {
             vec![
@@ -2103,10 +2122,16 @@ impl App {
             actions.push((B::OtherEnd, "other end"));
         }
         actions.push((B::Leave, "leave"));
+        self.listed_actions(&actions)
+    }
+
+    /// Visual mode's actions, each with its first key: `y copy  H
+    /// highlight`. Those with no key are left out.
+    fn listed_actions(&self, actions: &[(visual::Binding, &str)]) -> String {
         let keymap = &self.keymaps.visual;
         actions
-            .into_iter()
-            .filter_map(|(binding, what)| {
+            .iter()
+            .filter_map(|&(binding, what)| {
                 let key = keymap.first(binding);
                 (key != "-").then(|| format!("{key} {what}"))
             })
@@ -3301,6 +3326,20 @@ impl App {
                 format!("jump to: {}\u{2588}", flash.typed()),
                 chrome.bar_text,
             ),
+            _ if let Some(hints) = &self.hints => {
+                let verb = match self.link_goal {
+                    LinkGoal::Follow => "follow",
+                    LinkGoal::NewTab => "open in a new tab",
+                    LinkGoal::Copy | LinkGoal::Picture => "copy",
+                    LinkGoal::SelectFigure => "select",
+                };
+                let typed = hints.typed().map(String::from).unwrap_or_default();
+                let filter = hints
+                    .filter()
+                    .map(|filter| format!("/{filter}  "))
+                    .unwrap_or_default();
+                label(format!("{verb}: {filter}{typed}\u{2588}"), chrome.bar_text)
+            }
             _ if self.visual.is_some() => {
                 let typed = self.visual.as_ref().map(Visual::typed).unwrap_or_default();
                 let typed = if typed.is_empty() {
@@ -3320,19 +3359,6 @@ impl App {
                     format!("select from: {filter}{typed}\u{2588}"),
                     chrome.bar_text,
                 )
-            }
-            _ if let Some(hints) = &self.hints => {
-                let verb = match self.link_goal {
-                    LinkGoal::Follow => "follow",
-                    LinkGoal::NewTab => "open in a new tab",
-                    LinkGoal::Copy | LinkGoal::Picture => "copy",
-                };
-                let typed = hints.typed().map(String::from).unwrap_or_default();
-                let filter = hints
-                    .filter()
-                    .map(|filter| format!("/{filter}  "))
-                    .unwrap_or_default();
-                label(format!("{verb}: {filter}{typed}\u{2588}"), chrome.bar_text)
             }
             (Some((Prompt::Password, line)), _) => {
                 label(self.password_prompt(line), chrome.bar_text)
@@ -4092,7 +4118,13 @@ impl canvas::Program<Message> for Marks<'_> {
         if let Some(hints) = &self.0.marking_hints {
             markings::draw_labels(&mut frame, document, hints);
         }
-        if let Some(visual) = &self.0.visual {
+        if let Some((page, area)) = self.0.visual.as_ref().and_then(Visual::figure) {
+            // A picture or figure selected: its box, and no cursor.
+            if let Some(area) = document.reader.area_on_screen(page, area) {
+                let area = rectangle(area);
+                frame.fill_rectangle(area.position(), area.size(), SELECTION);
+            }
+        } else if let Some(visual) = &self.0.visual {
             let selected = if visual.selecting() {
                 visual.areas(&document.text)
             } else {

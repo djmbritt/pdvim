@@ -186,15 +186,16 @@ Type a label to pick its link or field. Web and mail links open in your default 
 | `iw` / `aw`                | Select the word, or the word and the space after it        |
 | `is` / `as`                | Select the sentence, or the sentence and the space after   |
 | `ip` / `ap`                | Select the paragraph                                       |
+| `I`                        | Label the pictures and figures, to select one              |
 | `*` / `#`                  | Search forward / backward for the selection                |
 | `o`                        | Move to the other end of the selection                     |
-| `y`                        | Copy the selection                                         |
+| `y`                        | Copy the selection, or a figure selected as an image       |
 | `H` / `U` / `S` / `W`      | Highlight / underline / strike out / squiggle it           |
 | `n`                        | Put a note beside the line                                 |
 | `c` / `d`                  | Change the note on a marking / take markings away          |
 | `Esc`                      | Leave without copying                                      |
 
-Pressed again, or after a count, `iw`, `is` and `ip` take in the next words, sentences or paragraphs. In normal mode, `gv` selects the last selection again. The status bar always lists what you can do next.
+Pressed again, or after a count, `iw`, `is` and `ip` take in the next words, sentences or paragraphs. A picture or figure selected with `I` shows as a box: `y` copies it as an image, `H` / `U` / `S` / `W` mark its area, and a motion goes back to selecting text from the cursor. In normal mode, `gv` selects the last selection again. The status bar always lists what you can do next.
 
 ### Highlights and notes
 

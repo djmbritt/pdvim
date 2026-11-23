@@ -81,7 +81,18 @@ criterion = { version = "0.8", default-features = false, features = ["cargo_benc
 # Runs the tasks the app returns in its tests, as the runtime would: see
 # src/app/testing.rs. The same version as iced's own.
 iced_runtime = "0.14.0"
+# Draws the window in the tests, with tiny-skia and no screen: see
+# src/app/drawing.rs, and .cargo/config.toml for why tiny-skia.
+iced_test = "0.14.0"
 
 [[bench]]
 name = "hot_paths"
 harness = false
+
+# The renderer the tests draw the window with, so slow unoptimised that
+# drawing once takes a second, rather than a sixth of one.
+[profile.dev.package.tiny-skia]
+opt-level = 3
+
+[profile.dev.package.tiny-skia-path]
+opt-level = 3

@@ -182,10 +182,13 @@ impl Session {
         self.send(Message::Keyboard(key_event(key)));
     }
 
-    /// Gives the app a message, and carries out all it leads to.
+    /// Gives the app a message, carries out all it leads to, and makes the
+    /// window of what it shows then, as the runtime would, so that what
+    /// would fail on screen fails the test.
     pub fn send(&mut self, message: Message) {
         let task = self.app.update(message);
         self.run(task);
+        let _ = self.app.view();
     }
 
     /// Types keys, each carried out in full before the next: characters as
@@ -239,6 +242,16 @@ impl Session {
                 }
             }
         }
+    }
+
+    /// Draws the window as it is now, its canvases and pictures too, with
+    /// a renderer that needs no screen, so that what would fail drawing
+    /// fails the test.
+    pub fn draw(&self) {
+        let size = Size::new(612.0, 400.0);
+        let mut window =
+            iced_test::Simulator::with_size(iced::Settings::default(), size, self.app.view());
+        window.snapshot(&self.app.theme()).expect("the window draws");
     }
 
     /// The text selected in visual mode.

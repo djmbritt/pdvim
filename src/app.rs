@@ -2070,7 +2070,11 @@ impl App {
                     recall.newer(lines)
                 };
                 self.recall = Some(recall);
-                self.prompt = Some((prompt, found.unwrap_or(line)));
+                let line = found.unwrap_or(line);
+                self.completing = (prompt == Prompt::Command)
+                    .then(|| narrowed(&line))
+                    .flatten();
+                self.prompt = Some((prompt, line));
                 return self.preview_search();
             }
             Fed::Bound(
@@ -2078,7 +2082,9 @@ impl App {
                 _,
             ) if prompt == Prompt::Command => {
                 let forward = binding == PromptBinding::Complete;
-                self.completing = complete_line(&mut line, completing, forward);
+                // A word completed whole, what may follow it is offered.
+                self.completing =
+                    complete_line(&mut line, completing, forward).or_else(|| narrowed(&line));
                 self.prompt = Some((prompt, line));
                 return Task::none();
             }
@@ -2126,10 +2132,12 @@ impl App {
             | Fed::Command(..)
             | Fed::Waiting => {}
         }
-        // A list once shown follows what is typed, until nothing fits.
+        // The list of commands follows what is typed, while anything fits.
         let changed = line != before;
         self.completing = if changed {
-            completing.and_then(|_| narrowed(&line))
+            (prompt == Prompt::Command)
+                .then(|| narrowed(&line))
+                .flatten()
         } else {
             completing
         };
@@ -2138,6 +2146,42 @@ impl App {
             return self.preview_search();
         }
         Task::none()
+    }
+
+    /// The hint over the command line: what the command picked in the
+    /// list does, or else the one being typed; with nothing typed, the
+    /// keys that help.
+    fn command_hint(&self, line: &str) -> String {
+        let picked = self.completing.as_ref().and_then(|completing| {
+            // Only a name in the list is a command; past it, the list
+            // holds what follows the command, which the command's own
+            // hint covers.
+            let on_name = line.get(..completing.start)?.trim().is_empty();
+            let index = completing.selected?;
+            on_name.then(|| completing.candidates.get(index)).flatten()
+        });
+        let name = picked.map_or_else(
+            || line.split_whitespace().next().unwrap_or_default(),
+            |candidate| candidate.text.as_str(),
+        );
+        if let Some(what) = crate::command::description(name) {
+            return format!("{name}: {what}");
+        }
+        if let Some(binding) = <input::Binding as keymap::Bindable>::named(name) {
+            return format!("{name}: {}", keymap::Bindable::description(binding));
+        }
+        if !name.is_empty() && name.chars().all(|character| character.is_ascii_digit()) {
+            return format!("go to page {name}");
+        }
+        let key = |binding| self.keymaps.prompt.first(binding);
+        format!(
+            "{} completes  {} / {} earlier commands  {} runs  {} leaves",
+            key(PromptBinding::Complete),
+            key(PromptBinding::Older),
+            key(PromptBinding::Newer),
+            key(PromptBinding::Submit),
+            key(PromptBinding::Cancel),
+        )
     }
 
     /// What can be done next in visual mode, each with its key: `y copy
@@ -2214,7 +2258,7 @@ impl App {
         };
         let before = line.len();
         append_pasted(line, text);
-        if line.len() != before && self.completing.is_some() {
+        if line.len() != before {
             self.completing = narrowed(line);
         }
     }
@@ -2445,6 +2489,10 @@ impl App {
             Action::ReopenTab(times) => return self.reopen_tabs(times),
             Action::Repeat(times) => return self.repeat_line(times),
             Action::OpenPrompt(prompt) => {
+                // The commands are offered at once, to narrow by typing.
+                self.completing = (prompt == Prompt::Command)
+                    .then(|| narrowed(""))
+                    .flatten();
                 self.prompt = Some((prompt, String::new()));
                 self.prompt_pending = Pending::new();
                 return Task::none();
@@ -3235,8 +3283,9 @@ impl App {
                 self.list_rows(),
             ));
         }
-        if let Some(completing) = &self.completing {
-            layers = layers.push(completions(completing, chrome));
+        if let Some((Prompt::Command, line)) = &self.prompt {
+            let hint = self.command_hint(line);
+            layers = layers.push(completions(self.completing.as_ref(), hint, chrome));
         } else if self.prompt.is_none() {
             // The note on the marking picked, or at visual mode's cursor.
             let note = if self.visual.is_some() {
@@ -3368,6 +3417,21 @@ impl App {
         .into()
     }
 
+    /// The name of the document's file, marked when it has changes not
+    /// saved: just the name, as `:info` and `yy` give the path.
+    fn file_label(&self) -> String {
+        self.document()
+            .map(|document| {
+                let unsaved = if document.modified() { " [+]" } else { "" };
+                let name = document.path.file_name().map_or_else(
+                    || tilde(&document.path),
+                    |name| name.to_string_lossy().into_owned(),
+                );
+                format!("{name}{unsaved}")
+            })
+            .unwrap_or_default()
+    }
+
     /// The line at the bottom: the prompt while typing, otherwise a notice
     /// or the file name on the left and the position on the right.
     fn bar(&self, wrap: bool) -> Element<'_, Message> {
@@ -3438,15 +3502,7 @@ impl App {
             }
             (None, Notice::Error(message)) => label(message.clone(), chrome.bar_error),
             (None, Notice::Info(message)) => label(message.clone(), chrome.bar_text),
-            (None, Notice::None) => label(
-                self.document()
-                    .map(|document| {
-                        let unsaved = if document.modified() { " [+]" } else { "" };
-                        format!("{}{unsaved}", tilde(&document.path))
-                    })
-                    .unwrap_or_default(),
-                chrome.bar_text,
-            ),
+            (None, Notice::None) => label(self.file_label(), chrome.bar_text),
         };
         let position = self.document().map_or_else(String::new, |document| {
             let reader = &document.reader;
@@ -3618,9 +3674,26 @@ fn narrowed_with(completion: complete::Completion) -> Option<Completing> {
     })
 }
 
-/// The completions on offer, in a band over the bottom of the pages. A
-/// long list is shown a part at a time, the part with the selected one.
-fn completions(completing: &Completing, chrome: Colours) -> Element<'_, Message> {
+/// The completions on offer, in a band over the bottom of the pages, under
+/// a hint at what the command does. A long list is shown a part at a time,
+/// the part with the selected one.
+fn completions(
+    completing: Option<&Completing>,
+    hint: String,
+    chrome: Colours,
+) -> Element<'_, Message> {
+    let hint = text(hint)
+        .size(BAR_TEXT_SIZE)
+        .font(Font::MONOSPACE)
+        .color(chrome.list_number)
+        .wrapping(text::Wrapping::None);
+    let Some(completing) = completing else {
+        let band = container(hint)
+            .padding([4, 8])
+            .width(Fill)
+            .style(move |_| container::background(chrome.bar));
+        return container(band).align_bottom(Fill).clip(true).into();
+    };
     let selected = completing.selected;
     let first = selected.map_or(0, |index| {
         index
@@ -3668,7 +3741,7 @@ fn completions(completing: &Completing, chrome: Colours) -> Element<'_, Message>
                 .color(chrome.list_number),
         );
     }
-    let band = container(entries.wrap().vertical_spacing(2))
+    let band = container(column![hint, entries.wrap().vertical_spacing(2)].spacing(4))
         .padding([4, 8])
         .width(Fill)
         .style(move |_| container::background(chrome.bar));
@@ -4612,6 +4685,30 @@ fn rub_out_word(line: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_commands_are_offered_at_once_and_narrow_as_typed() {
+        let (mut app, _) = testing::showing("text.pdf");
+        testing::typing(&mut app, ":");
+        let offered = app.completing.as_ref().unwrap().candidates.len();
+        assert!(offered > 30, "only {offered} commands offered");
+        assert!(app.command_hint("").contains("completes"));
+        testing::typing(&mut app, "tabo");
+        let completing = app.completing.as_ref().unwrap();
+        let labels: Vec<_> = completing.candidates.iter().map(|c| c.label.as_str()).collect();
+        assert_eq!(labels, ["tabonly"]);
+        assert_eq!(app.command_hint("tabo"), "tabo: Close every tab but this one");
+        assert_eq!(
+            app.command_hint("zoom-in"),
+            format!("zoom-in: {}", keymap::Bindable::description(input::Binding::ZoomIn))
+        );
+        assert_eq!(app.command_hint("12"), "go to page 12");
+        // The bar names the file alone, not the directories it is in.
+        assert_eq!(app.file_label(), "text.pdf");
+        // Nothing fits: no list, but the hint stays.
+        testing::typing(&mut app, "zz");
+        assert!(app.completing.is_none());
+    }
 
     #[test]
     fn a_word_is_rubbed_out_after_any_space() {

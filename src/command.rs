@@ -288,6 +288,44 @@ pub fn canonical(name: &str) -> Option<&'static str> {
         .map(|(full, _)| *full)
 }
 
+/// What a command does, in a few words, for the hint over the command
+/// line; given its full name or a shorter one.
+pub fn description(name: &str) -> Option<&'static str> {
+    Some(match canonical(name)? {
+        "apropos" => "List the keys and commands whose description has a word",
+        "delmarks" => "Take away the marks named by these letters",
+        "export" => "Save the page in view as a .png image or an .svg drawing",
+        "goto" => "Go to the page with this printed number, such as xii or A-3",
+        "help" => "Show the keys: all of them, or those about a topic",
+        "info" => "Show the title, author, dates, pages and encryption",
+        "man" => "Open the manual, or with 5 the configuration's, in a tab",
+        "map" => "Bind keys to an action or a command line",
+        "mapclear" => "Take away every key binding of a mode",
+        "marks" => "List the marks set, to go to one",
+        "nohlsearch" => "Stop showing the matches of the last search",
+        "note" => "Put a note in the margin at the top of the window",
+        "open" | "tabedit" | "tabnew" => "Open a document in a new tab",
+        "qall" => "Quit, closing every tab",
+        "quit" => "Close the tab; with the last one, quit",
+        "recent" => "Show the documents read lately, to open one",
+        "set" => "Change a setting",
+        "source" => "Read the configuration file again",
+        "tabclose" => "Close the tab",
+        "tabmove" => "Move the tab: to place n, or by +n or -n",
+        "tabnext" => "Go to the next tab, or tab n",
+        "tabonly" => "Close every tab but this one",
+        "tabprevious" => "Go to the previous tab",
+        "theme" => "Change the theme, or show it without a name",
+        "unmap" => "Take away the binding of some keys",
+        "version" => "Show pdvim's version",
+        "wall" => "Save the markings of every document",
+        "wq" => "Save the markings, then close the tab",
+        "wqall" => "Save the markings of every document, then quit",
+        "write" => "Save the markings, or with a file, a copy with them",
+        _ => return None,
+    })
+}
+
 /// The names of the settings `:set` knows.
 pub const SETTINGS: [&str; 28] = [
     "autosave",
@@ -714,6 +752,14 @@ pub fn expand_home(path: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_command_says_what_it_does() {
+        for name in names() {
+            assert!(description(name).is_some(), "{name} has no description");
+        }
+        assert_eq!(description("w"), description("write"));
+    }
 
     #[test]
     fn blank_input_is_nothing() {

@@ -159,7 +159,7 @@ The table of contents moves with `j` / `k`, and `l` / `h` open and close a chapt
 | `Esc`     | Cancel, and hide the search highlights            |
 | `q`       | Close the tab, and quit after the last one        |
 
-A search matches case only when what you type has a capital letter in it, as vim's `smartcase`. Matches are highlighted while you type a search. At the prompt, `Tab` completes commands, settings and file paths, and `Up` / `Down` bring back earlier commands and searches. That history is kept after pdvim closes.
+A search matches case only when what you type has a capital letter in it, as vim's `smartcase`. Matches are highlighted while you type a search. At the `:` prompt, the commands that fit what you type are listed as you type, under a line saying what the command does. `Tab` completes commands, settings and file paths, and `Up` / `Down` bring back earlier commands and searches. That history is kept after pdvim closes.
 
 ### Links and forms
 

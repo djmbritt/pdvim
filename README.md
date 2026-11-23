@@ -393,7 +393,7 @@ The Flatpak reads the same configuration, but keeps its history in `~/.var/app/i
 
 ## Testing
 
-`cargo test` runs the tests: units of each part, and the app itself driven with real PDFs from `fuzz/seeds/`. `coverage.sh` runs them with coverage turned on and prints how much of each file in `src/` they reach; it needs `llvm-tools` (`rustup component add llvm-tools-preview`), and leaves a report to browse line by line in `target/coverage/html/index.html`. GitHub Actions measures it after every push to `main`, in the run's summary.
+`cargo test` runs the tests: units of each part, and the app itself driven with real PDFs from `fuzz/seeds/`. `src/languages.rs` tries the handling of text in sixteen languages, from English to Arabic, Hindi, Chinese and Thai: selecting sentences, copying, searching and moving the cursor, over each sample laid out and as MuPDF reads it from a PDF made of it. The samples are in `fuzz/languages/samples.tsv`, and `fuzz/languages/make-pdfs.sh` makes the PDFs again with Chromium when they change. `coverage.sh` runs them with coverage turned on and prints how much of each file in `src/` they reach; it needs `llvm-tools` (`rustup component add llvm-tools-preview`), and leaves a report to browse line by line in `target/coverage/html/index.html`. GitHub Actions measures it after every push to `main`, in the run's summary.
 
 ```sh
 ./coverage.sh

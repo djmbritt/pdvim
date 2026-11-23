@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use crate::backend::{MarkupKind, TextLine};
+use crate::backend::{MarkupKind, TextChar, TextLine};
 use crate::input::Key;
 use crate::keymap::{Counts, Fed, Keymap, Pending, bindable};
 use crate::layout::Rect;
@@ -926,15 +926,14 @@ fn every_sentence_start(lines: &[TextLine]) -> Vec<(usize, usize)> {
         .fold((f32::INFINITY, f32::NEG_INFINITY), |(left, right), character| {
             (left.min(character.area.left), right.max(character.area.right))
         });
-    // A line that stops this far short of the text's right edge ends what
-    // it is in.
-    let short = (right - left).mul_add(-0.15, right);
     for (row, line) in lines.iter().enumerate() {
+        // A line that stops short of the text's edge ends what it is in,
+        // unless it is short only because this line's first word did not
+        // fit on it, as in text not justified.
         let after_short = row
             .checked_sub(1)
             .and_then(|above| lines.get(above))
-            .and_then(|above| above.chars.last())
-            .is_some_and(|last| last.area.right < short);
+            .is_some_and(|above| stops_short(above, line, (left, right)));
         if ended || after_short {
             ended = true;
             gap = true;
@@ -973,6 +972,38 @@ fn every_sentence_start(lines: &[TextLine]) -> Vec<(usize, usize)> {
         word.clear();
     }
     starts
+}
+
+/// Whether a line stops short of the edge of the text, between `left` and
+/// `right`, by more than the first word of the line below would take: the
+/// line was broken there by the writer, not because the next word did not
+/// fit. The edge is the right one, or for a line written right to left,
+/// whose last character is left of its first, the left one.
+fn stops_short(line: &TextLine, below: &TextLine, (left, right): (f32, f32)) -> bool {
+    let (Some(first), Some(last)) = (line.chars.first(), line.chars.last()) else {
+        return false;
+    };
+    let backward = last.area.right < first.area.left;
+    let room = if backward {
+        last.area.left - left
+    } else {
+        right - last.area.right
+    };
+    // The first word below, and the space before it.
+    let word: Vec<&TextChar> = below
+        .chars
+        .iter()
+        .take_while(|character| !character.character.is_whitespace())
+        .collect();
+    let (word_left, word_right) = word.iter().fold(
+        (f32::INFINITY, f32::NEG_INFINITY),
+        |(word_left, word_right), character| {
+            (word_left.min(character.area.left), word_right.max(character.area.right))
+        },
+    );
+    let letters = f32::from(u16::try_from(word.len()).unwrap_or(u16::MAX)).max(1.0);
+    let space = (word_right - word_left) / letters;
+    word_right > word_left && room > (word_right - word_left) + space
 }
 
 /// The lines that start paragraphs on a page, the first among them. PDF

@@ -1,0 +1,23 @@
+# The samples the language tests read: Article 1 of the Universal
+# Declaration of Human Rights in sixteen languages, one to a line, with
+# tabs between: the language's code, its name, whether it puts spaces
+# between words, which way it is written, the font make-pdfs.sh sets it
+# in, and its sentences. src/languages.rs tests pdvim's handling of the
+# text with these, and against the PDF made of each, lang-CODE.pdf in
+# seeds/pdf.
+en	English	spaced	ltr	Noto Sans	All human beings are born free and equal in dignity and rights.	They are endowed with reason and conscience and should act towards one another in a spirit of brotherhood.
+de	German	spaced	ltr	Noto Sans	Alle Menschen sind frei und gleich an Würde und Rechten geboren.	Sie sind mit Vernunft und Gewissen begabt und sollen einander im Geist der Brüderlichkeit begegnen.
+tr	Turkish	spaced	ltr	Noto Sans	Bütün insanlar hür, haysiyet ve haklar bakımından eşit doğarlar.	Akıl ve vicdana sahiptirler ve birbirlerine karşı kardeşlik zihniyeti ile hareket etmelidirler.
+el	Greek	spaced	ltr	Noto Sans	Όλοι οι άνθρωποι γεννιούνται ελεύθεροι και ίσοι στην αξιοπρέπεια και τα δικαιώματα.	Είναι προικισμένοι με λογική και συνείδηση, και οφείλουν να συμπεριφέρονται μεταξύ τους με πνεύμα αδελφοσύνης.
+ru	Russian	spaced	ltr	Noto Sans	Все люди рождаются свободными и равными в своем достоинстве и правах.	Они наделены разумом и совестью и должны поступать в отношении друг друга в духе братства.
+vi	Vietnamese	spaced	ltr	Noto Sans	Tất cả mọi người sinh ra đều được tự do và bình đẳng về nhân phẩm và quyền.	Mọi con người đều được tạo hóa ban cho lý trí và lương tâm và cần phải đối xử với nhau trong tình bằng hữu.
+vi-marks	Vietnamese, accents apart	spaced	ltr	Noto Sans	Tất cả mọi người đều bình đẳng.	Họ có lý trí.
+ar	Arabic	spaced	rtl	Noto Sans Arabic	يولد جميع الناس أحراراً متساوين في الكرامة والحقوق.	وقد وهبوا عقلاً وضميراً وعليهم أن يعامل بعضهم بعضاً بروح الإخاء.
+he	Hebrew	spaced	rtl	Noto Sans Hebrew	כל בני האדם נולדו בני חורין ושווים בערכם ובזכויותיהם.	כולם חוננו בתבונה ובמצפון, לפיכך חובה עליהם לנהוג איש ברעהו ברוח של אחוה.
+hi	Hindi	spaced	ltr	Noto Sans Devanagari	सभी मनुष्यों को गौरव और अधिकारों के मामले में जन्मजात स्वतन्त्रता और समानता प्राप्त है।	उन्हें बुद्धि और अन्तरात्मा की देन प्राप्त है और परस्पर उन्हें भाईचारे के भाव से बर्ताव करना चाहिए।
+ta	Tamil	spaced	ltr	Noto Sans Tamil	மனிதப் பிறவியினர் சகலரும் சுதந்திரமாகவே பிறக்கின்றனர்; அவர்கள் மதிப்பிலும், உரிமைகளிலும் சமமானவர்கள்.	அவர்கள் ஒருவருடனொருவர் சகோதர உணர்வுப் பாங்கில் நடந்துகொள்ளல் வேண்டும்.
+am	Amharic	spaced	ltr	Noto Sans Ethiopic	የሰው ልጅ ሁሉ ሲወለድ ነጻና በክብርና በመብትም እኩልነት ያለው ነው።	የተፈጥሮ ማስተዋልና ሕሊና ስላለው አንዱ ሌላውን በወንድማማችነት መንፈስ መመልከት ይገባዋል።
+ko	Korean	spaced	ltr	Noto Sans CJK KR	모든 인간은 태어날 때부터 자유로우며 그 존엄과 권리에 있어 동등하다.	인간은 천부적으로 이성과 양심을 부여받았으며 서로 형제애의 정신으로 행동하여야 한다.
+zh	Chinese	unspaced	ltr	Noto Sans CJK SC	人人生而自由，在尊严和权利上一律平等。	他们赋有理性和良心，并应以兄弟关系的精神相对待。
+ja	Japanese	unspaced	ltr	Noto Sans CJK JP	すべての人間は、生れながらにして自由であり、かつ、尊厳と権利とについて平等である。	人間は、理性と良心とを授けられており、互いに同胞の精神をもって行動しなければならない。
+th	Thai	unspaced	ltr	Noto Sans Thai	มนุษย์ทั้งหลายเกิดมามีอิสระและเสมอภาคกันในเกียรติศักดิ์และสิทธิ ต่างมีเหตุผลและมโนธรรม และควรปฏิบัติต่อกันด้วยเจตนารมณ์แห่งภราดรภาพ

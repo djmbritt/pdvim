@@ -13,6 +13,9 @@
 //! pdvim stands.
 
 use std::collections::HashMap;
+use std::path::Path;
+
+use mupdf::Document;
 
 use crate::backend::{self, Needle, TextChar, TextLine};
 use crate::bindings::Keymaps;
@@ -22,149 +25,84 @@ use crate::visual::{Kind, Spot, Text, Visual};
 
 /// A language's sample: its sentences, and whether it puts spaces between
 /// words, and so between sentences and at the ends of lines.
+#[derive(Clone)]
 struct Sample {
-    language: &'static str,
-    sentences: &'static [&'static str],
+    code: String,
+    language: String,
+    sentences: Vec<String>,
     spaced: bool,
 }
 
-const SAMPLES: &[Sample] = &[
-    Sample {
-        language: "English",
-        sentences: &[
-            "All human beings are born free and equal in dignity and rights.",
-            "They are endowed with reason and conscience and should act towards one another in a spirit of brotherhood.",
-        ],
-        spaced: true,
-    },
-    Sample {
-        language: "German",
-        sentences: &[
-            "Alle Menschen sind frei und gleich an Würde und Rechten geboren.",
-            "Sie sind mit Vernunft und Gewissen begabt und sollen einander im Geist der Brüderlichkeit begegnen.",
-        ],
-        spaced: true,
-    },
-    Sample {
-        language: "Turkish",
-        sentences: &[
-            "Bütün insanlar hür, haysiyet ve haklar bakımından eşit doğarlar.",
-            "Akıl ve vicdana sahiptirler ve birbirlerine karşı kardeşlik zihniyeti ile hareket etmelidirler.",
-        ],
-        spaced: true,
-    },
-    Sample {
-        language: "Greek",
-        sentences: &[
-            "Όλοι οι άνθρωποι γεννιούνται ελεύθεροι και ίσοι στην αξιοπρέπεια και τα δικαιώματα.",
-            "Είναι προικισμένοι με λογική και συνείδηση, και οφείλουν να συμπεριφέρονται μεταξύ τους με πνεύμα αδελφοσύνης.",
-        ],
-        spaced: true,
-    },
-    Sample {
-        language: "Russian",
-        sentences: &[
-            "Все люди рождаются свободными и равными в своем достоинстве и правах.",
-            "Они наделены разумом и совестью и должны поступать в отношении друг друга в духе братства.",
-        ],
-        spaced: true,
-    },
-    Sample {
-        language: "Vietnamese",
-        sentences: &[
-            "Tất cả mọi người sinh ra đều được tự do và bình đẳng về nhân phẩm và quyền.",
-            "Mọi con người đều được tạo hóa ban cho lý trí và lương tâm và cần phải đối xử với nhau trong tình bằng hữu.",
-        ],
-        spaced: true,
-    },
-    // The same language with each accent a mark of its own after its
-    // letter, as some PDFs give it.
-    Sample {
-        language: "Vietnamese, accents apart",
-        sentences: &[
-            "Ta\u{302}\u{301}t ca\u{309} mo\u{323}i ngu\u{31b}o\u{31b}\u{300}i \u{111}e\u{302}\u{300}u bi\u{300}nh \u{111}a\u{306}\u{309}ng.",
-            "Ho\u{323} co\u{301} ly\u{301} tri\u{301}.",
-        ],
-        spaced: true,
-    },
-    Sample {
-        language: "Arabic",
-        sentences: &[
-            "يولد جميع الناس أحراراً متساوين في الكرامة والحقوق.",
-            "وقد وهبوا عقلاً وضميراً وعليهم أن يعامل بعضهم بعضاً بروح الإخاء.",
-        ],
-        spaced: true,
-    },
-    Sample {
-        language: "Hebrew",
-        sentences: &[
-            "כל בני האדם נולדו בני חורין ושווים בערכם ובזכויותיהם.",
-            "כולם חוננו בתבונה ובמצפון, לפיכך חובה עליהם לנהוג איש ברעהו ברוח של אחוה.",
-        ],
-        spaced: true,
-    },
-    Sample {
-        language: "Hindi",
-        sentences: &[
-            "सभी मनुष्यों को गौरव और अधिकारों के मामले में जन्मजात स्वतन्त्रता और समानता प्राप्त है।",
-            "उन्हें बुद्धि और अन्तरात्मा की देन प्राप्त है और परस्पर उन्हें भाईचारे के भाव से बर्ताव करना चाहिए।",
-        ],
-        spaced: true,
-    },
-    Sample {
-        language: "Tamil",
-        sentences: &[
-            "மனிதப் பிறவியினர் சகலரும் சுதந்திரமாகவே பிறக்கின்றனர்; அவர்கள் மதிப்பிலும், உரிமைகளிலும் சமமானவர்கள்.",
-            "அவர்கள் ஒருவருடனொருவர் சகோதர உணர்வுப் பாங்கில் நடந்துகொள்ளல் வேண்டும்.",
-        ],
-        spaced: true,
-    },
-    Sample {
-        language: "Amharic",
-        sentences: &[
-            "የሰው ልጅ ሁሉ ሲወለድ ነጻና በክብርና በመብትም እኩልነት ያለው ነው።",
-            "የተፈጥሮ ማስተዋልና ሕሊና ስላለው አንዱ ሌላውን በወንድማማችነት መንፈስ መመልከት ይገባዋል።",
-        ],
-        spaced: true,
-    },
-    Sample {
-        language: "Korean",
-        sentences: &[
-            "모든 인간은 태어날 때부터 자유로우며 그 존엄과 권리에 있어 동등하다.",
-            "인간은 천부적으로 이성과 양심을 부여받았으며 서로 형제애의 정신으로 행동하여야 한다.",
-        ],
-        spaced: true,
-    },
-    Sample {
-        language: "Chinese",
-        sentences: &[
-            "人人生而自由，在尊严和权利上一律平等。",
-            "他们赋有理性和良心，并应以兄弟关系的精神相对待。",
-        ],
-        spaced: false,
-    },
-    Sample {
-        language: "Japanese",
-        sentences: &[
-            "すべての人間は、生れながらにして自由であり、かつ、尊厳と権利とについて平等である。",
-            "人間は、理性と良心とを授けられており、互いに同胞の精神をもって行動しなければならない。",
-        ],
-        spaced: false,
-    },
-    // Thai ends a sentence with a space, not a stop: one sentence here.
-    Sample {
-        language: "Thai",
-        sentences: &[
-            "มนุษย์ทั้งหลายเกิดมามีอิสระและเสมอภาคกันในเกียรติศักดิ์และสิทธิ ต่างมีเหตุผลและมโนธรรม และควรปฏิบัติต่อกันด้วยเจตนารมณ์แห่งภราดรภาพ",
-        ],
-        spaced: false,
-    },
-];
+/// The samples, from the file the PDFs are made from too.
+fn samples() -> Vec<Sample> {
+    include_str!("../fuzz/languages/samples.tsv")
+        .lines()
+        .filter(|line| !line.starts_with('#') && !line.is_empty())
+        .map(|line| {
+            let fields: Vec<&str> = line.split('\t').collect();
+            Sample {
+                code: fields[0].to_owned(),
+                language: fields[1].to_owned(),
+                spaced: fields[2] == "spaced",
+                sentences: fields[5..].iter().map(|&sentence| sentence.to_owned()).collect(),
+            }
+        })
+        .collect()
+}
+
+/// Where a page of text comes from: laid out here, or read by MuPDF from
+/// the sample's PDF.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Source {
+    Laid,
+    Pdf,
+}
+
+/// A page each check runs over: a sample, laid out here or as MuPDF reads
+/// it from its PDF, named by its language and which.
+struct Page {
+    name: String,
+    sample: Sample,
+    source: Source,
+    text: Text,
+}
+
+/// Every sample, laid out here and as read from its PDF.
+fn pages() -> Vec<Page> {
+    samples()
+        .into_iter()
+        .flat_map(|sample| {
+            let laid = Page {
+                name: sample.language.clone(),
+                text: sample.page(),
+                source: Source::Laid,
+                sample: sample.clone(),
+            };
+            let read = Page {
+                name: format!("{} (PDF)", sample.language),
+                text: sample.pdf_page(),
+                source: Source::Pdf,
+                sample,
+            };
+            [laid, read]
+        })
+        .collect()
+}
 
 impl Sample {
     /// The whole text, as written.
     fn text(&self) -> String {
         self.sentences.join(if self.spaced { " " } else { "" })
+    }
+
+    /// The page of the sample's PDF, its text as MuPDF reads it.
+    fn pdf_page(&self) -> Text {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fuzz/seeds/pdf")
+            .join(format!("lang-{}.pdf", self.code));
+        let bytes = std::fs::read(&path).unwrap();
+        let document = Document::from_bytes(&bytes, "application/pdf").unwrap();
+        HashMap::from([(0, backend::page_text(&document, 0).unwrap())])
     }
 
     /// The text broken into lines as a narrow column would break it:
@@ -273,19 +211,44 @@ fn is_mark(character: char) -> bool {
     )
 }
 
-/// Fails, listing every language a check failed in and how. Each
-/// failure starts with its language's name.
+/// The checks known to fail on a page, and not for pdvim's want: each
+/// the check's name and the page's.
+///
+/// In the Arabic PDF, Chromium gives the letter alef with the vowel mark
+/// on it as one glyph, its text marked as both. Where that glyph ends a
+/// line, MuPDF reads only the mark, and the alef is lost; other readers
+/// keep it.
+const KNOWN: &[(&str, &str)] = &[
+    ("Reading a PDF", "Arabic (PDF)"),
+    ("Copying", "Arabic (PDF)"),
+    ("Searching", "Arabic (PDF)"),
+    ("Selecting a sentence", "Arabic (PDF)"),
+];
+
+/// Fails, listing every page a check failed on and how, but those known
+/// to fail; and if one known to fail no longer does, so that it is taken
+/// off the list. Each failure starts with its page's name.
 fn report(check: &str, failures: &[String]) {
-    let mut languages: Vec<&str> = failures
+    let known = |name: &str| KNOWN.contains(&(check, name));
+    let page_of = |failure: &String| failure.split(": ").next().unwrap_or_default().to_owned();
+    for (known_check, name) in KNOWN {
+        assert!(
+            *known_check != check || failures.iter().any(|failure| page_of(failure) == *name),
+            "{check} now passes on {name}: take it off KNOWN"
+        );
+    }
+    let failures: Vec<String> = failures
         .iter()
-        .filter_map(|failure| failure.split(':').next())
+        .filter(|failure| !known(&page_of(failure)))
+        .cloned()
         .collect();
-    languages.dedup();
+    let mut names: Vec<String> = failures.iter().map(page_of).collect();
+    names.dedup();
     assert!(
         failures.is_empty(),
-        "{check} fails in {} of {} languages:\n  {}",
-        languages.len(),
-        SAMPLES.len(),
+        "{check} fails on {} of {} pages:\n  {}",
+        names.len(),
+        pages().len(),
         failures.join("\n  ")
     );
 }
@@ -297,24 +260,42 @@ fn unspaced(text: &str) -> String {
 }
 
 #[test]
+fn the_pdfs_read_back_as_written() {
+    let mut failures = Vec::new();
+    for page in pages().into_iter().filter(|page| page.source == Source::Pdf) {
+        let read: String = page.text[&0]
+            .iter()
+            .flat_map(|line| line.chars.iter().map(|character| character.character))
+            .collect();
+        if read.contains('\u{fffd}') {
+            failures.push(format!("{}: has characters MuPDF cannot name", page.name));
+        }
+        let written = unspaced(&page.sample.text());
+        if unspaced(&read) != written {
+            failures.push(format!("{}: reads as {:?}", page.name, unspaced(&read)));
+        }
+    }
+    report("Reading a PDF", &failures);
+}
+
+#[test]
 fn a_sentence_is_selected_whole() {
     let mut failures = Vec::new();
-    for sample in SAMPLES {
-        let text = sample.page();
-        // From the start, and from partway along the second sentence.
+    for page in pages() {
+        let text = &page.text;
+        let sentences = &page.sample.sentences;
         let mut first = Visual::new(Kind::Characters, Spot::line_start(0, 0));
-        keys(&mut first, &text, "is");
-        let got = unspaced(&first.text(&text));
-        let wanted = unspaced(sample.sentences[0]);
-        if got != wanted {
-            failures.push(format!("{}: `is` at the start selects {got:?}", sample.language));
+        keys(&mut first, text, "is");
+        let got = unspaced(&first.text(text));
+        if got != unspaced(&sentences[0]) {
+            failures.push(format!("{}: `is` at the start selects {got:?}", page.name));
         }
-        if let Some(second) = sample.sentences.get(1) {
-            let mut last = Visual::new(Kind::Characters, end(&text));
-            keys(&mut last, &text, "is");
-            let got = unspaced(&last.text(&text));
+        if let Some(second) = sentences.get(1) {
+            let mut last = Visual::new(Kind::Characters, end(text));
+            keys(&mut last, text, "is");
+            let got = unspaced(&last.text(text));
             if got != unspaced(second) {
-                failures.push(format!("{}: `is` at the end selects {got:?}", sample.language));
+                failures.push(format!("{}: `is` at the end selects {got:?}", page.name));
             }
         }
     }
@@ -324,14 +305,13 @@ fn a_sentence_is_selected_whole() {
 #[test]
 fn text_copied_is_the_text_written() {
     let mut failures = Vec::new();
-    for sample in SAMPLES {
-        let text = sample.page();
+    for page in pages() {
+        let text = &page.text;
         let mut all = Visual::new(Kind::Characters, Spot::line_start(0, 0));
-        all.move_to(end(&text));
-        let copied = all.text(&text);
-        let written = sample.text();
-        if copied != written {
-            failures.push(format!("{}: copied as {copied:?}", sample.language));
+        all.move_to(end(text));
+        let copied = all.text(text);
+        if copied != page.sample.text() {
+            failures.push(format!("{}: copied as {copied:?}", page.name));
         }
     }
     report("Copying", &failures);
@@ -340,16 +320,15 @@ fn text_copied_is_the_text_written() {
 #[test]
 fn every_sentence_is_found_in_capitals_with_case_ignored() {
     let mut failures = Vec::new();
-    for sample in SAMPLES {
-        let text = sample.page();
-        for sentence in sample.sentences {
+    for page in pages() {
+        for sentence in &page.sample.sentences {
             let needle = Needle {
                 text: sentence.to_uppercase(),
                 match_case: false,
                 whole_word: false,
             };
-            if backend::text_hits(&text[&0], 0, &needle).is_empty() {
-                failures.push(format!("{}: {:?} is not found", sample.language, needle.text));
+            if backend::text_hits(&page.text[&0], 0, &needle).is_empty() {
+                failures.push(format!("{}: {:?} is not found", page.name, needle.text));
             }
         }
     }
@@ -359,45 +338,40 @@ fn every_sentence_is_found_in_capitals_with_case_ignored() {
 #[test]
 fn the_cursor_stops_at_every_word_and_never_inside_a_letter() {
     let mut failures = Vec::new();
-    for sample in SAMPLES {
-        let text = sample.page();
-        let last = end(&text);
+    for page in pages() {
+        let text = &page.text;
+        let name = &page.name;
+        let last = end(text);
         // Where `w` stops, from the start to the end.
         let mut cursor = Visual::cursor_at(Spot::line_start(0, 0));
         let mut stops = vec![cursor.cursor()];
         while cursor.cursor() != last && stops.len() < 500 {
-            keys(&mut cursor, &text, "w");
+            keys(&mut cursor, text, "w");
             if stops.last() == Some(&cursor.cursor()) {
                 break;
             }
             stops.push(cursor.cursor());
         }
-        if let Some(&inside) = stops.iter().find(|&&spot| is_mark(character(&text, spot))) {
+        if let Some(&inside) = stops.iter().find(|&&spot| is_mark(character(text, spot))) {
             failures.push(format!(
-                "{}: `w` stops on the mark {:?} at {inside:?}",
-                sample.language,
-                character(&text, inside)
+                "{name}: `w` stops on the mark {:?} at {inside:?}",
+                character(text, inside)
             ));
         }
-        if sample.spaced {
+        if page.sample.spaced {
             // Every word after a space starts where `w` stops.
-            let lines = &text[&0];
-            for (line, row) in lines.iter().enumerate() {
+            for (line, row) in text[&0].iter().enumerate() {
                 for index in 1..row.chars.len() {
                     let after_space = row.chars[index - 1].character == ' ';
                     let spot = Spot { page: 0, line, index };
                     if after_space && !stops.contains(&spot) {
-                        failures.push(format!(
-                            "{}: `w` passes over the word at {spot:?}",
-                            sample.language
-                        ));
+                        failures.push(format!("{name}: `w` passes over the word at {spot:?}"));
                     }
                 }
             }
         } else if stops.len() <= text[&0].len() {
             failures.push(format!(
-                "{}: `w` stops only {} times in {} lines",
-                sample.language,
+                "{name}: `w` stops only {} times in {} lines",
                 stops.len(),
                 text[&0].len()
             ));
@@ -405,13 +379,12 @@ fn the_cursor_stops_at_every_word_and_never_inside_a_letter() {
         // `l` along the first line.
         let mut right = Visual::cursor_at(Spot::line_start(0, 0));
         for _ in 0..text[&0][0].chars.len() {
-            keys(&mut right, &text, "l");
+            keys(&mut right, text, "l");
             let spot = right.cursor();
-            if is_mark(character(&text, spot)) {
+            if is_mark(character(text, spot)) {
                 failures.push(format!(
-                    "{}: `l` stops on the mark {:?} at {spot:?}",
-                    sample.language,
-                    character(&text, spot)
+                    "{name}: `l` stops on the mark {:?} at {spot:?}",
+                    character(text, spot)
                 ));
                 break;
             }

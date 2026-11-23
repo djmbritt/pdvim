@@ -24,6 +24,8 @@ fuzz/run.sh pdf 600 -jobs=8 # ten minutes, eight processes
 
 `run.sh` starts each target from the inputs in `seeds/<target>`. It adds the dictionary in `dicts/` for `pdf` and `config`, and keeps what it learns in `corpus/<target>`, which is not committed.
 
+Among the PDF seeds, the `lang-*.pdf` ones hold a sample of text in each of sixteen languages and scripts, shaped, right to left and without spaces, as Chromium prints them. `languages/make-pdfs.sh` makes them from `languages/samples.tsv`, which the language tests in `src/languages.rs` read too.
+
 A crash is written to `artifacts/<target>/`. To replay it, or to shrink it:
 
 ```sh

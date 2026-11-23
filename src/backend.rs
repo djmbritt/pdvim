@@ -14,7 +14,7 @@ use std::thread;
 use iced::futures::channel::oneshot;
 use mupdf::{
     Colorspace, DestinationKind, Device, DisplayList, Document, ImageFormat, Matrix, Pixmap,
-    TextPageFlags,
+    TextCharFlags, TextPageFlags,
 };
 
 use crate::fonts;
@@ -1947,21 +1947,116 @@ pub fn page_text(document: &Document, number: u32) -> Result<Vec<TextLine>, mupd
     let mut lines = Vec::new();
     for block in text.blocks() {
         for line in block.lines() {
-            let chars: Vec<TextChar> = line
+            // Each character, and whether MuPDF made it up: a space where
+            // it saw a gap between letters.
+            let chars: Vec<(TextChar, bool)> = line
                 .chars()
                 .filter_map(|text_char| {
-                    Some(TextChar {
+                    let made_up = text_char.flags().contains(TextCharFlags::SYNTHETIC);
+                    let character = TextChar {
                         character: text_char.char()?,
                         area: quad_area(&text_char.quad(), &bounds),
-                    })
+                    };
+                    Some((character, made_up))
                 })
                 .collect();
+            let chars = if right_to_left(chars.iter().map(|(text_char, _)| text_char.character)) {
+                in_reading_order(chars)
+            } else {
+                chars.into_iter().map(|(text_char, _)| text_char).collect()
+            };
             if !chars.is_empty() {
                 lines.push(TextLine { chars });
             }
         }
     }
     Ok(lines)
+}
+
+/// Whether a character is a letter of a script written right to left:
+/// Hebrew, Arabic, Syriac, Thaana, N'Ko and those near them, and their
+/// presentation forms.
+fn is_right_to_left(character: char) -> bool {
+    matches!(u32::from(character),
+        0x0590..=0x08ff | 0xfb1d..=0xfdff | 0xfe70..=0xfefe | 0x10800..=0x10fff | 0x1e800..=0x1efff
+    )
+}
+
+/// Whether a line is written right to left: more of its letters are of a
+/// script written so than of any other.
+fn right_to_left(characters: impl Iterator<Item = char>) -> bool {
+    let (right, left) = characters
+        .filter(|character| character.is_alphabetic())
+        .fold((0_usize, 0_usize), |(right, left), character| {
+            if is_right_to_left(character) {
+                (right.saturating_add(1), left)
+            } else {
+                (right, left.saturating_add(1))
+            }
+        });
+    right > left
+}
+
+/// The characters of a line written right to left in the order they are
+/// read. MuPDF gives each run of text in order, but the runs of a line
+/// left to right, so a sentence that ends partway along a line comes out
+/// in pieces: read from the right edge, they come together. Numbers and
+/// words of left-to-right scripts within the line are then turned back to
+/// read left to right, and each vowel mark put after the letter it is on.
+/// The spaces MuPDF made up from gaps between the joined letters of Arabic
+/// are left out where the line has spaces of its own.
+fn in_reading_order(chars: Vec<(TextChar, bool)>) -> Vec<TextChar> {
+    let spaced = chars
+        .iter()
+        .any(|(text_char, made_up)| text_char.character == ' ' && !made_up);
+    let mut chars: Vec<TextChar> = chars
+        .into_iter()
+        .filter(|(text_char, made_up)| !(spaced && *made_up && text_char.character == ' '))
+        .map(|(text_char, _)| text_char)
+        .collect();
+    let middle = |text_char: &TextChar| text_char.area.left + text_char.area.right;
+    chars.sort_by(|one, other| middle(other).total_cmp(&middle(one)));
+    // A run of left-to-right text, read from its left.
+    let left_to_right = |text_char: &TextChar| {
+        text_char.character.is_alphanumeric() && !is_right_to_left(text_char.character)
+    };
+    let mut start = 0;
+    while start < chars.len() {
+        if !chars.get(start).is_some_and(left_to_right) {
+            start = start.saturating_add(1);
+            continue;
+        }
+        let mut end = start;
+        while chars.get(end).is_some_and(|text_char| {
+            left_to_right(text_char) || prose::is_mark(text_char.character)
+        }) {
+            end = end.saturating_add(1);
+        }
+        if let Some(run) = chars.get_mut(start..end) {
+            run.reverse();
+        }
+        start = end;
+    }
+    // A mark read before the letter it sits over goes after it. Where a
+    // PDF gives a letter and its mark as one glyph, MuPDF gives the mark
+    // the glyph and the letter no width at the glyph's left edge.
+    for index in 1..chars.len() {
+        let before = index.saturating_sub(1);
+        let (Some(mark), Some(letter)) = (chars.get(before), chars.get(index)) else {
+            continue;
+        };
+        let over = |text_char: &TextChar| {
+            let centre = f32::midpoint(mark.area.left, mark.area.right);
+            let within = text_char.area.left <= centre && centre <= text_char.area.right;
+            let sharing = text_char.area.right <= text_char.area.left
+                && (text_char.area.left - mark.area.left).abs() < 1.0;
+            within || sharing
+        };
+        if prose::is_mark(mark.character) && !prose::is_mark(letter.character) && over(letter) {
+            chars.swap(before, index);
+        }
+    }
+    chars
 }
 
 /// Writes a page to a file: as a PNG image at the scale asked for, or an

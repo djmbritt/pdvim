@@ -337,6 +337,7 @@ If an entry has a mistake, pdvim skips it and shows the mistake in the status ba
 | `columns`                                  | `1`                                     | How many pages sit side by side, 1 to 4                                    |
 | `page-mode`                                | `"continuous"`                          | `continuous`, `single` (a page at a time) or `double` (two facing pages)   |
 | `page-borders`                             | `false`                                 | Draw a line round every page                                               |
+| `backdrop`                                 | `"theme"`                               | Behind the pages, the theme's color, or `"paper"`: the pages' own color    |
 | `autosave`                                 | `false`                                 | Save each marking into the file as soon as it is made                      |
 | `confirm-quit` / `confirm-tab-close`       | `true`                                  | Ask before quitting / before closing a tab                                 |
 | `hintchars`                                | `"asdfghjkl"`                           | The letters labels are made of                                             |

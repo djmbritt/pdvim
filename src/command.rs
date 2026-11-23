@@ -183,6 +183,9 @@ pub enum Setting {
     PageMode(PageMode),
     /// Whether a line is drawn round every page.
     PageBorders(bool),
+    /// Whether the backdrop behind the pages is the colour of their
+    /// paper, so that pages and backdrop are one, or the theme's.
+    PaperBackdrop(bool),
 }
 
 /// Whether pages are recoloured for a dark background.
@@ -218,6 +221,8 @@ pub enum Error {
     NotColumns(String),
     #[error("`{0}` is not continuous, single or double")]
     NotPageMode(String),
+    #[error("`{0}` is not a backdrop: write theme or paper")]
+    NotBackdrop(String),
     #[error("`{0}` is not a speed above 0 and up to 20")]
     NotWheelSpeed(String),
     #[error("no manual page {0}; there are pdvim(1) and pdvim(5)")]
@@ -284,8 +289,9 @@ pub fn canonical(name: &str) -> Option<&'static str> {
 }
 
 /// The names of the settings `:set` knows.
-pub const SETTINGS: [&str; 27] = [
+pub const SETTINGS: [&str; 28] = [
     "autosave",
+    "backdrop",
     "columns",
     "confirm-quit",
     "confirm-tab-close",
@@ -625,6 +631,11 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
             .map(Setting::PageMode)
             .ok_or_else(|| Error::NotPageMode(value.to_owned())),
         "page-borders" => parse_switch(value).map(Setting::PageBorders),
+        "backdrop" => match value {
+            "theme" => Ok(Setting::PaperBackdrop(false)),
+            "paper" => Ok(Setting::PaperBackdrop(true)),
+            _ => Err(Error::NotBackdrop(value.to_owned())),
+        },
         "columns" => match value.parse::<usize>() {
             Ok(columns @ 1..=4) => Ok(Setting::Columns(columns)),
             _ => Err(Error::NotColumns(value.to_owned())),
@@ -856,6 +867,22 @@ mod tests {
         // A command of the same name comes first.
         assert_eq!(parse("quit"), Ok(Some(Command::Quit)));
         assert_eq!(parse("recent"), Ok(Some(Command::Recent)));
+    }
+
+    #[test]
+    fn the_backdrop_is_the_theme_s_or_the_paper_s() {
+        assert_eq!(
+            parse("set backdrop paper"),
+            Ok(Some(Command::Set(Setting::PaperBackdrop(true))))
+        );
+        assert_eq!(
+            parse("set backdrop theme"),
+            Ok(Some(Command::Set(Setting::PaperBackdrop(false))))
+        );
+        assert_eq!(
+            parse("set backdrop white"),
+            Err(Error::NotBackdrop("white".into()))
+        );
     }
 
     #[test]

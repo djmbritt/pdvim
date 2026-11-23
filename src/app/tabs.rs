@@ -163,3 +163,91 @@ impl App {
         self.current = 0;
     }
 }
+
+/// Tabs in a running app: going between them, moving them, closing all
+/// but one, opening a closed one again, and asking before closing.
+#[cfg(test)]
+mod tests {
+    use crate::app::testing::Session;
+
+    /// The file names of the tabs, in order, and which is in view.
+    fn tabs(session: &Session) -> (Vec<String>, usize) {
+        let names = session
+            .app
+            .tabs
+            .iter()
+            .map(|tab| {
+                tab.document
+                    .as_ref()
+                    .and_then(|document| document.path.file_name())
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            })
+            .collect();
+        (names, session.app.current)
+    }
+
+    /// The names, as [`tabs`] gives them.
+    fn named(names: [&str; 3]) -> Vec<String> {
+        names.map(str::to_owned).to_vec()
+    }
+
+    fn three() -> Session {
+        let mut session = Session::open("text.pdf");
+        session.open_fixture("links.pdf");
+        session.open_fixture("outline.pdf");
+        session
+    }
+
+    #[test]
+    fn tabs_open_beside_each_other_and_are_gone_between() {
+        let mut session = three();
+        assert_eq!(tabs(&session), (named(["text.pdf", "links.pdf", "outline.pdf"]), 2));
+        session.keys("gt");
+        assert_eq!(tabs(&session).1, 0);
+        session.keys("gT");
+        assert_eq!(tabs(&session).1, 2);
+        session.keys(":tabnext 2<Enter>");
+        assert_eq!(tabs(&session).1, 1);
+    }
+
+    #[test]
+    fn a_tab_is_moved() {
+        let mut session = three();
+        session.keys(":tabmove 0<Enter>");
+        assert_eq!(tabs(&session), (named(["outline.pdf", "text.pdf", "links.pdf"]), 0));
+        session.keys(":tabmove +1<Enter>");
+        assert_eq!(tabs(&session), (named(["text.pdf", "outline.pdf", "links.pdf"]), 1));
+    }
+
+    #[test]
+    fn all_but_one_are_closed_and_a_closed_one_opens_again() {
+        let mut session = three();
+        session.keys(":tabonly<Enter>");
+        assert_eq!(tabs(&session), (vec!["outline.pdf".into()], 0));
+        session.keys("U");
+        assert_eq!(tabs(&session).0.len(), 2);
+    }
+
+    #[test]
+    fn closing_a_tab_is_asked_about_first() {
+        let mut session = three();
+        session.keys("q");
+        assert!(session.app.asking.is_some());
+        session.keys("n");
+        assert_eq!(tabs(&session).0.len(), 3);
+        session.keys("qy");
+        assert_eq!(tabs(&session).0.len(), 2);
+        assert!(!session.exited);
+    }
+
+    #[test]
+    fn the_list_of_tabs_goes_to_one() {
+        let mut session = three();
+        session.keys("b");
+        assert!(session.app.tab_list.is_some());
+        session.keys("<Up><Up><Enter>");
+        assert!(session.app.tab_list.is_none());
+        assert_eq!(tabs(&session).1, 0);
+    }
+}

@@ -860,3 +860,74 @@ mod tests {
         assert!(fitting(&options, "xyz").is_empty());
     }
 }
+
+/// Filling in a form in a running app: picking a field by key, typing,
+/// ticking and picking from a list, and leaving a field as it was.
+#[cfg(test)]
+mod sessions {
+    use iced::futures::executor::block_on;
+
+    use crate::app::testing::Session;
+
+    /// What each field of the form holds, by name.
+    fn values(session: &Session) -> Vec<(String, String)> {
+        let document = session.app.document().unwrap();
+        block_on(document.backend.fields())
+            .unwrap()
+            .into_iter()
+            .map(|(_, field)| (field.name, field.value))
+            .collect()
+    }
+
+    fn value(session: &Session, name: &str) -> String {
+        values(session)
+            .into_iter()
+            .find(|(field, _)| field == name)
+            .map(|(_, value)| value)
+            .unwrap()
+    }
+
+    #[test]
+    fn a_text_field_is_typed_into_and_kept() {
+        let mut session = Session::open("form.pdf");
+        session.keys("gi");
+        assert!(session.app.field_edit.is_some());
+        session.keys("<BS><BS><BS>Bob<Enter>");
+        assert!(session.app.field_edit.is_none());
+        assert_eq!(value(&session, "Your name"), "Bob");
+        assert!(session.app.document().unwrap().modified());
+    }
+
+    #[test]
+    fn tab_goes_on_to_the_box_and_space_ticks_it() {
+        let mut session = Session::open("form.pdf");
+        let before = value(&session, "agree");
+        session.keys("gi<Tab><Space>");
+        assert_ne!(value(&session, "agree"), before);
+        session.keys("<Space>");
+        assert_eq!(value(&session, "agree"), before);
+    }
+
+    #[test]
+    fn a_list_is_narrowed_by_typing_and_picked_from() {
+        let mut session = Session::open("form.pdf");
+        assert_eq!(value(&session, "country"), "Netherlands");
+        // Narrowed to nothing, enter picks nothing.
+        session.keys("gIxyz<Enter>");
+        assert!(session.app.field_edit.is_some());
+        // The options are the values the form keeps, not what it shows.
+        session.keys("<C-u>de<Enter>");
+        assert!(session.app.field_edit.is_none());
+        assert_eq!(value(&session, "country"), "de");
+    }
+
+    #[test]
+    fn escape_keeps_what_is_typed_and_undo_takes_it_back() {
+        let mut session = Session::open("form.pdf");
+        session.keys("giZoe<Esc>");
+        assert!(session.app.field_edit.is_none());
+        assert_eq!(value(&session, "Your name"), "AnnZoe");
+        session.keys("u");
+        assert_eq!(value(&session, "Your name"), "Ann");
+    }
+}

@@ -406,17 +406,17 @@ Measured on 2026-11-23:
 
 | File | Lines | Functions | Regions |
 |------|------:|----------:|--------:|
-| `src/app.rs` | 61% | 67% | 61% |
+| `src/app.rs` | 62% | 68% | 62% |
 | `src/app/bars.rs` | 97% | 83% | 92% |
 | `src/app/chapters.rs` | 87% | 100% | 93% |
 | `src/app/copy.rs` | 93% | 100% | 94% |
 | `src/app/every_key.rs` | 89% | 94% | 90% |
 | `src/app/flash.rs` | 72% | 85% | 76% |
-| `src/app/forms.rs` | 47% | 63% | 46% |
+| `src/app/forms.rs` | 68% | 90% | 68% |
 | `src/app/incsearch.rs` | 77% | 75% | 74% |
 | `src/app/info.rs` | 73% | 82% | 75% |
 | `src/app/links.rs` | 82% | 87% | 82% |
-| `src/app/markings.rs` | 42% | 42% | 38% |
+| `src/app/markings.rs` | 66% | 66% | 65% |
 | `src/app/matches.rs` | 94% | 96% | 94% |
 | `src/app/mode.rs` | 59% | 100% | 67% |
 | `src/app/overview.rs` | 59% | 64% | 57% |
@@ -424,9 +424,9 @@ Measured on 2026-11-23:
 | `src/app/pointer.rs` | 85% | 85% | 86% |
 | `src/app/reflow.rs` | 77% | 70% | 71% |
 | `src/app/run.rs` | 68% | 64% | 71% |
-| `src/app/tabs.rs` | 62% | 67% | 53% |
+| `src/app/tabs.rs` | 95% | 95% | 95% |
 | `src/app/unlock.rs` | 83% | 81% | 84% |
-| `src/backend.rs` | 93% | 85% | 91% |
+| `src/backend.rs` | 95% | 87% | 92% |
 | `src/bench.rs` | 99% | 100% | 98% |
 | `src/bindings.rs` | 98% | 100% | 98% |
 | `src/clipboard.rs` | 0% | 0% | 0% |
@@ -448,7 +448,7 @@ Measured on 2026-11-23:
 | `src/layout.rs` | 99% | 100% | 99% |
 | `src/main.rs` | 0% | 0% | 0% |
 | `src/manual.rs` | 90% | 96% | 90% |
-| `src/markings.rs` | 93% | 89% | 93% |
+| `src/markings.rs` | 97% | 97% | 95% |
 | `src/num.rs` | 100% | 100% | 100% |
 | `src/outline.rs` | 96% | 98% | 94% |
 | `src/overview.rs` | 96% | 86% | 97% |
@@ -461,7 +461,7 @@ Measured on 2026-11-23:
 | `src/shell.rs` | 78% | 65% | 80% |
 | `src/theme.rs` | 47% | 67% | 45% |
 | `src/visual.rs` | 97% | 97% | 97% |
-| **Total** | **83%** | **85%** | **83%** |
+| **Total** | **85%** | **87%** | **86%** |
 
 </details>
 

@@ -1169,3 +1169,78 @@ mod tests {
         );
     }
 }
+
+/// Marking text in a running app: highlighting a selection, undoing and
+/// redoing it, notes, the list of markings, taking one away, and saving
+/// them into the file.
+#[cfg(test)]
+mod sessions {
+    use iced::futures::executor::block_on;
+
+    use crate::app::testing::Session;
+    use crate::backend::{self, Marking, MarkupKind};
+
+    /// The markings in the document in view, as the file has them now.
+    fn markings(session: &Session) -> Vec<Marking> {
+        let document = session.app.document().unwrap();
+        block_on(document.backend.markings()).unwrap()
+    }
+
+    #[test]
+    fn a_selection_is_highlighted_and_undone_and_redone() {
+        let mut session = Session::open("text.pdf");
+        // The first word of the first line.
+        session.keys("vaaeH");
+        let made = markings(&session);
+        assert_eq!(made.len(), 1);
+        assert_eq!(made[0].kind, MarkupKind::Highlight);
+        assert_eq!(made[0].text, "Hello,");
+        session.keys("u");
+        assert!(markings(&session).is_empty());
+        session.keys("<C-r>");
+        assert_eq!(markings(&session).len(), 1);
+    }
+
+    #[test]
+    fn a_note_is_put_and_changed() {
+        let mut session = Session::open("text.pdf");
+        session.keys("vaan");
+        session.keys("first thought<Enter>");
+        let noted = markings(&session);
+        assert_eq!(noted.len(), 1);
+        assert_eq!(noted[0].kept.contents.as_deref(), Some("first thought"));
+        // Gone to, its note is changed in place: the prompt starts with the
+        // note as it is, after `note `.
+        session.keys("]hc<C-w><C-w>second thought<Enter>");
+        let changed = markings(&session);
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].kept.contents.as_deref(), Some("second thought"));
+    }
+
+    #[test]
+    fn the_list_goes_to_a_marking_and_d_takes_it_away() {
+        let mut session = Session::open("text.pdf");
+        session.keys("vaaeU");
+        assert_eq!(markings(&session)[0].kind, MarkupKind::Underline);
+        session.keys("<S-Tab>");
+        assert!(session.app.sidebar.is_some());
+        session.keys("<Enter>");
+        assert!(session.app.sidebar.is_none());
+        session.keys("]hd");
+        assert!(markings(&session).is_empty());
+    }
+
+    #[test]
+    fn markings_are_saved_into_the_file() {
+        let mut session = Session::open("text.pdf");
+        session.keys("vaaeS:w<Enter>");
+        assert!(!session.app.document().unwrap().modified());
+        // Opened afresh, the file has it.
+        let path = session.dir.join("text.pdf");
+        let flow = session.app.flow_for(&session.dir);
+        let reopened = block_on(backend::open(path, None, flow)).unwrap();
+        let found = block_on(reopened.backend.markings()).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].kind, MarkupKind::StrikeOut);
+    }
+}

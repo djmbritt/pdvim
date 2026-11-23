@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use iced::futures::StreamExt;
 use iced::futures::executor::block_on;
 use iced::keyboard::{self, Location, Modifiers, key};
-use iced::{Point, Size, Task};
+use iced::{Element, Point, Size, Task};
 use iced_runtime::Action;
 use iced_runtime::clipboard;
 
@@ -23,11 +23,11 @@ use crate::layout::Rect;
 pub fn showing(fixture: &str) -> (App, u64) {
     let (mut app, _) = App::boot(Vec::new());
     app.history = None;
-    let _ = app.update(Message::Resized(Size::new(612.0, 400.0)));
+    let _: Task<Message> = app.update(Message::Resized(Size::new(612.0, 400.0)));
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("fuzz/seeds/pdf")
         .join(fixture);
-    let _ = app.open_in_tab(path.clone());
+    let _: Task<Message> = app.open_in_tab(path.clone());
     let request = app
         .tabs
         .get(app.current)
@@ -36,7 +36,7 @@ pub fn showing(fixture: &str) -> (App, u64) {
         .unwrap();
     let flow = app.flow_for(&path);
     let opened = block_on(crate::backend::open(path.clone(), None, flow));
-    let _ = app.update(Message::Opened(request, path, opened));
+    let _: Task<Message> = app.update(Message::Opened(request, path, opened));
     // Started without a file, the app lists the recent documents.
     app.picker = None;
     let id = app.document().unwrap().id;
@@ -63,7 +63,7 @@ pub fn on_screen(app: &App, page: u32, (across, down): (f32, f32)) -> Point {
 /// Gives the app the text of a page, as the backend answers.
 pub fn read(app: &mut App, id: u64, page: u32) {
     let text = block_on(app.document().unwrap().backend.text(vec![page]));
-    let _ = app.update(Message::TextFound(id, vec![page], text));
+    let _: Task<Message> = app.update(Message::TextFound(id, vec![page], text));
 }
 
 /// Types characters at the app, a key press each, as the keyboard would:
@@ -76,7 +76,7 @@ pub fn typing(app: &mut App, characters: &str) {
         } else {
             Modifiers::empty()
         };
-        let _ = app.update(Message::Keyboard(keyboard::Event::KeyPressed {
+        let _: Task<Message> = app.update(Message::Keyboard(keyboard::Event::KeyPressed {
             key: typed.clone(),
             modified_key: typed,
             physical_key: key::Physical::Unidentified(key::NativeCode::Unidentified),
@@ -188,7 +188,7 @@ impl Session {
     pub fn send(&mut self, message: Message) {
         let task = self.app.update(message);
         self.run(task);
-        let _ = self.app.view();
+        let _: Element<'_, Message> = self.app.view();
     }
 
     /// Types keys, each carried out in full before the next: characters as
@@ -215,6 +215,10 @@ impl Session {
     }
 
     /// Carries out a task, and the tasks of the messages it gives.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "the runtime's other actions do nothing in tests"
+    )]
     pub fn run(&mut self, task: Task<Message>) {
         let mut tasks = vec![task];
         let mut messages: usize = 0;
@@ -233,7 +237,7 @@ impl Session {
                         self.copied.push(contents);
                     }
                     Action::Clipboard(clipboard::Action::Read { channel, .. }) => {
-                        let _ = channel.send(self.clipboard.clone());
+                        let _: Result<(), Option<String>> = channel.send(self.clipboard.clone());
                     }
                     Action::Exit => self.exited = true,
                     // The window and its widgets are not there to ask:
@@ -262,7 +266,7 @@ impl Session {
 
 impl Drop for Session {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
+        let _: std::io::Result<()> = std::fs::remove_dir_all(&self.dir);
     }
 }
 

@@ -386,7 +386,7 @@ mod tests {
             Line::Entry {
                 mode, keys, action, ..
             } if *mode == in_mode && *action == name => Some(keys.as_str()),
-            _ => None,
+            Line::Heading(_) | Line::Entry { .. } | Line::Command { .. } | Line::Blank => None,
         })
     }
 
@@ -490,7 +490,7 @@ mod tests {
             .iter()
             .filter_map(|line| match line {
                 Line::Entry { action, .. } => Some(*action),
-                _ => None,
+                Line::Heading(_) | Line::Command { .. } | Line::Blank => None,
             })
             .collect();
         assert_eq!(actions, ["zoom-in", "zoom-out", "zoom-to", "zoom-reset"]);

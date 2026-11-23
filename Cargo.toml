@@ -55,6 +55,13 @@ assets = [
 
 [lints.rust]
 unsafe_code = "forbid"
+missing_docs = "deny"
+redundant_lifetimes = "deny"
+trivial_casts = "deny"
+trivial_numeric_casts = "deny"
+unit_bindings = "deny"
+unused_lifetimes = "deny"
+unused_qualifications = "deny"
 
 [lints.clippy]
 pedantic = { level = "deny", priority = -1 }   # UM, ACTUALLY
@@ -73,6 +80,46 @@ panic_in_result_fn = "deny"
 panic = "deny"
 exit = "deny"
 as_conversions = "deny"
+# DEBUGGING LEFT IN
+dbg_macro = "deny"
+use_debug = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+# ERRORS THROWN AWAY
+get_unwrap = "deny"
+unwrap_in_result = "deny"
+try_err = "deny"
+unused_result_ok = "deny"
+map_err_ignore = "deny"
+let_underscore_untyped = "deny"
+mem_forget = "deny"
+infinite_loop = "deny"
+# A NEW VARIANT IS NEVER CAUGHT BY _ UNSEEN
+wildcard_enum_match_arm = "deny"
+# EXPECT, WITH A REASON, RATHER THAN ALLOW
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+# TESTS THAT SAY WHAT BROKE
+missing_assert_message = "deny"
+assertions_on_result_states = "deny"
+tests_outside_test_module = "deny"
+# PLAINER CODE
+if_then_some_else_none = "deny"
+str_to_string = "deny"
+string_add = "deny"
+format_push_string = "deny"
+verbose_file_reads = "deny"
+rest_pat_in_fully_bound_structs = "deny"
+empty_structs_with_brackets = "deny"
+unneeded_field_pattern = "deny"
+create_dir = "deny"
+large_include_file = "deny"
+iter_over_hash_type = "deny"
+# NUMBERS
+lossy_float_literal = "deny"
+decimal_literal_representation = "deny"
+unseparated_literal_suffix = "deny"
+suspicious_xor_used_as_pow = "deny"
 
 [dev-dependencies]
 # Times the hot paths: `cargo bench`, with the benchmarks in benches/. The

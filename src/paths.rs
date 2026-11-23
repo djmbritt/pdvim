@@ -29,6 +29,7 @@ pub struct Settings {
 
 impl Settings {
     /// Takes a setting, if it is one a rule can give.
+    #[expect(clippy::wildcard_enum_match_arm, reason = "the other settings are not set by path")]
     pub fn set(&mut self, setting: &Setting) -> Result<(), String> {
         match *setting {
             Setting::Recolor(recolor) => self.recolor = Some(recolor),
@@ -311,8 +312,8 @@ mod tests {
             settings_for(&rules, Path::new("/books/a.pdf")),
             Settings::default()
         );
-        assert!(rule("/x/**", &[("theme", "pdvim-dark")]).is_err());
-        assert!(rule("/x/**", &[("trim", "maybe")]).is_err());
-        assert!(rule(" ", &[]).is_err());
+        rule("/x/**", &[("theme", "pdvim-dark")]).unwrap_err();
+        rule("/x/**", &[("trim", "maybe")]).unwrap_err();
+        rule(" ", &[]).unwrap_err();
     }
 }

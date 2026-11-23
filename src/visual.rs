@@ -213,6 +213,7 @@ impl Visual {
 
     /// Selects a text object, as vim's `iw`, `as` or `ip` do. `around` says
     /// whether the selection was whole paragraphs and their gaps before.
+    #[expect(clippy::wildcard_enum_match_arm, reason = "the other bindings are handled elsewhere")]
     fn select_object(&mut self, binding: Binding, times: u32, text: &Text, around: bool) {
         match binding {
             Binding::InnerWord | Binding::AroundWord => {
@@ -433,6 +434,7 @@ impl Visual {
 
     /// Does what a binding says, a number of times where that means
     /// anything.
+    #[expect(clippy::wildcard_enum_match_arm, reason = "the other bindings are handled elsewhere")]
     fn act(&mut self, binding: Binding, times: u32, text: &Text) -> Outcome {
         if let Some(outcome) = self.act_on_figure(binding) {
             return outcome;
@@ -480,6 +482,7 @@ impl Visual {
     /// Does what a binding says to a picture or figure selected: copying
     /// or marking it, a note beside it, or leaving. Anything else lets it
     /// go, and is done to the text from the cursor, so `None`.
+    #[expect(clippy::wildcard_enum_match_arm, reason = "the other bindings are handled elsewhere")]
     fn act_on_figure(&mut self, binding: Binding) -> Option<Outcome> {
         let (page, area) = self.figure?;
         let mark = |kind| Some(Outcome::Mark(kind, vec![(page, area)]));
@@ -644,6 +647,7 @@ impl Visual {
     }
 
     /// Where a motion along the text takes the cursor, if anywhere.
+    #[expect(clippy::wildcard_enum_match_arm, reason = "the other bindings are handled elsewhere")]
     fn horizontal(&self, motion: Binding, text: &Text) -> Option<Spot> {
         let cursor = self.cursor;
         let length = line(text, cursor.page, cursor.line)?.chars.len();
@@ -1667,7 +1671,7 @@ mod tests {
         let typed = |keys: &str| {
             let mut visual = Visual::new(Kind::Characters, spot(0, 0, 16));
             for key in keys.chars() {
-                let _ = visual.feed(Key::Char(key), &keymap, &text);
+                let _: Outcome = visual.feed(Key::Char(key), &keymap, &text);
             }
             (visual.text(&text), visual.cursor())
         };
@@ -1686,7 +1690,7 @@ mod tests {
         // At the end, with no space after, the space before is taken in.
         let mut last = Visual::new(Kind::Characters, spot(1, 0, 2));
         for key in "as".chars() {
-            let _ = last.feed(Key::Char(key), &keymap, &text);
+            let _: Outcome = last.feed(Key::Char(key), &keymap, &text);
         }
         assert_eq!(last.text(&text), "Eight nine.");
     }

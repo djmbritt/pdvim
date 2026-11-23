@@ -792,7 +792,7 @@ impl App {
         for command in defaults {
             // Settings for documents only set what new ones start with,
             // so nothing here starts a task.
-            let _ = self.run_command(command);
+            let _: Task<Message> = self.run_command(command);
         }
         let text = match named.map_or_else(config::read, config::read_from) {
             Ok(text) => text,
@@ -804,9 +804,10 @@ impl App {
         };
         let (commands, problems) = config::parse(&text);
         for command in commands {
-            let _ = self.run_command(command);
+            let _: Task<Message> = self.run_command(command);
         }
         self.sourcing = false;
+        #[expect(clippy::print_stderr, reason = "pdvim(5): every mistake goes to standard error")]
         for problem in &problems {
             eprintln!("pdvim: config.toml: {problem}");
         }
@@ -1979,6 +1980,7 @@ impl App {
 
     /// Shows the list of recent documents, the cheat sheet, or what the
     /// document says about itself.
+    #[expect(clippy::wildcard_enum_match_arm, reason = "the other actions are not of this kind")]
     fn show_panel(&mut self, action: Action) {
         match action {
             Action::ShowRecent => self.show_recent(),
@@ -2044,6 +2046,7 @@ impl App {
     }
 
     /// Edits the prompt, or runs it once enter is pressed.
+    #[expect(clippy::wildcard_enum_match_arm, reason = "the other keys do nothing here")]
     fn on_prompt_key(&mut self, key: Key) -> Task<Message> {
         let Some((prompt, mut line)) = self.prompt.take() else {
             return Task::none();
@@ -2474,6 +2477,7 @@ impl App {
 
     /// Carries out an action from the keyboard.
     /// Goes to the next tab, or back, or to the one with a number.
+    #[expect(clippy::wildcard_enum_match_arm, reason = "the other actions are not of this kind")]
     fn switch_tab(&mut self, action: Action) {
         match action {
             Action::NextTab => self.step_tab(1),
@@ -2483,6 +2487,7 @@ impl App {
         }
     }
 
+    #[expect(clippy::wildcard_enum_match_arm, reason = "the other actions move the view, below")]
     fn act(&mut self, action: Action) -> Task<Message> {
         match action {
             Action::Quit => return self.close_tab(),
@@ -3208,6 +3213,7 @@ impl App {
                     .or_else(|| tab.opening.as_ref().map(|(_, path)| path.clone()))
             })
             .collect();
+        #[expect(clippy::print_stderr, reason = "quitting, with no window left to say it in")]
         if let Some(history) = &mut self.history
             && let Err(error) = history.save_session(&open, self.current)
         {
@@ -4114,7 +4120,10 @@ impl canvas::Program<Message> for Pages<'_> {
                 let left = match button {
                     mouse::Button::Left => true,
                     mouse::Button::Middle => false,
-                    _ => return None,
+                    mouse::Button::Right
+                    | mouse::Button::Back
+                    | mouse::Button::Forward
+                    | mouse::Button::Other(_) => return None,
                 };
                 *held = Some(left);
                 publish(pointer::Pointer::Press(at?, left))
@@ -4131,7 +4140,11 @@ impl canvas::Program<Message> for Pages<'_> {
                 *held = None;
                 publish(pointer::Pointer::Release(at.unwrap_or(Point::ORIGIN)))
             }
-            _ => None,
+            Event::Keyboard(_)
+            | Event::Mouse(_)
+            | Event::Window(_)
+            | Event::Touch(_)
+            | Event::InputMethod(_) => None,
         }
     }
 
@@ -4397,13 +4410,14 @@ fn draw_text_label(frame: &mut canvas::Frame, label: &str, at: Point) {
             weight: iced::font::Weight::Bold,
             ..Font::MONOSPACE
         },
-        align_x: iced::widget::text::Alignment::Center,
+        align_x: text::Alignment::Center,
         align_y: iced::alignment::Vertical::Center,
         ..canvas::Text::default()
     });
 }
 
 /// Reduces a key press to the keys the reader distinguishes.
+#[expect(clippy::wildcard_enum_match_arm, reason = "keys pdvim has no use for")]
 fn translate(
     key: &keyboard::Key,
     modifiers: keyboard::Modifiers,
@@ -4451,7 +4465,7 @@ fn translate(
             .chars()
             .next()
             .map(|letter| Key::Ctrl(letter.to_ascii_lowercase())),
-        _ => text
+        keyboard::Key::Character(_) | keyboard::Key::Unidentified => text
             .and_then(|typed| typed.chars().next())
             .filter(|character| !character.is_control())
             .map(Key::Char),

@@ -483,15 +483,15 @@ fn tab_place(argument: &str) -> Result<TabPlace, Error> {
     match argument {
         "" | "$" => Ok(TabPlace::Last),
         _ if let Some(by) = argument.strip_prefix('+') => {
-            by.parse::<i64>().map(TabPlace::By).map_err(|_| bad())
+            by.parse::<i64>().map(TabPlace::By).map_err(|_not_a_number| bad())
         }
         _ if argument.starts_with('-') => {
-            argument.parse::<i64>().map(TabPlace::By).map_err(|_| bad())
+            argument.parse::<i64>().map(TabPlace::By).map_err(|_not_a_number| bad())
         }
         _ => argument
             .parse::<usize>()
             .map(TabPlace::At)
-            .map_err(|_| bad()),
+            .map_err(|_not_a_number| bad()),
     }
 }
 

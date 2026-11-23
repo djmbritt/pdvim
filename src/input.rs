@@ -539,7 +539,7 @@ mod tests {
         keys.iter()
             .filter_map(|&key| match pending.feed(key, &keymap, Counts::Taken) {
                 Fed::Bound(binding, count) => Some(binding.action(count)),
-                _ => None,
+                Fed::Command(..) | Fed::Waiting | Fed::Unbound(_) => None,
             })
             .collect()
     }

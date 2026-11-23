@@ -33,6 +33,7 @@ impl App {
     }
 
     /// Takes a key typed while text to jump to is asked for.
+    #[expect(clippy::wildcard_enum_match_arm, reason = "the other keys do nothing here")]
     pub(super) fn on_flash_key(&mut self, key: Key) -> Task<Message> {
         let Some(mut flash) = self.flash.take() else {
             return Task::none();
@@ -41,7 +42,7 @@ impl App {
             Match::Bound(PromptBinding::Submit) => Press::Submit,
             Match::Bound(PromptBinding::Cancel) => Press::Cancel,
             Match::Bound(PromptBinding::RubOut) => Press::RubOut,
-            _ => match key {
+            Match::Bound(_) | Match::Command(_) | Match::Prefix | Match::None => match key {
                 Key::Char(character) => Press::Char(character),
                 Key::ShiftSpace => Press::Char(' '),
                 _ => Press::Other,

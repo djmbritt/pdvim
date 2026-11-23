@@ -116,3 +116,32 @@ fn file_name(path: &Path) -> String {
     path.file_name()
         .map_or_else(|| tilde(path), |name| name.to_string_lossy().into_owned())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::app::testing::Session;
+    use crate::input::Prompt;
+
+    #[test]
+    fn a_locked_document_opens_with_its_password_and_asks_again_after_a_wrong_one() {
+        let mut session = Session::start();
+        session.open_fixture("encrypted.pdf");
+        assert!(session.app.document().is_none());
+        assert!(matches!(session.app.prompt, Some((Prompt::Password, _))));
+        session.keys("wrong<Enter>");
+        assert!(session.app.document().is_none());
+        assert!(matches!(session.app.prompt, Some((Prompt::Password, ref typed)) if typed.is_empty()));
+        session.keys("secret<Enter>");
+        assert!(session.app.prompt.is_none());
+        assert!(session.app.document().is_some());
+    }
+
+    #[test]
+    fn escape_gives_up_opening_a_locked_document() {
+        let mut session = Session::start();
+        session.open_fixture("encrypted.pdf");
+        session.keys("<Esc>");
+        assert!(session.app.prompt.is_none());
+        assert!(session.app.document().is_none());
+    }
+}

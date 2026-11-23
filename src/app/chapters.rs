@@ -63,3 +63,28 @@ impl App {
         Task::none()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::app::testing::Session;
+
+    #[test]
+    fn brackets_go_from_chapter_to_chapter() {
+        let mut session = Session::open("outline.pdf");
+        let page = |session: &Session| session.app.document().unwrap().reader.current_page();
+        assert_eq!(page(&session), 0);
+        // The table of contents is read on the way: Chapter 1 is on the
+        // first page, Section 1.1 on the second.
+        session.keys("]]");
+        assert_eq!(page(&session), 1);
+        session.keys("[[");
+        assert_eq!(page(&session), 0);
+    }
+
+    #[test]
+    fn a_document_without_contents_says_so() {
+        let mut session = Session::open("text.pdf");
+        session.keys("]]");
+        assert_eq!(session.app.document().unwrap().reader.current_page(), 0);
+    }
+}

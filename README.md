@@ -406,33 +406,34 @@ Measured on 2026-11-23:
 
 | File | Lines | Functions | Regions |
 |------|------:|----------:|--------:|
-| `src/app.rs` | 37% | 45% | 36% |
-| `src/app/bars.rs` | 61% | 50% | 60% |
-| `src/app/chapters.rs` | 84% | 100% | 90% |
-| `src/app/copy.rs` | 38% | 55% | 32% |
+| `src/app.rs` | 61% | 67% | 61% |
+| `src/app/bars.rs` | 97% | 83% | 92% |
+| `src/app/chapters.rs` | 87% | 100% | 93% |
+| `src/app/copy.rs` | 93% | 100% | 94% |
+| `src/app/every_key.rs` | 89% | 94% | 90% |
 | `src/app/flash.rs` | 72% | 85% | 76% |
-| `src/app/forms.rs` | 39% | 49% | 40% |
+| `src/app/forms.rs` | 47% | 63% | 46% |
 | `src/app/incsearch.rs` | 77% | 75% | 74% |
-| `src/app/info.rs` | 46% | 61% | 49% |
-| `src/app/links.rs` | 70% | 67% | 70% |
-| `src/app/markings.rs` | 13% | 16% | 11% |
-| `src/app/matches.rs` | 93% | 96% | 94% |
-| `src/app/mode.rs` | 45% | 83% | 49% |
-| `src/app/overview.rs` | 18% | 29% | 17% |
-| `src/app/paragraphs.rs` | 92% | 82% | 90% |
+| `src/app/info.rs` | 73% | 82% | 75% |
+| `src/app/links.rs` | 82% | 87% | 82% |
+| `src/app/markings.rs` | 42% | 42% | 38% |
+| `src/app/matches.rs` | 94% | 96% | 94% |
+| `src/app/mode.rs` | 59% | 100% | 67% |
+| `src/app/overview.rs` | 59% | 64% | 57% |
+| `src/app/paragraphs.rs` | 98% | 100% | 98% |
 | `src/app/pointer.rs` | 85% | 85% | 86% |
-| `src/app/reflow.rs` | 64% | 52% | 58% |
-| `src/app/run.rs` | 27% | 25% | 29% |
-| `src/app/tabs.rs` | 22% | 25% | 18% |
-| `src/app/unlock.rs` | 78% | 81% | 79% |
-| `src/backend.rs` | 90% | 81% | 88% |
+| `src/app/reflow.rs` | 77% | 70% | 71% |
+| `src/app/run.rs` | 68% | 64% | 71% |
+| `src/app/tabs.rs` | 62% | 67% | 53% |
+| `src/app/unlock.rs` | 83% | 81% | 84% |
+| `src/backend.rs` | 93% | 85% | 91% |
 | `src/bench.rs` | 99% | 100% | 98% |
-| `src/bindings.rs` | 97% | 100% | 97% |
+| `src/bindings.rs` | 98% | 100% | 98% |
 | `src/clipboard.rs` | 0% | 0% | 0% |
 | `src/command.rs` | 99% | 96% | 99% |
-| `src/complete.rs` | 95% | 97% | 92% |
-| `src/config.rs` | 92% | 89% | 89% |
-| `src/contents.rs` | 98% | 100% | 98% |
+| `src/complete.rs` | 99% | 100% | 98% |
+| `src/config.rs` | 93% | 93% | 91% |
+| `src/contents.rs` | 99% | 100% | 98% |
 | `src/dirs.rs` | 83% | 60% | 78% |
 | `src/flash.rs` | 95% | 91% | 97% |
 | `src/fonts.rs` | 66% | 78% | 74% |
@@ -440,11 +441,11 @@ Measured on 2026-11-23:
 | `src/help.rs` | 99% | 100% | 99% |
 | `src/hints.rs` | 96% | 100% | 97% |
 | `src/history.rs` | 96% | 98% | 91% |
-| `src/input.rs` | 67% | 93% | 79% |
+| `src/input.rs` | 96% | 93% | 97% |
 | `src/jumps.rs` | 100% | 100% | 100% |
 | `src/keymap.rs` | 100% | 98% | 100% |
 | `src/languages.rs` | 93% | 100% | 94% |
-| `src/layout.rs` | 99% | 100% | 98% |
+| `src/layout.rs` | 99% | 100% | 99% |
 | `src/main.rs` | 0% | 0% | 0% |
 | `src/manual.rs` | 90% | 96% | 90% |
 | `src/markings.rs` | 93% | 89% | 93% |
@@ -454,13 +455,13 @@ Measured on 2026-11-23:
 | `src/paths.rs` | 97% | 100% | 97% |
 | `src/picker.rs` | 99% | 100% | 98% |
 | `src/prose.rs` | 97% | 100% | 91% |
-| `src/reader.rs` | 97% | 98% | 98% |
+| `src/reader.rs` | 98% | 99% | 98% |
 | `src/recall.rs` | 100% | 100% | 100% |
 | `src/recolor.rs` | 100% | 100% | 100% |
 | `src/shell.rs` | 78% | 65% | 80% |
-| `src/theme.rs` | 46% | 67% | 45% |
-| `src/visual.rs` | 96% | 96% | 96% |
-| **Total** | **75%** | **78%** | **75%** |
+| `src/theme.rs` | 47% | 67% | 45% |
+| `src/visual.rs` | 97% | 97% | 97% |
+| **Total** | **83%** | **85%** | **83%** |
 
 </details>
 

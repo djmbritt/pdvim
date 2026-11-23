@@ -37,6 +37,8 @@ use crate::visual::{self, Kind, Spot, Visual};
 
 mod bars;
 mod chapters;
+#[cfg(test)]
+mod every_key;
 mod copy;
 mod run;
 mod flash;

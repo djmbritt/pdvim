@@ -4,13 +4,22 @@
 use iced::Task;
 
 use super::{App, Message, Notice};
-use crate::{command, shell};
+use crate::{command, input, shell};
 
 impl App {
     /// Runs each command in a line in turn, stopping at the first that
-    /// cannot be understood. The line is kept for `.` to run again.
+    /// cannot be understood. The line is kept for `.` to run again, unless
+    /// it repeats a line itself: as in vim, `.` does not repeat `.`, which
+    /// would run itself for ever.
     pub(super) fn run_line(&mut self, line: &str) -> Task<Message> {
-        if !command::split(line).is_empty() {
+        let commands = command::split(line);
+        let repeats = commands.iter().any(|part| {
+            matches!(
+                command::parse(part),
+                Ok(Some(command::Command::Run(input::Binding::Repeat, _)))
+            )
+        });
+        if !commands.is_empty() && !repeats {
             self.last_line = Some(line.to_owned());
         }
         self.run_commands(line)
@@ -72,5 +81,27 @@ impl App {
             }
         }
         Task::batch(tasks)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::app::testing::Session;
+
+    #[test]
+    fn a_repeat_repeats_the_last_line_but_never_itself() {
+        let mut session = Session::open("text.pdf");
+        let zoom = |session: &Session| session.app.document().unwrap().reader.zoom();
+        let start = zoom(&session);
+        session.keys(":zoom-in<Enter>");
+        let once = zoom(&session);
+        assert!(once > start);
+        // Typed as a command, it would run itself without end.
+        session.keys(":repeat<Enter>");
+        let twice = zoom(&session);
+        assert!(twice > once);
+        session.keys(".");
+        assert!(zoom(&session) > twice);
+        session.keys(":zoom-in; repeat<Enter>");
     }
 }

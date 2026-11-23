@@ -57,7 +57,10 @@ modules:
       - cargo --offline build --release --locked
       - install -Dm755 target/release/pdvim /app/libexec/pdvim
       - install -Dm755 pdvim.sh /app/bin/pdvim
-      - install -Dm644 packaging/pdvim.desktop /app/share/applications/pdvim.desktop
+      # The wrapper below sets WGPU_BACKEND; Flatpak runs the command
+      # named here, so the entry starts pdvim itself.
+      - sed 's/^Exec=env WGPU_BACKEND=vulkan /Exec=/' packaging/pdvim.desktop
+        > pdvim.desktop && install -Dm644 pdvim.desktop /app/share/applications/pdvim.desktop
       - install -Dm644 packaging/pdvim.svg /app/share/icons/hicolor/scalable/apps/pdvim.svg
       - install -Dm644 packaging/io.github.djmbritt.pdvim.metainfo.xml
         /app/share/metainfo/io.github.djmbritt.pdvim.metainfo.xml
@@ -77,9 +80,12 @@ modules:
       - cargo-sources.json
       # Flatpak keeps each app's configuration apart, in
       # ~/.var/app/io.github.djmbritt.pdvim/config; pdvim reads the one in
-      # ~/.config/pdvim, as when installed any other way.
+      # ~/.config/pdvim, as when installed any other way. wgpu draws
+      # through Vulkan alone, for the reason packaging/pdvim.desktop gives,
+      # unless WGPU_BACKEND is set already.
       - type: script
         dest-filename: pdvim.sh
         commands:
           - export XDG_CONFIG_HOME="${HOST_XDG_CONFIG_HOME:-$HOME/.config}"
+          - export WGPU_BACKEND="${WGPU_BACKEND:-vulkan}"
           - exec /app/libexec/pdvim "$@"

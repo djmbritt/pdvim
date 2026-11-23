@@ -37,8 +37,10 @@ if [ ! -x "$linuxdeploy" ]; then
     chmod +x "$linuxdeploy"
 fi
 
-# Named by the application's ID, as the AppStream metadata expects.
-cp packaging/pdvim.desktop "$work/$id.desktop"
+# Named by the application's ID, as the AppStream metadata expects. Its
+# entry starts the program itself, as linuxdeploy needs to find it there;
+# the AppRun below sets WGPU_BACKEND instead.
+sed 's/^Exec=env WGPU_BACKEND=vulkan /Exec=/' packaging/pdvim.desktop > "$work/$id.desktop"
 install -Dm644 packaging/$id.metainfo.xml "$appdir/usr/share/metainfo/$id.metainfo.xml"
 install -Dm644 -t "$appdir/usr/share/doc/pdvim" README.md LICENSE defaults.toml
 
@@ -48,6 +50,7 @@ LDAI_OUTPUT="$out/pdvim-$version-$arch.AppImage" \
     --appdir "$appdir" \
     --executable "target/$target/release/pdvim" \
     --desktop-file "$work/$id.desktop" \
+    --custom-apprun packaging/AppRun \
     --icon-file packaging/pdvim.svg \
     --output appimage
 # The file AppImageUpdate fetches changes by, which linuxdeploy leaves

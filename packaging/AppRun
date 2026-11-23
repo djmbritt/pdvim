@@ -1,0 +1,7 @@
+#!/bin/sh
+# What an AppImage runs when it is started: pdvim, drawing through Vulkan
+# alone unless WGPU_BACKEND is set already, for the reason
+# packaging/pdvim.desktop gives. packaging/appimage.sh puts it in the AppDir.
+here=$(dirname "$(readlink -f "$0")")
+export WGPU_BACKEND="${WGPU_BACKEND:-vulkan}"
+exec "$here/usr/bin/pdvim" "$@"

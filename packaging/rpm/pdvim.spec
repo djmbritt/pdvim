@@ -18,7 +18,7 @@
 %endif
 
 Name:           pdvim
-Version:        0.2.9
+Version:        0.2.10
 Release:        1%{?dist}
 Summary:        A minimal, keyboard-driven PDF reader
 

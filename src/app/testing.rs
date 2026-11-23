@@ -3,6 +3,9 @@
 //! driven as a [`Session`], which carries out every task the app returns,
 //! as the runtime does, so that a test types keys and finds what they did.
 
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use iced::futures::StreamExt;
 use iced::futures::executor::block_on;
 use iced::keyboard::{self, Location, Modifiers, key};
@@ -11,6 +14,7 @@ use iced_runtime::Action;
 use iced_runtime::clipboard;
 
 use super::{App, Message};
+use crate::input::Key;
 use crate::layout::Rect;
 
 /// The app, with no history, so that tests leave the reader's alone,
@@ -95,8 +99,15 @@ pub fn selected(app: &App) -> String {
 /// the system, which a test has none of, is kept for the test to look at:
 /// what it copied, and whether it quit. Reading the clipboard gives
 /// [`Session::clipboard`].
+///
+/// The app has the built-in configuration only, not the reader's, and
+/// opens copies of the fixtures in a directory of its own, removed when
+/// the session ends, so that saving into them leaves the originals be.
 pub struct Session {
     pub app: App,
+    /// Where the fixtures are copied to, and anything else the test
+    /// writes.
+    pub dir: PathBuf,
     /// The document's id.
     pub id: u64,
     /// What the app copied, in turn.
@@ -125,10 +136,22 @@ impl Session {
     /// The app started without a document, in a window half a page high,
     /// with no history.
     pub fn start() -> Self {
+        static SESSIONS: AtomicUsize = AtomicUsize::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "pdvim-test-{}-{}",
+            std::process::id(),
+            SESSIONS.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
         let (mut app, boot) = App::boot(Vec::new());
         app.history = None;
+        // The built-in configuration alone, whatever the reader's says.
+        let empty = dir.join("config.toml");
+        std::fs::write(&empty, "").unwrap();
+        app.read_configuration(Some(&empty));
         let mut session = Self {
             app,
+            dir,
             id: 0,
             copied: Vec::new(),
             clipboard: None,
@@ -145,11 +168,18 @@ impl Session {
     /// `:open` does, and carries out what that leads to: a locked one asks
     /// for its password.
     pub fn open_fixture(&mut self, fixture: &str) {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        let original = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("fuzz/seeds/pdf")
             .join(fixture);
+        let path = self.dir.join(fixture);
+        std::fs::copy(original, &path).unwrap();
         let opening = self.app.open_in_tab(path);
         self.run(opening);
+    }
+
+    /// Presses a key, as pdvim names it.
+    pub fn press(&mut self, key: Key) {
+        self.send(Message::Keyboard(key_event(key)));
     }
 
     /// Gives the app a message, and carries out all it leads to.
@@ -214,6 +244,50 @@ impl Session {
     /// The text selected in visual mode.
     pub fn selected(&self) -> String {
         selected(&self.app)
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+/// The event of a key as pdvim names it, as the keyboard would report it.
+fn key_event(key: Key) -> keyboard::Event {
+    use keyboard::key::Named;
+    let named = |named, modifiers| press(keyboard::Key::Named(named), modifiers, None);
+    match key {
+        Key::Char(character) => character_key(character),
+        Key::Ctrl(letter) => press(
+            keyboard::Key::Character(letter.to_string().into()),
+            Modifiers::CTRL,
+            None,
+        ),
+        Key::Escape => named(Named::Escape, Modifiers::empty()),
+        Key::Enter => named(Named::Enter, Modifiers::empty()),
+        Key::Backspace => named(Named::Backspace, Modifiers::empty()),
+        Key::ShiftSpace => named(Named::Space, Modifiers::SHIFT),
+        Key::Tab => named(Named::Tab, Modifiers::empty()),
+        Key::ShiftTab => named(Named::Tab, Modifiers::SHIFT),
+        Key::CtrlTab => named(Named::Tab, Modifiers::CTRL),
+        Key::CtrlShiftTab => named(Named::Tab, Modifiers::CTRL | Modifiers::SHIFT),
+        Key::Up => named(Named::ArrowUp, Modifiers::empty()),
+        Key::Down => named(Named::ArrowDown, Modifiers::empty()),
+        Key::Left => named(Named::ArrowLeft, Modifiers::empty()),
+        Key::Right => named(Named::ArrowRight, Modifiers::empty()),
+        Key::PageUp => named(Named::PageUp, Modifiers::empty()),
+        Key::PageDown => named(Named::PageDown, Modifiers::empty()),
+        Key::Home => named(Named::Home, Modifiers::empty()),
+        Key::End => named(Named::End, Modifiers::empty()),
+        Key::Function(number) => {
+            let function = [
+                Named::F1, Named::F2, Named::F3, Named::F4, Named::F5, Named::F6, Named::F7,
+                Named::F8, Named::F9, Named::F10, Named::F11, Named::F12,
+            ];
+            let which = usize::from(number.clamp(1, 12)).saturating_sub(1);
+            named(function[which], Modifiers::empty())
+        }
     }
 }
 

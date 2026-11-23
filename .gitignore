@@ -11,3 +11,4 @@
 /.rust-review-results
 /result
 /mutants.out*
+/findings.md

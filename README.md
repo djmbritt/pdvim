@@ -393,7 +393,7 @@ The Flatpak reads the same configuration, but keeps its history in `~/.var/app/i
 
 ## Testing
 
-`cargo test` runs the tests: units of each part, and the app itself driven with real PDFs from `fuzz/seeds/`. `src/languages.rs` tries the handling of text in sixteen languages, from English to Arabic, Hindi, Chinese and Thai: selecting sentences, copying, searching and moving the cursor, over each sample laid out and as MuPDF reads it from a PDF made of it. The samples are in `fuzz/languages/samples.tsv`, and `fuzz/languages/make-pdfs.sh` makes the PDFs again with Chromium when they change. `coverage.sh` runs them with coverage turned on and prints how much of each file in `src/` they reach; it needs `llvm-tools` (`rustup component add llvm-tools-preview`), and leaves a report to browse line by line in `target/coverage/html/index.html`. GitHub Actions measures it after every push to `main`, in the run's summary.
+`cargo test` runs the tests: units of each part, and the app itself driven with real PDFs from `fuzz/seeds/`, every key bound by default pressed and every command run, and the window drawn in each of its states with tiny-skia, needing no screen or graphics card. `src/languages.rs` tries the handling of text in sixteen languages, from English to Arabic, Hindi, Chinese and Thai: selecting sentences, copying, searching and moving the cursor, over each sample laid out and as MuPDF reads it from a PDF made of it. The samples are in `fuzz/languages/samples.tsv`, and `fuzz/languages/make-pdfs.sh` makes the PDFs again with Chromium when they change. `coverage.sh` runs them with coverage turned on and prints how much of each file in `src/` they reach. It leaves out `src/main.rs`, which opens the window, and `src/clipboard.rs`, which hands pictures to the system's clipboard, as no test can run them. It needs `llvm-tools` (`rustup component add llvm-tools-preview`), and leaves a report to browse line by line in `target/coverage/html/index.html`. GitHub Actions measures it after every push to `main`, in the run's summary.
 
 ```sh
 ./coverage.sh
@@ -406,52 +406,51 @@ Measured on 2026-11-23:
 
 | File | Lines | Functions | Regions |
 |------|------:|----------:|--------:|
-| `src/app.rs` | 62% | 68% | 62% |
+| `src/app.rs` | 81% | 82% | 81% |
 | `src/app/bars.rs` | 97% | 83% | 92% |
 | `src/app/chapters.rs` | 87% | 100% | 93% |
 | `src/app/copy.rs` | 93% | 100% | 94% |
+| `src/app/drawing.rs` | 100% | 100% | 100% |
 | `src/app/every_key.rs` | 89% | 94% | 90% |
-| `src/app/flash.rs` | 72% | 85% | 76% |
-| `src/app/forms.rs` | 68% | 90% | 68% |
-| `src/app/incsearch.rs` | 77% | 75% | 74% |
-| `src/app/info.rs` | 73% | 82% | 75% |
+| `src/app/flash.rs` | 92% | 100% | 95% |
+| `src/app/forms.rs` | 86% | 96% | 87% |
+| `src/app/incsearch.rs` | 95% | 100% | 96% |
+| `src/app/info.rs` | 92% | 93% | 93% |
 | `src/app/links.rs` | 82% | 87% | 82% |
-| `src/app/markings.rs` | 66% | 66% | 65% |
+| `src/app/markings.rs` | 80% | 80% | 79% |
 | `src/app/matches.rs` | 94% | 96% | 94% |
-| `src/app/mode.rs` | 59% | 100% | 67% |
-| `src/app/overview.rs` | 59% | 64% | 57% |
+| `src/app/mode.rs` | 95% | 100% | 96% |
+| `src/app/overview.rs` | 94% | 93% | 95% |
 | `src/app/paragraphs.rs` | 98% | 100% | 98% |
 | `src/app/pointer.rs` | 85% | 85% | 86% |
 | `src/app/reflow.rs` | 77% | 70% | 71% |
 | `src/app/run.rs` | 68% | 64% | 71% |
-| `src/app/tabs.rs` | 95% | 95% | 95% |
-| `src/app/unlock.rs` | 83% | 81% | 84% |
-| `src/backend.rs` | 95% | 87% | 92% |
+| `src/app/tabs.rs` | 95% | 96% | 95% |
+| `src/app/unlock.rs` | 96% | 94% | 96% |
+| `src/backend.rs` | 95% | 87% | 93% |
 | `src/bench.rs` | 99% | 100% | 98% |
 | `src/bindings.rs` | 98% | 100% | 98% |
-| `src/clipboard.rs` | 0% | 0% | 0% |
 | `src/command.rs` | 99% | 96% | 99% |
 | `src/complete.rs` | 99% | 100% | 98% |
 | `src/config.rs` | 93% | 93% | 91% |
 | `src/contents.rs` | 99% | 100% | 98% |
 | `src/dirs.rs` | 83% | 60% | 78% |
-| `src/flash.rs` | 95% | 91% | 97% |
+| `src/flash.rs` | 97% | 97% | 99% |
 | `src/fonts.rs` | 66% | 78% | 74% |
 | `src/fuzz.rs` | 87% | 91% | 90% |
 | `src/help.rs` | 99% | 100% | 99% |
 | `src/hints.rs` | 96% | 100% | 97% |
 | `src/history.rs` | 96% | 98% | 91% |
-| `src/input.rs` | 96% | 93% | 97% |
+| `src/input.rs` | 99% | 100% | 99% |
 | `src/jumps.rs` | 100% | 100% | 100% |
 | `src/keymap.rs` | 100% | 98% | 100% |
 | `src/languages.rs` | 93% | 100% | 94% |
 | `src/layout.rs` | 99% | 100% | 99% |
-| `src/main.rs` | 0% | 0% | 0% |
 | `src/manual.rs` | 90% | 96% | 90% |
 | `src/markings.rs` | 97% | 97% | 95% |
 | `src/num.rs` | 100% | 100% | 100% |
 | `src/outline.rs` | 96% | 98% | 94% |
-| `src/overview.rs` | 96% | 86% | 97% |
+| `src/overview.rs` | 98% | 93% | 99% |
 | `src/paths.rs` | 97% | 100% | 97% |
 | `src/picker.rs` | 99% | 100% | 98% |
 | `src/prose.rs` | 97% | 100% | 91% |
@@ -459,9 +458,9 @@ Measured on 2026-11-23:
 | `src/recall.rs` | 100% | 100% | 100% |
 | `src/recolor.rs` | 100% | 100% | 100% |
 | `src/shell.rs` | 78% | 65% | 80% |
-| `src/theme.rs` | 47% | 67% | 45% |
-| `src/visual.rs` | 97% | 97% | 97% |
-| **Total** | **85%** | **87%** | **86%** |
+| `src/theme.rs` | 61% | 73% | 55% |
+| `src/visual.rs` | 97% | 98% | 97% |
+| **Total** | **91%** | **92%** | **91%** |
 
 </details>
 

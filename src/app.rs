@@ -39,6 +39,8 @@ mod bars;
 mod chapters;
 #[cfg(test)]
 mod every_key;
+#[cfg(test)]
+mod drawing;
 mod copy;
 mod run;
 mod flash;

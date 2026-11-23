@@ -42,8 +42,11 @@ for line in sys.stdin:
 
 "$bin/llvm-profdata" merge -sparse "$out"/profiles/*.profraw -o "$out/tests.profdata"
 # Only pdvim's own code: not the standard library, the crates it uses, or
-# the fuzz targets and the tests' own helpers.
-ignore='(/\.cargo/|/rustc/|/fuzz/|/library/|/target/|/src/app/testing\.rs)'
+# the fuzz targets and the tests' own helpers. Nor what no test can run:
+# main.rs opens the window, and clipboard.rs hands pictures to the
+# system's clipboard, which a machine running the tests may not have.
+ignore='(/\.cargo/|/rustc/|/fuzz/|/library/|/target/|/src/app/testing\.rs'
+ignore="$ignore"'|/src/main\.rs|/src/clipboard\.rs)'
 # shellcheck disable=SC2086
 "$bin/llvm-cov" show -format=html -output-dir "$out/html" -show-line-counts-or-regions \
     -instr-profile "$out/tests.profdata" -ignore-filename-regex "$ignore" $objects >/dev/null

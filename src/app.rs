@@ -540,7 +540,7 @@ pub struct App {
     hint_chars: Vec<char>,
     /// The labels on the lines in view, while they are shown, and how text
     /// will be selected from the line picked.
-    line_hints: Option<(Kind, Hints<Spot>)>,
+    line_hints: Option<(Kind, Hints<Start>)>,
     /// The document whose text is being read so that its lines can be
     /// labelled, by its number, and how text will be selected.
     lines_wanted: Option<(u64, TextFor)>,
@@ -1071,12 +1071,32 @@ impl App {
         };
         let id = document.id;
         let pages: Vec<u32> = document.reader.visible_pages().collect();
-        if pages.iter().all(|page| document.text.contains_key(page)) {
+        if self.lines_ready() {
             self.show_line_hints(kind);
             return Task::none();
         }
+        // The pictures and figures are labelled too, once found.
+        let missing: Vec<u32> = pages
+            .iter()
+            .copied()
+            .filter(|page| !document.figures.contains_key(page))
+            .collect();
+        let finding = (!missing.is_empty()).then(|| {
+            let finding = document.backend.figures(missing);
+            Task::perform(finding, move |result| Message::FiguresFound(id, result))
+        });
         self.lines_wanted = Some((id, TextFor::Lines(kind)));
-        self.read_text(pages)
+        Task::batch([self.read_text(pages), finding.unwrap_or_else(Task::none)])
+    }
+
+    /// Whether the text and the figures of the pages in view are known,
+    /// for `v` and `V` to label.
+    fn lines_ready(&self) -> bool {
+        self.document().is_some_and(|document| {
+            document.reader.visible_pages().all(|page| {
+                document.text.contains_key(&page) && document.figures.contains_key(&page)
+            })
+        })
     }
 
     /// Reads the text of those of some pages of the document in view not
@@ -1130,7 +1150,8 @@ impl App {
             let read = |page: u32| document.text.contains_key(&page);
             let ready = match then {
                 TextFor::Copy(page) => read(page),
-                TextFor::Lines(_) | TextFor::Flash => document.reader.visible_pages().all(read),
+                TextFor::Lines(_) => self.lines_ready(),
+                TextFor::Flash => document.reader.visible_pages().all(read),
                 TextFor::Matches => self.matches_read(),
                 TextFor::Paragraph { forward, times } => self.paragraphs_read(forward, times),
             };
@@ -1166,7 +1187,7 @@ impl App {
                     .unwrap_or_default();
                 sentences = Some((page, visual::sentence_starts(page_lines)));
             }
-            spots.push((page, Spot::line_start(page, index)));
+            spots.push((page, Start::Text(Spot::line_start(page, index))));
             let starts = sentences.as_ref().map(|(_, starts)| starts.as_slice());
             spots.extend(
                 starts
@@ -1174,25 +1195,60 @@ impl App {
                     .iter()
                     .filter(|(row, _)| *row == index)
                     .map(|&(_, place)| {
-                        (
+                        let spot = Spot {
                             page,
-                            Spot {
-                                page,
-                                line: index,
-                                index: place,
-                            },
-                        )
+                            line: index,
+                            index: place,
+                        };
+                        (page, Start::Text(spot))
                     }),
             );
         }
+        // The pictures and figures in view, each among the lines by where
+        // its top is on its page.
+        let (width, height) = (self.area.width, self.area.height);
+        let reader = &document.reader;
+        for page in reader.visible_pages() {
+            let figures = document.figures.get(&page).map(Vec::as_slice).unwrap_or_default();
+            spots.extend(
+                figures
+                    .iter()
+                    .filter(|&&area| {
+                        reader.area_on_screen(page, area).is_some_and(|shown| {
+                            shown.right > 0.0
+                                && shown.left < width
+                                && shown.bottom > 0.0
+                                && shown.top < height
+                        })
+                    })
+                    .map(|&area| (page, Start::Figure(area))),
+            );
+        }
+        let top = |start: &Start| match *start {
+            Start::Text(spot) => {
+                visual::character(&document.text, spot).map_or(0.0, |area| area.top)
+            }
+            Start::Figure(area) => area.top,
+        };
+        // Stable, so that a line's sentences keep their order.
+        spots.sort_by(|(page, one), (other_page, other)| {
+            page.cmp(other_page).then_with(|| top(one).total_cmp(&top(other)))
+        });
         match Hints::new(spots, &self.hint_chars) {
             Some(mut hints) => {
                 if let Some(document) = self.document() {
-                    hints.set_texts(|page, spot| line_from(&document.text, page, *spot));
+                    hints.set_texts(|page, start| match *start {
+                        Start::Text(spot) => line_from(&document.text, page, spot),
+                        Start::Figure(area) => document
+                            .text
+                            .get(&page)
+                            .map(|lines| links::text_within(lines, area))
+                            .unwrap_or_default(),
+                    });
                 }
                 self.line_hints = Some((kind, hints));
             }
-            None => self.notice = Notice::Info("no text in view".to_owned()),
+            None => self.notice = Notice::Info("no text or figures in view".to_owned()),
         }
     }
 
@@ -1236,7 +1292,7 @@ impl App {
     }
 
     /// Acts on a key typed while the lines are labelled.
-    fn on_line_hint(&mut self, kind: Kind, outcome: Outcome<Spot>) -> Task<Message> {
+    fn on_line_hint(&mut self, kind: Kind, outcome: Outcome<Start>) -> Task<Message> {
         match outcome {
             Outcome::Wait => Task::none(),
             Outcome::Cancel => {
@@ -1254,7 +1310,11 @@ impl App {
             }
             Outcome::Picked(hint) => {
                 self.line_hints = None;
-                let mut visual = Visual::new(kind, hint.item);
+                let spot = match hint.item {
+                    Start::Text(spot) => spot,
+                    Start::Figure(area) => return self.select_figure(hint.page, area),
+                };
+                let mut visual = Visual::new(kind, spot);
                 // A selection of lines starts with the cursor at the end of
                 // the line, where it stays as it goes up and down.
                 if kind == Kind::Lines
@@ -3459,6 +3519,15 @@ enum TextFor {
     Paragraph { forward: bool, times: u32 },
 }
 
+/// What `v` and `V` label: a line, or a sentence partway along one, to
+/// start selecting text at, or a picture or figure to select.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Start {
+    Text(Spot),
+    /// Its area on the unturned page.
+    Figure(Rect),
+}
+
 /// What `f` labels: a link to follow, or a marking to pick.
 #[derive(Debug, Clone, PartialEq)]
 enum Labelled {
@@ -4186,22 +4255,42 @@ impl canvas::Program<Message> for Marks<'_> {
             forms::draw(&mut frame, document, edit, self.0.chrome());
         }
         if let Some((_, hints)) = &self.0.line_hints {
-            for hint in hints.shown() {
-                let Some(area) = visual::character(&document.text, hint.item)
-                    .and_then(|area| document.reader.area_on_screen(hint.page, area))
-                else {
-                    continue;
-                };
-                // The label sits just left of the line's first character.
-                let size = label_size();
-                draw_label(
-                    &mut frame,
-                    hint.label,
-                    Point::new(area.left - size.width - 2.0, area.top),
-                );
-            }
+            draw_line_labels(&mut frame, document, hints);
         }
         vec![frame.into_geometry()]
+    }
+}
+
+/// Labels each line, or sentence partway along one, that `v` and `V` can
+/// start at, just left of it; and each picture and figure, shaded, on its
+/// top-left corner, as `yi` shows it.
+fn draw_line_labels(frame: &mut canvas::Frame, document: &Document, hints: &Hints<Start>) {
+    for hint in hints.shown() {
+        let spot = match hint.item {
+            Start::Text(spot) => spot,
+            // A figure is shaded, its label on its top-left corner,
+            // as yi shows it.
+            Start::Figure(area) => {
+                if let Some(area) = document.reader.area_on_screen(hint.page, area) {
+                    let area = rectangle(area);
+                    frame.fill_rectangle(area.position(), area.size(), LINK);
+                    draw_label(frame, hint.label, Point::new(area.x, area.y));
+                }
+                continue;
+            }
+        };
+        let Some(area) = visual::character(&document.text, spot)
+            .and_then(|area| document.reader.area_on_screen(hint.page, area))
+        else {
+            continue;
+        };
+        // The label sits just left of the line's first character.
+        let size = label_size();
+        draw_label(
+            frame,
+            hint.label,
+            Point::new(area.left - size.width - 2.0, area.top),
+        );
     }
 }
 

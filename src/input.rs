@@ -305,9 +305,9 @@ bindable! {
         /// As Tridactyl's `;y`.
         YankLink = "yank-link", "Label the links in view; type a label to copy where it goes";
         /// Label the lines in view, to start selecting characters at one.
-        Visual = "visual", "Select text from a line picked by label";
+        Visual = "visual", "Select text from a line picked by label, or a figure";
         /// Label the lines in view, to start selecting whole lines at one.
-        VisualLine = "visual-line", "Select whole lines from a line picked by label";
+        VisualLine = "visual-line", "Select whole lines from a line picked by label, or a figure";
         /// As flash.nvim's `s`.
         Flash = "flash", "Type text in view, then its label, to put a cursor there";
         /// As vim's `gv`.

@@ -262,7 +262,8 @@ note-color = "#fdd835"
 "g I" = "last-field"
 "g ;" = "field-again"
 
-# Selecting text: label every line in view, type a label to start there,
+# Selecting text: label every line, picture and figure in view, type a
+# label to start there or to select the figure,
 # move with h j k l, w b e, 0 $, and press y to copy
 "v" = "visual"
 "g v" = "select-again"

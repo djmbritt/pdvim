@@ -8,7 +8,9 @@ use std::path::PathBuf;
 
 use iced::Task;
 
-use super::{App, Labelled, Message, Notice, Wanted, document_by_id, open_externally, tilde};
+use super::{
+    App, Labelled, Message, Notice, TextFor, Wanted, document_by_id, open_externally, tilde,
+};
 use crate::backend::{self, Link, Target, TextLine};
 use crate::hints::{Hints, Outcome};
 use crate::input::LinkGoal;
@@ -92,15 +94,34 @@ impl App {
         let Some(document) = document_by_id(&mut self.tabs, id) else {
             return Task::none();
         };
-        match result {
-            Ok(pages) => document.figures.extend(pages),
-            Err(error) => {
-                self.notice = Notice::Error(error.to_string());
-                return Task::none();
+        let found = match result {
+            Ok(pages) => {
+                document.figures.extend(pages);
+                true
             }
-        }
-        if wanted && self.document().is_some_and(|document| document.id == id) {
+            Err(error) => {
+                // None for the pages in view, so that what waits for them,
+                // such as the labels on lines, goes on without.
+                let visible: Vec<u32> = document.reader.visible_pages().collect();
+                for page in visible {
+                    document.figures.entry(page).or_default();
+                }
+                self.notice = Notice::Error(error.to_string());
+                false
+            }
+        };
+        let in_view = self.document().is_some_and(|document| document.id == id);
+        if wanted && found && in_view {
             self.show_hints();
+        }
+        // The lines wait for the figures, to be labelled with them.
+        if let Some((wanted, TextFor::Lines(kind))) = self.lines_wanted
+            && wanted == id
+            && in_view
+            && self.lines_ready()
+        {
+            self.lines_wanted = None;
+            self.show_line_hints(kind);
         }
         Task::none()
     }
@@ -279,7 +300,7 @@ impl App {
     /// Selects a picture or figure in visual mode, starting it if need
     /// be with the cursor on the line of text nearest the figure, for a
     /// motion to go on from.
-    fn select_figure(&mut self, page: u32, area: Rect) -> Task<Message> {
+    pub(super) fn select_figure(&mut self, page: u32, area: Rect) -> Task<Message> {
         if let Some(visual) = &mut self.visual {
             visual.select_figure(page, area);
             return Task::none();
@@ -392,7 +413,7 @@ fn link_text(text: &Text, page: u32, link: &Link) -> String {
 
 /// The characters whose middles lie in an area, a line at a time, the
 /// lines separated by spaces.
-fn text_within(lines: &[TextLine], area: Rect) -> String {
+pub(super) fn text_within(lines: &[TextLine], area: Rect) -> String {
     let lines: Vec<String> = lines
         .iter()
         .map(|line| {
@@ -473,11 +494,39 @@ mod tests {
         assert_eq!(app.mode(), Mode::Cursor);
     }
 
+    /// Gives the app the figures of the first page, as the backend
+    /// answers.
+    fn found_figures(app: &mut App, id: u64) {
+        let figures = block_on(app.document().unwrap().backend.figures(vec![0]));
+        let _ = app.update(Message::FiguresFound(id, figures));
+    }
+
+    #[test]
+    fn v_labels_the_figures_with_the_lines_once_both_are_known() {
+        let (mut app, id) = showing("drawn.pdf");
+        read(&mut app, id, 0);
+        typing(&mut app, "v");
+        // The text is read; the figures are still being found.
+        assert!(app.line_hints.is_none());
+        found_figures(&mut app, id);
+        let (_, hints) = app.line_hints.as_ref().unwrap();
+        let figure = hints
+            .shown()
+            .find(|hint| matches!(hint.item, crate::app::Start::Figure(_)))
+            .unwrap();
+        assert!(hints.shown().any(|hint| matches!(hint.item, crate::app::Start::Text(_))));
+        let label: String = figure.label.iter().collect();
+        typing(&mut app, &label);
+        assert!(app.line_hints.is_none());
+        assert_eq!(app.mode(), Mode::Figure);
+    }
+
     #[test]
     fn the_labels_on_lines_give_way_to_the_figures() {
         let (mut app, id) = showing("drawn.pdf");
         read(&mut app, id, 0);
         typing(&mut app, "v");
+        found_figures(&mut app, id);
         assert!(app.line_hints.is_some());
         typing(&mut app, "I");
         assert!(app.line_hints.is_none());

@@ -425,6 +425,10 @@ impl Visual {
                     } else {
                         Kind::Lines
                     };
+                    // As `V` starts it from a label: at the line's end.
+                    if self.kind == Kind::Lines {
+                        self.stick_to_line_end(text);
+                    }
                     return Outcome::Stay;
                 }
                 // A text object is selected, from the cursor.
@@ -496,6 +500,14 @@ impl Visual {
                     return Outcome::Leave;
                 }
                 self.kind = kind;
+                // Lines are selected with the cursor at the end of its
+                // line, where it stays as it goes up and down; characters
+                // let it go.
+                if kind == Kind::Lines {
+                    self.stick_to_line_end(text);
+                } else {
+                    self.goal = None;
+                }
             }
             Binding::FindForward => self.finding = Some((true, false, times)),
             Binding::FindBackward => self.finding = Some((false, false, times)),
@@ -1810,6 +1822,21 @@ mod tests {
         assert_eq!(visual.kind, Kind::Characters);
         assert_eq!(visual.cursor(), spot(0, 0, 4));
         assert_eq!((visual.anchor, visual.cursor), (spot(0, 0, 4), spot(0, 0, 4)));
+    }
+
+    #[test]
+    fn selecting_lines_puts_the_cursor_at_the_end_of_its_line() {
+        let text = text();
+        let end = |line: usize| text[&0][line].chars.len() - 1;
+        let mut from_cursor = Visual::cursor_at(spot(0, 0, 2));
+        keys(&mut from_cursor, &text, "V");
+        assert_eq!(from_cursor.cursor(), spot(0, 0, end(0)));
+        keys(&mut from_cursor, &text, "j");
+        assert_eq!(from_cursor.cursor(), spot(0, 1, end(1)));
+        let mut switched = Visual::new(Kind::Characters, spot(0, 0, 2));
+        keys(&mut switched, &text, "V");
+        assert_eq!(switched.cursor(), spot(0, 0, end(0)));
+        assert_eq!(switched.anchor, spot(0, 0, 2));
     }
 
     #[test]

@@ -3,7 +3,11 @@ Type=Application
 Name=pdvim
 GenericName=PDF Reader
 Comment=A minimal, keyboard-driven PDF reader with vi keybindings
-Exec=pdvim %F
+# wgpu draws the window through Vulkan alone. Left to itself it starts
+# OpenGL as well, which loads LLVM and every vendor's EGL: 27 MB more in
+# memory and 210 MiB more mapped, for nothing. Where Vulkan does not work,
+# pdvim draws with tiny-skia instead.
+Exec=env WGPU_BACKEND=vulkan pdvim %F
 Icon=pdvim
 Terminal=false
 Categories=Office;Viewer;

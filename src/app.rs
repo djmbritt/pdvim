@@ -2357,6 +2357,7 @@ impl App {
             Setting::Smartcase(on) => self.finding.smartcase = on,
             Setting::PageMode(mode) => return self.set_page_mode(mode),
             Setting::PageBorders(on) => self.paging.borders = on,
+            Setting::PaperBackdrop(on) => self.paging.paper_backdrop = on,
             Setting::HintChars(letters) => self.hint_chars = letters,
             Setting::StatusBar(shown) => self.bars.status = shown,
         }
@@ -3915,6 +3916,8 @@ struct Paging {
     mode: PageMode,
     /// Whether a line is drawn round every page.
     borders: bool,
+    /// Whether the backdrop is the colour of the paper, not the theme's.
+    paper_backdrop: bool,
 }
 
 /// A document's table of contents.
@@ -4036,8 +4039,8 @@ impl canvas::Program<Message> for Pages<'_> {
     ) -> Vec<canvas::Geometry> {
         let app = self.0;
         let mut frame = canvas::Frame::new(renderer, bounds.size());
-        frame.fill_rectangle(Point::ORIGIN, bounds.size(), app.chrome().backdrop);
         let Some(document) = app.document() else {
+            frame.fill_rectangle(Point::ORIGIN, bounds.size(), app.chrome().backdrop);
             return vec![frame.into_geometry()];
         };
         // Until a page is rendered, a blank sheet stands in for it.
@@ -4046,6 +4049,14 @@ impl canvas::Program<Message> for Pages<'_> {
         } else {
             Color::WHITE
         };
+        // Behind the pages, the paper itself, so that pages and backdrop
+        // are one, or the theme's colour to set them apart.
+        let backdrop = if app.paging.paper_backdrop {
+            paper
+        } else {
+            app.chrome().backdrop
+        };
+        frame.fill_rectangle(Point::ORIGIN, bounds.size(), backdrop);
         for page in document.reader.visible_pages() {
             let Some(area) = document.reader.page_on_screen(page) else {
                 continue;

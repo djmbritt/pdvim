@@ -103,6 +103,7 @@ pub fn complete(line: &str) -> Completion {
             }
             Some("recolor") => words(last_word, ["true", "false", "auto"]),
             Some("page-mode") => words(last_word, crate::reader::PageMode::NAMES),
+            Some("backdrop") => words(last_word, ["paper", "theme"]),
             Some("theme") => words(last_word, std::iter::once("auto").chain(Theme::names())),
             Some("theme-dark" | "theme-light") => words(last_word, Theme::names()),
             Some("recolor-darkcolor" | "recolor-lightcolor") => words(last_word, ["theme"]),

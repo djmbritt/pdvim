@@ -73,6 +73,11 @@ page-mode = "continuous"
 # turns it on or off.
 page-borders = false
 
+# The color behind the pages: "theme", the theme's backdrop, which sets the
+# pages apart; or "paper", the color of the pages themselves, white or as
+# recolored, so that the pages and what is around them are one.
+backdrop = "theme"
+
 # Ask "quit pdvim? (y/n)" before quitting: when the last tab is closed,
 # with :qa, or when the window is closed. Press y to quit, any other key to
 # stay. Closing the window again while asked quits without asking.

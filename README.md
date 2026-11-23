@@ -175,7 +175,7 @@ Type a label to pick its link or field. Web and mail links open in your default 
 
 ### Selecting text
 
-`v` selects characters and `V` selects whole lines. Each line in view gets a label, and typing one starts the selection there. `s` puts just a cursor at the text you type instead, which moves without selecting until `v` or `V` starts a selection from it; while selecting, `s` moves the cursor to the text, as [flash.nvim](https://github.com/folke/flash.nvim) does.
+`v` selects characters and `V` selects whole lines. Each line in view gets a label, and typing one starts the selection there. `I` labels the pictures and figures in view instead, in normal mode, visual mode or while the lines are labelled, and typing a label selects that figure as a box. `s` puts just a cursor at the text you type instead, which moves without selecting until `v` or `V` starts a selection from it; while selecting, `s` moves the cursor to the text, as [flash.nvim](https://github.com/folke/flash.nvim) does.
 
 | Key in visual mode         | Action                                                     |
 | -------------------------- | ---------------------------------------------------------- |

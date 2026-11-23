@@ -341,7 +341,7 @@ fn hints_key(hints: &mut Hints<u32>, keymaps: &Keymaps, key: Key) -> bool {
             assert_eq!(hint.page, hint.item);
             false
         }
-        hints::Outcome::Cancel | hints::Outcome::NoMatch => false,
+        hints::Outcome::Cancel | hints::Outcome::NoMatch | hints::Outcome::Figures => false,
     }
 }
 

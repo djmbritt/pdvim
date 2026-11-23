@@ -354,6 +354,8 @@ bindable! {
         YankTitle = "yank-title", "Copy the document's title, or its file's name";
         YankPage = "yank-page", "Copy the text of the page in view";
         YankPicture = "yank-picture", "Label the pictures and figures in view; type a label to copy one";
+        /// Visual mode starts with it selected: `y` copies it, `H` marks it.
+        SelectFigure = "select-figure", "Label the pictures and figures in view, to select one";
         /// Like `:info`.
         Info = "info", "Show the document's title, author, dates and more";
         Abort = "abort", "Cancel a half-typed command, hide highlights";
@@ -433,6 +435,7 @@ impl Binding {
             Self::FollowLinkTab => Action::FollowLink(LinkGoal::NewTab),
             Self::YankLink => Action::FollowLink(LinkGoal::Copy),
             Self::YankPicture => Action::FollowLink(LinkGoal::Picture),
+            Self::SelectFigure => Action::FollowLink(LinkGoal::SelectFigure),
             Self::Visual => Action::Visual { lines: false },
             Self::VisualLine => Action::Visual { lines: true },
             Self::Flash => Action::Flash,

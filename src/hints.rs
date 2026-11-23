@@ -14,6 +14,8 @@ bindable! {
         /// Typed after it, text narrows the labels to the things that hold
         /// it, such as the words of a link.
         Filter = "filter", "Narrow the labels by text typed next; enter picks the only one left";
+        /// From the labels on lines after `v` or `V`, say.
+        Figures = "figures", "Label the pictures and figures instead, to select one";
     }
 }
 
@@ -46,6 +48,8 @@ pub enum Outcome<T> {
     Cancel,
     /// No label starts like that: put the labels away and say so.
     NoMatch,
+    /// Label the pictures and figures in view instead, to select one.
+    Figures,
 }
 
 /// The labels shown, and the first letter of one if it has been typed.
@@ -154,7 +158,7 @@ impl<T: Clone> Hints<T> {
     pub fn feed(&mut self, key: Key, keymap: &Keymap<Binding>) -> Outcome<T> {
         let fed = self.pending.feed(key, keymap, Counts::NotTaken);
         if self.filtering {
-            return self.narrow(fed);
+            return self.narrow(fed, key);
         }
         let letter = match fed {
             Fed::Bound(Binding::Cancel, _) => return Outcome::Cancel,
@@ -169,6 +173,7 @@ impl<T: Clone> Hints<T> {
                 self.filtering = true;
                 return Outcome::Wait;
             }
+            Fed::Bound(Binding::Figures, _) => return Outcome::Figures,
             // The last key of a sequence bound to nothing is a letter of a
             // label, if it is a letter at all.
             Fed::Unbound(keys) => match keys.last() {
@@ -193,7 +198,7 @@ impl<T: Clone> Hints<T> {
     /// Takes a key while text to narrow the labels is typed. Enter picks
     /// the only label left, or stops typing text so that a label can be
     /// typed.
-    fn narrow(&mut self, fed: Fed<Binding>) -> Outcome<T> {
+    fn narrow(&mut self, fed: Fed<Binding>, key: Key) -> Outcome<T> {
         match fed {
             Fed::Bound(Binding::Cancel, _) => return Outcome::Cancel,
             Fed::Bound(Binding::Back, _) => {
@@ -215,6 +220,12 @@ impl<T: Clone> Hints<T> {
                 _ => None,
             })),
             Fed::Bound(Binding::Filter, _) => self.filter.push('/'),
+            // Text being typed, the key is a letter of it.
+            Fed::Bound(Binding::Figures, _) => {
+                if let Key::Char(character) = key {
+                    self.filter.push(character);
+                }
+            }
             Fed::Waiting | Fed::Command(..) => return Outcome::Wait,
         }
         self.label();
@@ -263,6 +274,16 @@ mod tests {
             .shown()
             .map(|hint| hint.label.iter().collect())
             .collect()
+    }
+
+    #[test]
+    fn capital_i_asks_for_the_figures_but_is_typed_into_text() {
+        let keymap = crate::bindings::Keymaps::default().hints;
+        let mut hints = Hints::new(links(3), &home_row()).unwrap();
+        assert_eq!(hints.feed(Key::Char('I'), &keymap), Outcome::Figures);
+        assert_eq!(hints.feed(Key::Char('/'), &keymap), Outcome::Wait);
+        assert_eq!(hints.feed(Key::Char('I'), &keymap), Outcome::Wait);
+        assert_eq!(hints.filter(), Some("I"));
     }
 
     #[test]

@@ -105,7 +105,7 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
         ),
         (
             "Selecting text",
-            &[B::Visual, B::VisualLine, B::Flash, B::SelectAgain],
+            &[B::Visual, B::VisualLine, B::Flash, B::SelectFigure, B::SelectAgain],
         ),
         (
             "Highlights and other markings",

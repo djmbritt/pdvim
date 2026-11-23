@@ -262,6 +262,9 @@ note-color = "#fdd835"
 "v" = "visual"
 "g v" = "select-again"
 "V" = "visual-line"
+# Label the pictures and figures in view; type a label to select one, then
+# y copies it as a picture and H, U, S and W mark it
+"I" = "select-figure"
 # As flash.nvim's s: type some of the text in view, and each match gets a
 # label; type a label to put a cursor there, or enter for the nearest.
 # The cursor moves without selecting until v or V starts a selection
@@ -389,6 +392,8 @@ note-color = "#fdd835"
 # Then type some of a link's text to label only the links that hold it;
 # enter picks the only one left, or lets you type a label
 "/" = "filter"
+# From the labels on lines, label the pictures and figures instead
+"I" = "figures"
 
 [keys.overview]
 

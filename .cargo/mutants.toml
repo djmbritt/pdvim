@@ -1,0 +1,29 @@
+# cargo-mutants: changes pdvim's code in small ways, one at a time, and
+# runs the tests on each change, to find the changes no test notices.
+#
+#   cargo mutants --file src/layout.rs
+#
+# The whole of it is thousands of changes and takes a day; run it a file
+# or two at a time. What is left alive is listed in
+# mutants.out/missed.txt.
+
+# Not pdvim itself: the tests' helpers, the benchmarks' and the fuzz
+# targets' entry points; and what no test can run, as coverage.sh leaves
+# out.
+exclude_globs = [
+    "src/app/testing.rs",
+    "src/app/every_key.rs",
+    "src/app/drawing.rs",
+    "src/languages.rs",
+    "src/bench.rs",
+    "src/fuzz.rs",
+    "src/main.rs",
+    "src/clipboard.rs",
+]
+
+# Only the library's tests: the benchmarks and doc tests find nothing more.
+additional_cargo_test_args = ["--lib"]
+
+# Leave out of the copies each change is built in what git leaves out:
+# the build directories, the fuzz targets' among them, are many gigabytes.
+gitignore = true

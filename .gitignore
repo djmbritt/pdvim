@@ -10,3 +10,4 @@
 /.flatpak-builder
 /.rust-review-results
 /result
+/mutants.out*

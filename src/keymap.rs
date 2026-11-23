@@ -420,6 +420,15 @@ mod tests {
     }
 
     #[test]
+    fn a_hint_shows_the_first_keys_bound_or_a_dash() {
+        let mut keymap = keymap();
+        assert_eq!(keymap.first(Test::Down), "j");
+        assert_eq!(keymap.first(Test::Top), "g g");
+        keymap.unbind(&parse_keys("0").unwrap());
+        assert_eq!(keymap.first(Test::Zero), "-");
+    }
+
+    #[test]
     fn keys_parse() {
         assert_eq!(parse_keys("g  g"), Ok(vec![Key::Char('g'), Key::Char('g')]));
         assert_eq!(parse_keys("ctrl+d"), Ok(vec![Key::Ctrl('d')]));

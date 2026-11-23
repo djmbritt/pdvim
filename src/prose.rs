@@ -156,6 +156,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn each_script_without_spaces_is_a_kind_of_its_own() {
+        // Punctuation, hiragana, katakana, Chinese, Thai, Lao, Khmer and
+        // Myanmar, full-width forms with their scripts.
+        let kinds: Vec<Option<u8>> = ['。', '！', 'ひ', 'カ', 'ｶ', '字', 'ก', 'ກ', 'ក', 'က']
+            .into_iter()
+            .map(unspaced)
+            .collect();
+        let expected = [1, 1, 2, 3, 3, 4, 5, 6, 7, 8].map(Some);
+        assert_eq!(kinds, expected);
+        for spaced in ['a', 'é', 'Ж', 'ا', 'अ', '한', ' ', '.', '1'] {
+            assert_eq!(unspaced(spaced), None, "{spaced}");
+        }
+    }
+
+    #[test]
+    fn a_line_runs_on_without_a_space_when_either_side_is_unspaced() {
+        assert!(runs_on("用", "字"));
+        assert!(runs_on("打开 PDF", "文件"));
+        assert!(runs_on("文件", "PDF 打开"));
+        assert!(!runs_on("open the", "file"));
+    }
+
+    #[test]
     fn the_lines_of_a_paragraph_run_on() {
         assert_eq!(
             join([("The quick   brown", true), ("fox jumps.", false)]),

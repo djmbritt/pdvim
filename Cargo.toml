@@ -73,3 +73,12 @@ panic_in_result_fn = "deny"
 panic = "deny"
 exit = "deny"
 as_conversions = "deny"
+
+[dev-dependencies]
+# Times the hot paths: `cargo bench`, with the benchmarks in benches/. The
+# reports to browse go in target/criterion/.
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support", "plotters", "html_reports"] }
+
+[[bench]]
+name = "hot_paths"
+harness = false

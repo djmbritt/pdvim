@@ -13,10 +13,13 @@
 //!   the documents read lately to pick from;
 //! - `app` is the window that ties them together;
 //! - `fuzz` drives the parsers, the key handling and MuPDF with arbitrary
-//!   input, for the targets in `fuzz/`.
+//!   input, for the targets in `fuzz/`, and `bench` times the hot paths,
+//!   for the benchmarks in `benches/`.
 
 mod app;
 mod backend;
+#[doc(hidden)]
+pub mod bench;
 mod bindings;
 mod clipboard;
 mod command;

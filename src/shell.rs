@@ -78,7 +78,7 @@ pub fn run(command: String) -> impl Future<Output = Result<Ran, Error>> {
     let spawned = std::thread::Builder::new()
         .name("pdvim-shell".to_owned())
         .spawn(move || {
-            let _ = reply.send(run_now(&command));
+            let _: Result<(), _> = reply.send(run_now(&command));
         });
     async move {
         spawned.map_err(|error| Error::NotRun(error.to_string()))?;

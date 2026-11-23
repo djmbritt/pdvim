@@ -128,6 +128,7 @@ fn key(byte: u8) -> Key {
 }
 
 /// Reads a configuration file.
+#[expect(clippy::wildcard_enum_match_arm, reason = "only the rules for paths are checked further")]
 pub fn config(data: &[u8]) {
     let text = String::from_utf8_lossy(data);
     let (commands, problems) = config::parse(&text);
@@ -154,7 +155,7 @@ pub fn config(data: &[u8]) {
             // Patterns of paths match, or not, without trouble.
             Command::PathRule(rule) => {
                 for path in ["/a/b/c.pdf", "relative.cbz", "/", "", "/x/**/y"] {
-                    let _ = crate::paths::settings_for(
+                    let _: crate::paths::Settings = crate::paths::settings_for(
                         std::slice::from_ref(&rule),
                         std::path::Path::new(path),
                     );
@@ -164,7 +165,7 @@ pub fn config(data: &[u8]) {
         }
     }
     let help = Help::new(&keymaps);
-    let _ = help.shown(usize::MAX);
+    let _: &[_] = help.shown(usize::MAX);
 }
 
 /// Whether keys are bound to something, in its mode.
@@ -187,7 +188,7 @@ fn bound_to(keymaps: &Keymaps, keys: &[Key], bound: Bound) -> bool {
 /// Parses a line typed after `:`, and completes it.
 pub fn command(data: &[u8]) {
     let line = String::from_utf8_lossy(data);
-    let _ = command::parse(&line);
+    let _: Result<Option<_>, _> = command::parse(&line);
     // Paths are completed from the files on disk, which would make the
     // outcome depend on the machine; the rest is completed from lists.
     let name = line.split_whitespace().next().unwrap_or_default();
@@ -267,7 +268,7 @@ pub fn modes(data: &[u8]) {
     let keymaps = Keymaps::default();
     let mut pending = Pending::new();
     let mut help = Help::new(&keymaps);
-    let letters: Vec<char> = crate::hints::HOME_ROW.chars().collect();
+    let letters: Vec<char> = hints::HOME_ROW.chars().collect();
     let mut hints = Hints::new(
         (0..num::len(labels)).map(|item| (item, item)).collect(),
         &letters,
@@ -290,8 +291,8 @@ pub fn modes(data: &[u8]) {
         .map(|&(page, line)| Visual::new(kind, Spot::line_start(page, line)));
 
     for key in bytes.keys() {
-        let _ = pending.feed(key, &keymaps.normal, Counts::Taken);
-        let _ = pending.display();
+        let _: keymap::Fed<_> = pending.feed(key, &keymaps.normal, Counts::Taken);
+        let _: String = pending.display();
         help_key(&mut help, &keymaps, key, rows);
         if let Some(labelled) = &mut hints
             && !hints_key(labelled, &keymaps, key)
@@ -324,7 +325,11 @@ fn help_key(help: &mut Help, keymaps: &Keymaps, key: Key, rows: usize) {
     let (top, count) = help.position();
     let shown = help.shown(rows).len();
     assert!(top <= count, "the cheat sheet is scrolled past its end");
-    assert_eq!(shown, rows.min(count.saturating_sub(top)));
+    assert_eq!(
+        shown,
+        rows.min(count.saturating_sub(top)),
+        "the cheat sheet shows other than the rows in view"
+    );
     if count >= rows {
         assert_eq!(shown, rows, "the cheat sheet leaves rows empty");
     }
@@ -351,7 +356,7 @@ fn hints_key(hints: &mut Hints<u32>, keymaps: &Keymaps, key: Key) -> bool {
         }
         hints::Outcome::Picked(hint) => {
             // Each thing was labelled with its own number.
-            assert_eq!(hint.page, hint.item);
+            assert_eq!(hint.page, hint.item, "a label picked another thing than its own");
             false
         }
         hints::Outcome::Cancel | hints::Outcome::NoMatch | hints::Outcome::Figures => false,
@@ -362,10 +367,13 @@ fn hints_key(hints: &mut Hints<u32>, keymaps: &Keymaps, key: Key) -> bool {
 fn picker_key(picker: &mut Picker<PathBuf>, keymaps: &Keymaps, key: Key) -> bool {
     let outcome = picker.feed(key, &keymaps.recent);
     let shown = picker.shown().count();
-    assert!(picker.selected() < shown.max(1));
+    assert!(picker.selected() < shown.max(1), "the entry selected is not shown");
     match outcome {
         Some(Choice::Open(path)) => {
-            assert!(picker.shown().any(|entry| entry.value == path));
+            assert!(
+                picker.shown().any(|entry| entry.value == path),
+                "opened an entry not shown"
+            );
             false
         }
         Some(Choice::Close) => false,
@@ -421,13 +429,13 @@ fn visual_key(selection: &mut Visual, keymaps: &Keymaps, key: Key, text: &Text) 
     let areas = selection.areas(text);
     assert!(!areas.is_empty(), "nothing is selected");
     let selected = selection.text(text);
-    let _ = selection.neighbours(PAGES);
+    let _: Vec<u32> = selection.neighbours(PAGES);
     match outcome {
         visual::Outcome::Stay | visual::Outcome::Flash | visual::Outcome::Figure => true,
         // Spaces at the ends of lines are left out, so a selection of
         // spaces copies nothing.
         visual::Outcome::Copy(copied) => {
-            assert_eq!(copied, selected);
+            assert_eq!(copied, selected, "copied other than the selection");
             false
         }
         visual::Outcome::Mark(_, areas) | visual::Outcome::Unmark(areas) => {
@@ -447,7 +455,8 @@ fn visual_key(selection: &mut Visual, keymaps: &Keymaps, key: Key, text: &Text) 
         } => {
             assert_eq!(
                 searched,
-                selected.split_whitespace().collect::<Vec<_>>().join(" ")
+                selected.split_whitespace().collect::<Vec<_>>().join(" "),
+                "searched for other than the selection"
             );
             assert!(!searched.is_empty(), "searched for nothing");
             assert!(
@@ -618,7 +627,7 @@ pub fn reader(data: &[u8]) {
 
 fn check_reader(reader: &Reader, count: usize) {
     let pages = reader.page_count();
-    assert_eq!(num::index(pages), count);
+    assert_eq!(num::index(pages), count, "the reader lost count of the pages");
     let zoom = reader.zoom();
     assert!(zoom.is_finite() && zoom > 0.0, "zoom is {zoom}");
     let view = reader.view(false);
@@ -643,7 +652,7 @@ fn check_reader(reader: &Reader, count: usize) {
         );
     }
     for page in visible {
-        let _ = reader.page_on_screen(page);
+        let _: Option<_> = reader.page_on_screen(page);
     }
 }
 

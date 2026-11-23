@@ -198,6 +198,7 @@ impl<T: Clone> Hints<T> {
     /// Takes a key while text to narrow the labels is typed. Enter picks
     /// the only label left, or stops typing text so that a label can be
     /// typed.
+    #[expect(clippy::wildcard_enum_match_arm, reason = "the other keys do nothing here")]
     fn narrow(&mut self, fed: Fed<Binding>, key: Key) -> Outcome<T> {
         match fed {
             Fed::Bound(Binding::Cancel, _) => return Outcome::Cancel,

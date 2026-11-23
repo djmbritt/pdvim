@@ -81,6 +81,10 @@ impl App {
 impl App {
     /// Deals with a document that did not open: asks for its password if
     /// it is locked, and otherwise says why.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "the other errors are not about the password"
+    )]
     pub(super) fn not_opened(&mut self, request: u64, path: PathBuf, error: backend::Error) {
         match error {
             backend::Error::Encrypted(_) => self.ask_password(request, path, false),

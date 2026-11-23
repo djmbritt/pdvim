@@ -24,7 +24,7 @@ pub fn copy_picture(
     let spawned = std::thread::Builder::new()
         .name("pdvim-clipboard".to_owned())
         .spawn(move || {
-            let _ = reply.send(copy_now(width, height, pixels));
+            let _: Result<(), _> = reply.send(copy_now(width, height, pixels));
         });
     async move {
         spawned.map_err(|error| error.to_string())?;

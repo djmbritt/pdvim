@@ -9,6 +9,11 @@ use std::process::ExitCode;
 
 const USAGE: &str = "usage: pdvim [FILE]...\n       pdvim --version";
 
+#[expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "the version and usage asked for, and why no window could be made"
+)]
 fn main() -> ExitCode {
     let paths: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
     if paths

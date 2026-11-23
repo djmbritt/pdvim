@@ -196,6 +196,7 @@ impl Editor {
 }
 
 /// Takes a key while typing text.
+#[expect(clippy::wildcard_enum_match_arm, reason = "the other keys do nothing here")]
 fn edit_text(text: &mut Vec<char>, cursor: &mut usize, fed: Fed<PromptBinding>) -> Typed {
     use PromptBinding as B;
     match fed {
@@ -247,6 +248,7 @@ fn edit_text(text: &mut Vec<char>, cursor: &mut usize, fed: Fed<PromptBinding>) 
 }
 
 /// Takes a key while picking from a list, of which so many are shown.
+#[expect(clippy::wildcard_enum_match_arm, reason = "the other keys do nothing here")]
 fn pick(
     options: &[String],
     typed: &mut String,
@@ -402,7 +404,10 @@ impl App {
             FieldKind::Checkbox { on } | FieldKind::Radio { on } if field.value != *on => {
                 on.clone()
             }
-            _ => return Task::none(),
+            FieldKind::Text
+            | FieldKind::Choice(_)
+            | FieldKind::Checkbox { .. }
+            | FieldKind::Radio { .. } => return Task::none(),
         };
         let filled = Edit::Filled {
             widget: field.widget,

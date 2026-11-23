@@ -24,7 +24,7 @@ impl FromStr for Rgb {
         if digits.len() != 6 || !digits.is_ascii() {
             return Err(invalid());
         }
-        let value = u32::from_str_radix(digits, 16).map_err(|_| invalid())?;
+        let value = u32::from_str_radix(digits, 16).map_err(|_not_hex| invalid())?;
         let [_, red, green, blue] = value.to_be_bytes();
         Ok(Self(red, green, blue))
     }
@@ -134,11 +134,11 @@ mod tests {
     fn colours_parse_from_hex() {
         assert_eq!("#1a2B3c".parse(), Ok(Rgb(0x1a, 0x2b, 0x3c)));
         assert_eq!("#000000".parse(), Ok(Rgb(0, 0, 0)));
-        assert!("1a2b3c".parse::<Rgb>().is_err());
-        assert!("#1a2b3".parse::<Rgb>().is_err());
-        assert!("#1a2b3cc".parse::<Rgb>().is_err());
-        assert!("#gggggg".parse::<Rgb>().is_err());
-        assert!("#ééé".parse::<Rgb>().is_err());
+        "1a2b3c".parse::<Rgb>().unwrap_err();
+        "#1a2b3".parse::<Rgb>().unwrap_err();
+        "#1a2b3cc".parse::<Rgb>().unwrap_err();
+        "#gggggg".parse::<Rgb>().unwrap_err();
+        "#ééé".parse::<Rgb>().unwrap_err();
     }
 
     #[test]

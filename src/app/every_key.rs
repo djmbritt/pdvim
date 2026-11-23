@@ -6,6 +6,9 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+use iced::Element;
+
+use super::Message;
 use super::testing::Session;
 use crate::bindings::Keymaps;
 use crate::command;
@@ -30,8 +33,8 @@ fn unsound(session: &Session) -> Option<String> {
         }
     }
     // The window can still be made of it.
-    let _ = session.app.view();
-    let _ = session.app.mode();
+    let _: Element<'_, Message> = session.app.view();
+    let _: super::mode::Mode = session.app.mode();
     None
 }
 

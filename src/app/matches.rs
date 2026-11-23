@@ -198,6 +198,7 @@ mod app_tests {
     use crate::app::pointer::{Click, Pointer};
     use crate::app::testing::{on_screen, read, selected, showing};
     use crate::app::{Action, App, Message, Search, move_view};
+    use iced::Task;
 
     /// Searches the document in view at once, as `/` does once the
     /// backend answers.
@@ -209,7 +210,7 @@ mod app_tests {
             forward: true,
             whole_word,
         };
-        let _ = app.update(Message::Found(id, search, found));
+        let _: Task<Message> = app.update(Message::Found(id, search, found));
         app.document().unwrap().results.hits.len()
     }
 
@@ -231,7 +232,7 @@ mod app_tests {
     fn every_match_is_listed_with_its_line_once_the_text_is_read() {
         let (mut app, id) = showing("text.pdf");
         assert_eq!(search(&mut app, id, "line", false), 2);
-        let _ = app.show_matches();
+        let _: Task<Message> = app.show_matches();
         assert!(app.match_list.is_none(), "listed before the text is read");
         read(&mut app, id, 0);
         let (needle, list) = app.match_list.as_ref().unwrap();
@@ -244,7 +245,7 @@ mod app_tests {
                 "    1  second line -- with words"
             ]
         );
-        let _ = app.update(Message::Clicked(Click::Match(1)));
+        let _: Task<Message> = app.update(Message::Clicked(Click::Match(1)));
         assert!(app.match_list.is_none());
         assert_eq!(app.document().unwrap().results.current, Some(1));
     }
@@ -253,19 +254,19 @@ mod app_tests {
     fn the_last_selection_is_selected_again() {
         let (mut app, id) = showing("text.pdf");
         read(&mut app, id, 0);
-        let _ = app.select_again();
+        let _: Task<Message> = app.select_again();
         assert!(app.visual.is_none());
         // A double click on "world" selects it; a click leaves.
         let word = on_screen(&app, 0, (130.0, 66.0));
         for _ in 0..2 {
-            let _ = app.update(Message::Pointer(Pointer::Press(word, true)));
-            let _ = app.update(Message::Pointer(Pointer::Release(word)));
+            let _: Task<Message> = app.update(Message::Pointer(Pointer::Press(word, true)));
+            let _: Task<Message> = app.update(Message::Pointer(Pointer::Release(word)));
         }
         app.mouse = crate::app::pointer::Mouse::default();
-        let _ = app.update(Message::Pointer(Pointer::Press(word, true)));
-        let _ = app.update(Message::Pointer(Pointer::Release(word)));
+        let _: Task<Message> = app.update(Message::Pointer(Pointer::Press(word, true)));
+        let _: Task<Message> = app.update(Message::Pointer(Pointer::Release(word)));
         assert!(app.visual.is_none());
-        let _ = app.select_again();
+        let _: Task<Message> = app.select_again();
         assert_eq!(selected(&app), "world");
     }
 

@@ -485,6 +485,7 @@ pub enum MarkupKind {
 
 impl MarkupKind {
     /// The kind of marking an annotation is, if it is one.
+    #[expect(clippy::wildcard_enum_match_arm, reason = "the other annotations are not markings")]
     const fn of(kind: mupdf::pdf::PdfAnnotationType) -> Option<Self> {
         match kind {
             mupdf::pdf::PdfAnnotationType::Highlight => Some(Self::Highlight),
@@ -619,19 +620,24 @@ pub struct Backend {
 }
 
 impl Backend {
+    /// Hands a request to the worker. A send only fails when the worker is
+    /// gone; the reply channel is then dropped too, which the asker's await
+    /// reports as closed.
+    fn ask(&self, request: Request) {
+        let _: Result<(), mpsc::SendError<Request>> = self.requests.send(request);
+    }
+
     /// Renders a page.
     pub fn render(&self, job: RenderJob) -> impl Future<Output = Result<Bitmap, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        // A send only fails when the worker is gone. The reply channel is
-        // then dropped too, which the await below reports as closed.
-        let _ = self.requests.send(Request::Render(job, reply));
+        self.ask(Request::Render(job, reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
     /// Finds every place the text occurs, in page order.
     pub fn search(&self, needle: Needle) -> impl Future<Output = Result<Vec<Hit>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.requests.send(Request::Search(needle, None, reply));
+        self.ask(Request::Search(needle, None, reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -642,9 +648,7 @@ impl Backend {
         pages: Vec<u32>,
     ) -> impl Future<Output = Result<Vec<Hit>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self
-            .requests
-            .send(Request::Search(needle, Some(pages), reply));
+        self.ask(Request::Search(needle, Some(pages), reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -655,13 +659,13 @@ impl Backend {
         pages: Vec<u32>,
     ) -> impl Future<Output = Result<PageFigures, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.requests.send(Request::Figures(pages, reply));
+        self.ask(Request::Figures(pages, reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
     pub fn links(&self, pages: Vec<u32>) -> impl Future<Output = Result<PageLinks, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.requests.send(Request::Links(pages, reply));
+        self.ask(Request::Links(pages, reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -669,13 +673,13 @@ impl Backend {
     /// Writes a page to a file, as an image or a drawing.
     pub fn export(&self, export: Export) -> impl Future<Output = Result<(), Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.requests.send(Request::Export(export, reply));
+        self.ask(Request::Export(export, reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
     pub fn text(&self, pages: Vec<u32>) -> impl Future<Output = Result<PageText, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.requests.send(Request::Text(pages, reply));
+        self.ask(Request::Text(pages, reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -687,7 +691,7 @@ impl Backend {
         highlight: Markup,
     ) -> impl Future<Output = Result<Vec<Annotation>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.requests.send(Request::Markup(highlight, reply));
+        self.ask(Request::Markup(highlight, reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -698,7 +702,7 @@ impl Backend {
         annotations: Vec<Annotation>,
     ) -> impl Future<Output = Result<Vec<Marking>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.requests.send(Request::Remove(annotations, reply));
+        self.ask(Request::Remove(annotations, reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -709,7 +713,7 @@ impl Backend {
         markings: Vec<Marking>,
     ) -> impl Future<Output = Result<Vec<Annotation>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.requests.send(Request::Restore(markings, reply));
+        self.ask(Request::Restore(markings, reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -719,7 +723,7 @@ impl Backend {
     /// page, in reading order, each with its area.
     pub fn fields(&self) -> impl Future<Output = Result<Vec<(Rect, Field)>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.requests.send(Request::Fields(reply));
+        self.ask(Request::Fields(reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -730,7 +734,7 @@ impl Backend {
         value: String,
     ) -> impl Future<Output = Result<String, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.requests.send(Request::Fill(widget, value, reply));
+        self.ask(Request::Fill(widget, value, reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -740,16 +744,14 @@ impl Backend {
         text: String,
     ) -> impl Future<Output = Result<Option<String>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self
-            .requests
-            .send(Request::SetNote(annotation, text, reply));
+        self.ask(Request::SetNote(annotation, text, reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
     /// Finds every marking in the document, in reading order.
     pub fn markings(&self) -> impl Future<Output = Result<Vec<Marking>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.requests.send(Request::Markings(reply));
+        self.ask(Request::Markings(reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -759,14 +761,14 @@ impl Backend {
     /// document's own file alone.
     pub fn save(&self, target: Option<PathBuf>) -> impl Future<Output = Result<(), Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.requests.send(Request::Save(target, reply));
+        self.ask(Request::Save(target, reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
     /// Reads the table of contents, which may be empty.
     pub fn outline(&self) -> impl Future<Output = Result<Vec<Chapter>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.requests.send(Request::Outline(reply));
+        self.ask(Request::Outline(reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -776,7 +778,7 @@ impl Backend {
     /// meanwhile.
     pub fn guess_outline(&self) -> impl Future<Output = Result<Vec<Chapter>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.requests.send(Request::GuessOutline(reply));
+        self.ask(Request::GuessOutline(reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 
@@ -785,7 +787,7 @@ impl Backend {
     /// its whole area.
     pub fn measure(&self) -> impl Future<Output = Result<Vec<Rect>, Error>> + use<> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.requests.send(Request::Measure(reply));
+        self.ask(Request::Measure(reply));
         async move { answer.await.unwrap_or(Err(Error::Closed)) }
     }
 }
@@ -825,7 +827,7 @@ pub fn open(
                     document
                 }
                 Err(error) => {
-                    let _ = reply.send(Err(error));
+                    reply.answer(Err(error));
                     return;
                 }
             };
@@ -850,10 +852,23 @@ pub fn open(
     }
 }
 
+/// Answering a request.
+trait Answer<T> {
+    /// Sends the answer. The asker may have stopped waiting, as when a page
+    /// is scrolled away before it is drawn: then no one wants it.
+    fn answer(self, value: T);
+}
+
+impl<T> Answer<T> for oneshot::Sender<T> {
+    fn answer(self, value: T) {
+        let _: Result<(), T> = self.send(value);
+    }
+}
+
 /// A path as MuPDF takes it: as it is on Unix, and as text on Windows,
 /// where it must be valid UTF-8.
 #[cfg(unix)]
-#[allow(clippy::unnecessary_wraps)]
+#[expect(clippy::unnecessary_wraps, reason = "the same result as on Windows, where it can fail")]
 const fn file_path(path: &Path) -> Result<&Path, mupdf::Error> {
     Ok(path)
 }
@@ -993,18 +1008,18 @@ pub fn examine(bytes: &[u8], magic: &str, pages: u32) {
     let Ok(sizes) = page_sizes(&document, flow) else {
         return;
     };
-    let _ = outline(&document, || Document::from_bytes(bytes, magic));
+    let _: Result<Vec<Chapter>, _> = outline(&document, || Document::from_bytes(bytes, magic));
     for number in (0..num::len(sizes.len())).take(num::index(pages)) {
         // The fuzzer stops at the first panic, before an unwind could be
         // caught, so the panic the worker already guards against is let
         // through quietly here.
         let hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(|_| {}));
-        let _ = guarded_links(&document, number);
+        let _: Result<Vec<Link>, _> = guarded_links(&document, number);
         std::panic::set_hook(hook);
-        let _ = page_text(&document, number);
-        let _ = page_hits(&document, number, "e");
-        let _ = page_content(&document, number);
+        let _: Result<Vec<TextLine>, _> = page_text(&document, number);
+        let _: Result<Vec<Hit>, _> = page_hits(&document, number, "e");
+        let _: Result<Rect, _> = page_content(&document, number);
         // The cap on the size of a rendering is lower than the reader's,
         // as the fuzzer slows every pixel, but it is met the same way: from
         // a recording, played twice as the worker plays it again.
@@ -1012,7 +1027,7 @@ pub fn examine(bytes: &[u8], magic: &str, pages: u32) {
             continue;
         };
         for rotation in [Rotation::None, Rotation::Quarter] {
-            let _ = render(
+            let _: Result<Bitmap, _> = render(
                 &recording,
                 RenderJob {
                     page: number,
@@ -1036,7 +1051,7 @@ fn guarded_links(document: &Document, number: u32) -> Result<Vec<Link>, Error> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         page_links(document, number)
     }))
-    .map_err(|_| {
+    .map_err(|_panic| {
         Error::Links(format!(
             "a link on page {} is broken",
             number.saturating_add(1)
@@ -1275,7 +1290,7 @@ fn styled_text(
                 }
                 count = count.saturating_add(1);
                 sizes += text_char.size();
-                if text_char.flags().contains(mupdf::TextCharFlags::BOLD)
+                if text_char.flags().contains(TextCharFlags::BOLD)
                     || text_char.font().is_some_and(|font| font.is_bold())
                 {
                     bold = bold.saturating_add(1);
@@ -1288,7 +1303,7 @@ fn styled_text(
             let area = line.bounds();
             lines.push(crate::contents::Line {
                 text: text.to_owned(),
-                size: sizes / crate::num::float(crate::num::len(count)),
+                size: sizes / num::float(num::len(count)),
                 bold: bold.saturating_mul(2) > count,
                 left: area.x0 - bounds.x0,
                 top: area.y0 - bounds.y0,
@@ -1313,7 +1328,7 @@ fn settle(pdf: &mupdf::pdf::PdfDocument) {
         .count_objects()
         .is_ok_and(|count| u32::try_from(number).is_ok_and(|number| number < count))
     {
-        let _ = pdf.xref_object(number);
+        let _: Result<Option<_>, _> = pdf.xref_object(number);
         number = number.saturating_add(1);
     }
 }
@@ -1528,7 +1543,7 @@ fn options(widget: &mupdf::pdf::PdfWidget) -> Result<Vec<String>, mupdf::Error> 
 fn fill_in(document: &Document, (number, xref): Annotation, value: &str) -> Result<String, Error> {
     let failed = |error: mupdf::Error| Error::Form(error.to_string());
     let mut pdf = mupdf::pdf::PdfDocument::try_from(document.clone())
-        .map_err(|_| Error::Form("only PDF files have forms".to_owned()))?;
+        .map_err(|_not_pdf| Error::Form("only PDF files have forms".to_owned()))?;
     if !pdf.can_be_saved_incrementally() {
         settle(&pdf);
     }
@@ -1778,7 +1793,7 @@ fn text_within(lines: &[TextLine], areas: &[Rect]) -> String {
                 .collect()
         })
         .collect();
-    crate::prose::join(parts.iter().map(|part| (part.as_str(), false)))
+    prose::join(parts.iter().map(|part| (part.as_str(), false)))
 }
 
 /// Puts an annotation over areas of a page, measured from its corner: a
@@ -1824,7 +1839,7 @@ fn quads(areas: &[Rect], bounds: &mupdf::Rect) -> Vec<mupdf::Quad> {
 /// changes; saving such a file rewrites it whole.
 fn editable(document: &Document) -> Result<mupdf::pdf::PdfDocument, Error> {
     let pdf = mupdf::pdf::PdfDocument::try_from(document.clone())
-        .map_err(|_| Error::Markup("only PDF files can be marked".to_owned()))?;
+        .map_err(|_not_pdf| Error::Markup("only PDF files can be marked".to_owned()))?;
     if !pdf.can_be_saved_incrementally() {
         settle(&pdf);
     }
@@ -1841,7 +1856,7 @@ fn editable(document: &Document) -> Result<mupdf::pdf::PdfDocument, Error> {
 fn save_to(document: &Document, path: &Path, target: Option<&Path>) -> Result<(), Error> {
     let failed = |error: mupdf::Error| Error::Save(error.to_string());
     let pdf = mupdf::pdf::PdfDocument::try_from(document.clone())
-        .map_err(|_| Error::Save("only PDF files can be saved".to_owned()))?;
+        .map_err(|_not_pdf| Error::Save("only PDF files can be saved".to_owned()))?;
     if let Some(target) = target {
         return pdf
             .save_with_options(writable(target)?, mupdf::pdf::PdfWriteOptions::default())
@@ -1859,7 +1874,7 @@ fn save_to(document: &Document, path: &Path, target: Option<&Path>) -> Result<()
         std::fs::rename(&beside, path).map_err(|error| Error::Save(error.to_string()))
     });
     if written.is_err() {
-        let _ = std::fs::remove_file(&beside);
+        let _: std::io::Result<()> = std::fs::remove_file(&beside);
     }
     written
 }
@@ -1912,7 +1927,7 @@ fn rewrite_file(path: &Path) -> std::io::Result<(PathBuf, std::fs::File)> {
         {
             Ok(file) => {
                 if let Err(error) = file.set_permissions(permissions) {
-                    let _ = std::fs::remove_file(&beside);
+                    let _: std::io::Result<()> = std::fs::remove_file(&beside);
                     return Err(error);
                 }
                 return Ok((beside, file));
@@ -2447,25 +2462,25 @@ impl Worker {
         // The asker may have gone away meanwhile; a failed reply is fine.
         match request {
             Request::Render(job, reply) => {
-                let _ = reply.send(self.render(job));
+                reply.answer(self.render(job));
             }
             Request::Search(needle, pages, reply) => {
-                let _ = reply.send(
+                reply.answer(
                     self.search(&needle, pages)
                         .map_err(|error| Error::Search(error.to_string())),
                 );
             }
             Request::Measure(reply) => {
-                let _ = reply.send(
+                reply.answer(
                     self.measure()
                         .map_err(|error| Error::Measure(error.to_string())),
                 );
             }
             Request::Links(pages, reply) => {
-                let _ = reply.send(self.links(&pages));
+                reply.answer(self.links(&pages));
             }
             Request::Figures(pages, reply) => {
-                let _ = reply.send(
+                reply.answer(
                     pages
                         .iter()
                         .map(|&page| Ok((page, page_figures(&self.document, page)?)))
@@ -2475,10 +2490,10 @@ impl Worker {
             }
             Request::Markup(highlight, reply) => {
                 self.recordings.clear();
-                let _ = reply.send(highlight_in(&self.document, &highlight));
+                reply.answer(highlight_in(&self.document, &highlight));
             }
             Request::Outline(reply) => {
-                let _ = reply.send(
+                reply.answer(
                     outline(&self.document, || {
                         reopen(&self.path, self.password.as_deref())
                     })
@@ -2491,7 +2506,7 @@ impl Worker {
                 let spawned = thread::Builder::new()
                     .name("pdvim-contents".to_owned())
                     .spawn(move || {
-                        let _ = reply.send(
+                        reply.answer(
                             guess_outline(&path, password.as_deref())
                                 .map_err(|error| Error::Outline(error.to_string())),
                         );
@@ -2504,40 +2519,40 @@ impl Worker {
             // recordings are made again.
             Request::Remove(annotations, reply) => {
                 self.recordings.clear();
-                let _ = reply.send(remove_in(&self.document, &annotations));
+                reply.answer(remove_in(&self.document, &annotations));
             }
             Request::Restore(markings, reply) => {
                 self.recordings.clear();
-                let _ = reply.send(restore_in(&self.document, &markings));
+                reply.answer(restore_in(&self.document, &markings));
             }
             Request::Fields(reply) => {
-                let _ = reply.send(
+                reply.answer(
                     self.fields()
                         .map_err(|error| Error::Form(error.to_string())),
                 );
             }
             Request::Fill(widget, value, reply) => {
                 self.recordings.clear();
-                let _ = reply.send(fill_in(&self.document, widget, &value));
+                reply.answer(fill_in(&self.document, widget, &value));
             }
             Request::SetNote(annotation, text, reply) => {
                 self.recordings.clear();
-                let _ = reply.send(set_note_in(&self.document, annotation, &text));
+                reply.answer(set_note_in(&self.document, annotation, &text));
             }
             Request::Markings(reply) => {
-                let _ = reply.send(
+                reply.answer(
                     self.markings()
                         .map_err(|error| Error::Markings(error.to_string())),
                 );
             }
             Request::Save(target, reply) => {
-                let _ = reply.send(save_to(&self.document, &self.path, target.as_deref()));
+                reply.answer(save_to(&self.document, &self.path, target.as_deref()));
             }
             Request::Export(export, reply) => {
-                let _ = reply.send(export_page(&self.document, &export));
+                reply.answer(export_page(&self.document, &export));
             }
             Request::Text(pages, reply) => {
-                let _ = reply.send(
+                reply.answer(
                     pages
                         .iter()
                         .map(|&page| Ok((page, page_text(&self.document, page)?)))
@@ -2554,7 +2569,7 @@ impl Worker {
     fn render_waiting(&mut self) {
         while let Ok(request) = self.inbox.try_recv() {
             if let Request::Render(job, reply) = request {
-                let _ = reply.send(self.render(job));
+                reply.answer(self.render(job));
             } else {
                 self.deferred.push_back(request);
             }
@@ -2837,7 +2852,7 @@ mod tests {
 
     impl Drop for Scratch {
         fn drop(&mut self) {
-            let _ = std::fs::remove_file(&self.0);
+            let _: std::io::Result<()> = std::fs::remove_file(&self.0);
         }
     }
 
@@ -2909,7 +2924,7 @@ mod tests {
             .into_iter()
             .filter_map(|link| match link.target {
                 Target::Field(field) => Some((link.area, field)),
-                _ => None,
+                Target::Page { .. } | Target::Uri(_) => None,
             })
             .collect()
     }
@@ -3483,8 +3498,8 @@ mod tests {
             .map(|character| character.character)
             .collect();
         assert_eq!(text, "Hello world");
-        assert!(reopen(&file.0, Some("secret")).is_ok());
-        assert!(reopen(&file.0, None).is_err());
+        reopen(&file.0, Some("secret")).unwrap();
+        reopen(&file.0, None).unwrap_err();
     }
 
     #[test]
@@ -3793,7 +3808,7 @@ mod tests {
             page_markings(&document, 0).unwrap()[0].text,
             "Check it twice"
         );
-        assert!(set_note_in(&document, (0, 9999), "nowhere").is_err());
+        set_note_in(&document, (0, 9999), "nowhere").unwrap_err();
     }
 
     #[test]
@@ -4001,7 +4016,7 @@ mod tests {
         ]);
         let document = Document::from_bytes(&bytes, "application/pdf").unwrap();
         let reopen = || Document::from_bytes(&bytes, "application/pdf");
-        assert!(outline(&document, reopen).is_err());
+        outline(&document, reopen).unwrap_err();
     }
 
     /// Found by fuzzing: a page claiming to be billions of miles wide was

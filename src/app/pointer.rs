@@ -358,17 +358,17 @@ mod tests {
         let (mut app, id) = showing("text.pdf");
         // "Hello, world. A line of text" is set at 72 points across, its
         // baseline 72 points down; the second line 24 points under it.
-        let _ = app.update(Message::Pointer(Pointer::Press(
+        let _: Task<Message> = app.update(Message::Pointer(Pointer::Press(
             on_screen(&app, 0, (74.0, 66.0)),
             true,
         )));
         read(&mut app, id, 0);
-        let _ = app.update(Message::Pointer(Pointer::Drag(on_screen(
+        let _: Task<Message> = app.update(Message::Pointer(Pointer::Drag(on_screen(
             &app,
             0,
             (120.0, 90.0),
         ))));
-        let _ = app.update(Message::Pointer(Pointer::Release(on_screen(
+        let _: Task<Message> = app.update(Message::Pointer(Pointer::Release(on_screen(
             &app,
             0,
             (120.0, 90.0),
@@ -386,14 +386,14 @@ mod tests {
         // On the "o" of "world".
         let at = on_screen(&app, 0, (130.0, 66.0));
         for _ in 0..2 {
-            let _ = app.update(Message::Pointer(Pointer::Press(at, true)));
-            let _ = app.update(Message::Pointer(Pointer::Release(at)));
+            let _: Task<Message> = app.update(Message::Pointer(Pointer::Press(at, true)));
+            let _: Task<Message> = app.update(Message::Pointer(Pointer::Release(at)));
         }
         assert_eq!(selected(&app), "world");
         // Long after, a click is a click again, and leaves the selection.
         app.mouse.last_click = None;
-        let _ = app.update(Message::Pointer(Pointer::Press(at, true)));
-        let _ = app.update(Message::Pointer(Pointer::Release(at)));
+        let _: Task<Message> = app.update(Message::Pointer(Pointer::Press(at, true)));
+        let _: Task<Message> = app.update(Message::Pointer(Pointer::Release(at)));
         assert!(app.visual.is_none());
     }
 
@@ -404,16 +404,16 @@ mod tests {
         // The link to the second page covers 72 to 200 across, 72 to 92
         // down.
         let at = on_screen(&app, 0, (100.0, 80.0));
-        let _ = app.update(Message::Pointer(Pointer::Press(at, true)));
-        let _ = app.update(Message::Pointer(Pointer::Release(at)));
+        let _: Task<Message> = app.update(Message::Pointer(Pointer::Press(at, true)));
+        let _: Task<Message> = app.update(Message::Pointer(Pointer::Release(at)));
         let links = block_on(app.document().unwrap().backend.links(vec![0]));
-        let _ = app.update(Message::LinksFound(id, links));
+        let _: Task<Message> = app.update(Message::LinksFound(id, links));
         assert_eq!(app.document().unwrap().reader.current_page(), 1);
         // Clicked again with the links known, it is followed at once.
         app.document_mut().unwrap().reader.go_to_page(0);
         let at = on_screen(&app, 0, (100.0, 80.0));
-        let _ = app.update(Message::Pointer(Pointer::Press(at, true)));
-        let _ = app.update(Message::Pointer(Pointer::Release(at)));
+        let _: Task<Message> = app.update(Message::Pointer(Pointer::Press(at, true)));
+        let _: Task<Message> = app.update(Message::Pointer(Pointer::Release(at)));
         assert_eq!(app.document().unwrap().reader.current_page(), 1);
     }
 
@@ -421,12 +421,13 @@ mod tests {
     fn the_middle_button_drags_the_view() {
         let (mut app, _) = showing("links.pdf");
         let before = app.document().unwrap().reader.view(false).y;
-        let _ = app.update(Message::Pointer(Pointer::Press(
+        let _: Task<Message> = app.update(Message::Pointer(Pointer::Press(
             Point::new(300.0, 400.0),
             false,
         )));
-        let _ = app.update(Message::Pointer(Pointer::Drag(Point::new(300.0, 300.0))));
-        let _ = app.update(Message::Pointer(Pointer::Release(Point::new(300.0, 300.0))));
+        let far = Point::new(300.0, 300.0);
+        let _: Task<Message> = app.update(Message::Pointer(Pointer::Drag(far)));
+        let _: Task<Message> = app.update(Message::Pointer(Pointer::Release(far)));
         let after = app.document().unwrap().reader.view(false).y;
         let zoom = app.document().unwrap().reader.zoom();
         assert!(
@@ -439,11 +440,11 @@ mod tests {
     #[test]
     fn a_click_in_a_list_picks_the_entry() {
         let (mut app, _) = showing("text.pdf");
-        let _ = app.update(Message::Clicked(Click::Tab(0)));
+        let _: Task<Message> = app.update(Message::Clicked(Click::Tab(0)));
         assert_eq!(app.current, 0);
         app.show_tab_list();
         assert!(app.tab_list.is_some());
-        let _ = app.update(Message::Clicked(Click::TabList(0)));
+        let _: Task<Message> = app.update(Message::Clicked(Click::TabList(0)));
         assert!(app.tab_list.is_none());
     }
 }

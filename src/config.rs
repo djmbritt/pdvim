@@ -150,7 +150,9 @@ fn setting_text(value: &Value) -> Result<String, String> {
         Value::Boolean(flag) => Ok(flag.to_string()),
         Value::Integer(number) => Ok(number.to_string()),
         Value::Float(number) => Ok(number.to_string()),
-        _ => Err("not a string, number or boolean".to_owned()),
+        Value::Datetime(_) | Value::Array(_) | Value::Table(_) => {
+            Err("not a string, number or boolean".to_owned())
+        }
     }
 }
 
@@ -337,6 +339,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::wildcard_enum_match_arm, reason = "a test of one command")]
     fn paths_tables_give_documents_settings_of_their_own() {
         let text = r#"
             [[paths]]
@@ -366,7 +369,7 @@ mod tests {
         assert_eq!(rules.len(), 2);
         let settings = crate::paths::settings_for(&rules, std::path::Path::new("/scans/a.pdf"));
         assert_eq!(settings.trim, Some(true));
-        assert_eq!(settings.recolor, Some(crate::command::Recolor::Off));
+        assert_eq!(settings.recolor, Some(Recolor::Off));
         let comic = crate::paths::settings_for(&rules, std::path::Path::new("/c/b.cbz"));
         assert_eq!(comic.columns, Some(2));
         let messages: Vec<_> = problems.iter().map(ToString::to_string).collect();

@@ -4,8 +4,11 @@
 //! long document. Run with `cargo bench`; criterion compares each run with
 //! the last and keeps reports in `target/criterion/`.
 
-// A group of benchmarks has to live until it is finished, as each is.
-#![allow(clippy::significant_drop_tightening)]
+#![expect(
+    clippy::significant_drop_tightening,
+    reason = "a group of benchmarks has to live until it is finished, as each is"
+)]
+#![expect(clippy::print_stderr, reason = "what is timed, said beside criterion's report")]
 
 use std::hint::black_box;
 

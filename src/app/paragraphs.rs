@@ -213,7 +213,7 @@ mod tests {
             area.top.abs() < 1.0
         };
         let brace = |app: &mut App, forward: bool, times: u32| {
-            let _ = app.act(Action::Paragraph { forward, times });
+            let _: Task<Message> = app.act(Action::Paragraph { forward, times });
         };
         brace(&mut app, true, 1);
         assert!(at_top(&app, 100.0));

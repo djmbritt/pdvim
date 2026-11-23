@@ -456,7 +456,7 @@ mod tests {
     /// for, and types the first label.
     fn pick_first_figure(app: &mut App, id: u64) {
         let figures = block_on(app.document().unwrap().backend.figures(vec![0]));
-        let _ = app.update(Message::FiguresFound(id, figures));
+        let _: Task<Message> = app.update(Message::FiguresFound(id, figures));
         let hints = app.hints.as_ref().unwrap();
         let label: String = hints.shown().next().unwrap().label.iter().collect();
         typing(app, &label);
@@ -498,7 +498,7 @@ mod tests {
     /// answers.
     fn found_figures(app: &mut App, id: u64) {
         let figures = block_on(app.document().unwrap().backend.figures(vec![0]));
-        let _ = app.update(Message::FiguresFound(id, figures));
+        let _: Task<Message> = app.update(Message::FiguresFound(id, figures));
     }
 
     #[test]

@@ -344,7 +344,7 @@ mod tests {
     #[test]
     fn paths_complete_to_directories_and_documents() {
         let root = std::env::temp_dir().join(format!("pdvim-complete-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let _: std::io::Result<()> = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("Papers")).unwrap();
         std::fs::create_dir_all(root.join(".hidden")).unwrap();
         for file in [

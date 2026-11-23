@@ -57,6 +57,45 @@ impl Palette {
             blend(self.ink.2, self.paper.2, pixel.2),
         )
     }
+
+    /// The recoloured value of every shade of each channel, worked out
+    /// once, to recolour a whole page by looking each pixel up.
+    pub fn table(self) -> Table {
+        // Each channel is recoloured on its own, so a grey of each shade
+        // gives every channel's value for that shade at once.
+        let greys: [Rgb; 256] = std::array::from_fn(|shade| {
+            let shade = u8::try_from(shade).unwrap_or(u8::MAX);
+            self.apply(Rgb(shade, shade, shade))
+        });
+        Table {
+            red: greys.map(|Rgb(red, _, _)| red),
+            green: greys.map(|Rgb(_, green, _)| green),
+            blue: greys.map(|Rgb(_, _, blue)| blue),
+        }
+    }
+}
+
+/// A palette as a value for each shade of each channel: the same as
+/// [`Palette::apply`], without the arithmetic for every pixel.
+pub struct Table {
+    red: [u8; 256],
+    green: [u8; 256],
+    blue: [u8; 256],
+}
+
+impl Table {
+    /// The recoloured value of a pixel.
+    pub fn apply(&self, Rgb(red, green, blue): Rgb) -> Rgb {
+        // Every u8 is an index into 256 entries, so nothing is missed.
+        let look_up = |table: &[u8; 256], shade: u8| {
+            table.get(usize::from(shade)).copied().unwrap_or(shade)
+        };
+        Rgb(
+            look_up(&self.red, red),
+            look_up(&self.green, green),
+            look_up(&self.blue, blue),
+        )
+    }
 }
 
 /// The value a fraction `position / 255` of the way from `ink` to `paper`.
@@ -77,6 +116,19 @@ fn blend(ink: u8, paper: u8, position: u8) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_table_recolours_every_colour_as_the_palette_does() {
+        let palette = Palette {
+            paper: Rgb(0x1a, 0x2b, 0x3c),
+            ink: Rgb(0xdd, 0x80, 0x07),
+        };
+        let table = palette.table();
+        for shade in 0..=u8::MAX {
+            let pixel = Rgb(shade, shade.wrapping_mul(7), u8::MAX.wrapping_sub(shade));
+            assert_eq!(table.apply(pixel), palette.apply(pixel));
+        }
+    }
 
     #[test]
     fn colours_parse_from_hex() {

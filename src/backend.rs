@@ -2630,23 +2630,57 @@ fn to_bitmap(pixmap: &Pixmap, palette: Option<Palette>) -> Bitmap {
     let height = pixmap.height();
     let channels = usize::from(pixmap.n()).max(1);
     let stride = usize::try_from(pixmap.stride()).unwrap_or(0).max(1);
-    let area = num::index(width).saturating_mul(num::index(height));
-    let mut pixels = Vec::with_capacity(area.saturating_mul(4));
-    for row in pixmap.samples().chunks(stride).take(num::index(height)) {
-        for pixel in row.chunks_exact(channels).take(num::index(width)) {
-            let colour = match *pixel {
-                [red, green, blue, ..] => Rgb(red, green, blue),
-                [grey, ..] => Rgb(grey, grey, grey),
-                [] => Rgb(0, 0, 0),
-            };
-            let Rgb(red, green, blue) = palette.map_or(colour, |palette| palette.apply(colour));
-            pixels.extend_from_slice(&[red, green, blue, u8::MAX]);
+    let columns = num::index(width);
+    let area = columns.saturating_mul(num::index(height));
+    // Opaque white, each pixel then written over in place: much faster
+    // than growing the bitmap four bytes at a time.
+    let mut pixels = vec![u8::MAX; area.saturating_mul(4)];
+    let rows = pixmap
+        .samples()
+        .chunks(stride)
+        .zip(pixels.chunks_exact_mut(columns.saturating_mul(4).max(1)));
+    // The lookup is worked out once for the page, and the loops kept
+    // apart, so that the one run for each pixel does no more than it must.
+    let table = palette.map(Palette::table);
+    for (row, out) in rows {
+        let row = row.chunks_exact(channels).take(columns);
+        let out = out.chunks_exact_mut(4);
+        match &table {
+            Some(table) => {
+                for (pixel, into) in row.zip(out) {
+                    write_pixel(into, table.apply(colour_of(pixel)));
+                }
+            }
+            None => {
+                for (pixel, into) in row.zip(out) {
+                    write_pixel(into, colour_of(pixel));
+                }
+            }
         }
     }
     Bitmap {
         width,
         height,
         pixels,
+    }
+}
+
+/// The colour of a pixel of a pixmap, of three channels or of one.
+const fn colour_of(pixel: &[u8]) -> Rgb {
+    match *pixel {
+        [red, green, blue, ..] => Rgb(red, green, blue),
+        [grey, ..] => Rgb(grey, grey, grey),
+        [] => Rgb(0, 0, 0),
+    }
+}
+
+/// Writes a colour over the first three bytes of a bitmap's pixel, leaving
+/// it opaque.
+const fn write_pixel(into: &mut [u8], Rgb(red, green, blue): Rgb) {
+    if let [r, g, b, _] = into {
+        *r = red;
+        *g = green;
+        *b = blue;
     }
 }
 

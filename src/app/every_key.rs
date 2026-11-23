@@ -168,7 +168,7 @@ fn every_command_and_every_action_by_name() {
         lines.extend(arguments.iter().map(|argument| format!("{name} {argument}")));
     }
     lines.extend(input::Binding::ALL.iter().map(|(_, name, _)| (*name).to_owned()));
-    lines.extend(["3", "zoom-to 150", "next-page 2"].map(str::to_owned));
+    lines.extend(["3", "40%", "0%", "zoom-to 150", "next-page 2"].map(str::to_owned));
     let mut failures = Vec::new();
     for fixture in FIXTURES {
         for line in &lines {

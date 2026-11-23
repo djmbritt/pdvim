@@ -115,17 +115,17 @@ These are the keys to start with. `:help` lists every key bound right now, and `
 
 As in vi, a count repeats a key: `3j` scrolls three steps. Markings stay out of the file until you save with `:w` or `Ctrl-s`. Until then the tab shows `[+]`, and pdvim asks before closing it. The box at the left of the status bar names the mode, and the bar lists the keys you can press next.
 
-| Command                                   | Action                                                |
-| ----------------------------------------- | ----------------------------------------------------- |
-| `:{n}`, `:goto xii`                       | Go to page _n_, or to the page printed `xii`          |
-| `:o {file}`, `:recent`                    | Open a document in a new tab, show the recent ones    |
-| `:w`, `:w {file}`, `:q`, `:wq`, `:q!`     | Save, save a copy, close, both, close without saving  |
-| `:set {setting} {value}`, `:theme {name}` | Change a setting or the theme                         |
-| `:map`, `:unmap`, `:mapclear`             | Change key bindings while running                     |
-| `:export {file}`                          | Save the page as `.png` or `.svg`                     |
-| `:!{command}`                             | Run a shell command, with `%` for the document's file |
-| `:info`, `:marks`, `:note {text}`         | Document details, marks, a note on the window         |
-| `:help [topic]`, `:man [5]`               | The keys, the manual                                  |
+| Command                                   | Action                                                             |
+| ----------------------------------------- | ------------------------------------------------------------------ |
+| `:{n}`, `:{n}%`, `:goto xii`              | Go to page _n_, _n_% of the way through, or the page printed `xii` |
+| `:o {file}`, `:recent`                    | Open a document in a new tab, show the recent ones                 |
+| `:w`, `:w {file}`, `:q`, `:wq`, `:q!`     | Save, save a copy, close, both, close without saving               |
+| `:set {setting} {value}`, `:theme {name}` | Change a setting or the theme                                      |
+| `:map`, `:unmap`, `:mapclear`             | Change key bindings while running                                  |
+| `:export {file}`                          | Save the page as `.png` or `.svg`                                  |
+| `:!{command}`                             | Run a shell command, with `%` for the document's file              |
+| `:info`, `:marks`, `:note {text}`         | Document details, marks, a note on the window                      |
+| `:help [topic]`, `:man [5]`               | The keys, the manual                                               |
 
 Every action can also be run by name, such as `:zoom-to 150`, and `;` separates commands on one line.
 

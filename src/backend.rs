@@ -3,12 +3,14 @@
 //! A MuPDF document must stay on the thread that opened it, and rendering a
 //! page can take a while. So each open document gets a worker thread that
 //! owns it. The interface sends the worker requests through a [`Backend`]
-//! and awaits each answer, which keeps the window responsive.
+//! and awaits each answer, which keeps the window responsive. The worker
+//! records each page it is asked to draw, and a few painter threads draw
+//! from the recordings, so that a page slow to draw holds up nothing else.
 
 use std::collections::VecDeque;
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
+use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::thread;
 
 use iced::futures::channel::oneshot;
@@ -31,6 +33,10 @@ const LONGEST_SIDE: f32 = 8000.0;
 /// How many pages the worker keeps the recordings of, to draw again at
 /// another zoom or in other colours without reading them again.
 const RECORDINGS_KEPT: usize = 8;
+
+/// How many pages of a document are drawn at once, each on a thread of
+/// its own: a page that takes long to draw holds up only its own picture.
+const PAINTERS: usize = 3;
 
 /// The scale pages are rendered at to find their margins, in pixels per
 /// point. Coarse is enough: only the outline of the content matters.
@@ -838,6 +844,7 @@ pub fn open(
                 inbox,
                 deferred: VecDeque::new(),
                 recordings: VecDeque::new(),
+                painters: Painters::new(),
             }
             .serve();
         });
@@ -2420,7 +2427,72 @@ struct Worker {
     /// Long requests that arrived while another was under way.
     deferred: VecDeque<Request>,
     /// The pages drawn lately, recorded, the latest last.
-    recordings: VecDeque<Recording>,
+    recordings: VecDeque<Arc<Recording>>,
+    /// The threads pages are drawn on.
+    painters: Painters,
+}
+
+/// A page to draw from its recording, and where to send the picture.
+type Painting = (Arc<Recording>, RenderJob, oneshot::Sender<Result<Bitmap, Error>>);
+
+/// Threads that draw pages from their recordings, apart from the worker,
+/// so that a page that takes long to draw, as a crafted font can make it,
+/// holds up neither the document's text, searches and saving nor the
+/// other pages. They end once the worker does.
+struct Painters {
+    paintings: Option<mpsc::Sender<Painting>>,
+}
+
+impl Painters {
+    /// Starts the threads. Without them, pages are drawn on the worker.
+    fn new() -> Self {
+        let (paintings, waiting) = mpsc::channel::<Painting>();
+        let waiting = Arc::new(Mutex::new(waiting));
+        let started = (0..PAINTERS)
+            .filter(|_| {
+                let waiting = Arc::clone(&waiting);
+                thread::Builder::new()
+                    .name("pdvim-painter".to_owned())
+                    .spawn(move || paint(&waiting))
+                    .is_ok()
+            })
+            .count();
+        Self {
+            paintings: (started > 0).then_some(paintings),
+        }
+    }
+
+    /// Hands a painting to the threads, or gives it back if there are none.
+    fn hand(&self, painting: Painting) -> Option<Painting> {
+        match &self.paintings {
+            Some(paintings) => paintings.send(painting).err().map(|failed| failed.0),
+            None => Some(painting),
+        }
+    }
+}
+
+/// Draws the pages handed to the painters, one at a time, until the worker
+/// is gone.
+fn paint(waiting: &Mutex<mpsc::Receiver<Painting>>) {
+    loop {
+        // Held only while waiting, so that the others take the next one.
+        let next = waiting
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .recv();
+        let Ok((recording, job, reply)) = next else {
+            return;
+        };
+        reply.answer(drawn(&recording, job));
+    }
+}
+
+/// A page drawn from its recording, as the reader shows it.
+fn drawn(recording: &Recording, job: RenderJob) -> Result<Bitmap, Error> {
+    render(recording, job, LONGEST_SIDE).map_err(|error| Error::Render {
+        page: job.page.saturating_add(1),
+        reason: error.to_string(),
+    })
 }
 
 /// What it takes to draw a page, recorded once: MuPDF reads the page and
@@ -2461,9 +2533,7 @@ impl Worker {
     fn answer(&mut self, request: Request) {
         // The asker may have gone away meanwhile; a failed reply is fine.
         match request {
-            Request::Render(job, reply) => {
-                reply.answer(self.render(job));
-            }
+            Request::Render(job, reply) => self.render_apart(job, reply),
             Request::Search(needle, pages, reply) => {
                 reply.answer(
                     self.search(&needle, pages)
@@ -2569,35 +2639,55 @@ impl Worker {
     fn render_waiting(&mut self) {
         while let Ok(request) = self.inbox.try_recv() {
             if let Request::Render(job, reply) = request {
-                reply.answer(self.render(job));
+                self.render_apart(job, reply);
             } else {
                 self.deferred.push_back(request);
             }
         }
     }
 
-    /// Draws a page from its recording, recording it first when it is not
-    /// among those kept.
-    fn render(&mut self, job: RenderJob) -> Result<Bitmap, Error> {
+    /// A page's recording, made when it is not among those kept, and kept
+    /// as the latest.
+    fn recording(&mut self, page: u32) -> Result<Arc<Recording>, Error> {
         let kept = self
             .recordings
             .iter()
-            .position(|recording| recording.page == job.page)
+            .position(|recording| recording.page == page)
             .and_then(|index| self.recordings.remove(index));
-        let drawn = kept
-            .map_or_else(|| record(&self.document, job.page), Ok)
-            .and_then(|recording| {
-                let drawn = render(&recording, job, LONGEST_SIDE);
-                self.recordings.push_back(recording);
-                if self.recordings.len() > RECORDINGS_KEPT {
-                    self.recordings.pop_front();
-                }
-                drawn
-            });
-        drawn.map_err(|error| Error::Render {
-            page: job.page.saturating_add(1),
-            reason: error.to_string(),
-        })
+        let recording = match kept {
+            Some(recording) => recording,
+            None => Arc::new(record(&self.document, page).map_err(|error| Error::Render {
+                page: page.saturating_add(1),
+                reason: error.to_string(),
+            })?),
+        };
+        self.recordings.push_back(Arc::clone(&recording));
+        if self.recordings.len() > RECORDINGS_KEPT {
+            self.recordings.pop_front();
+        }
+        Ok(recording)
+    }
+
+    /// Draws a page on the worker, from its recording.
+    #[cfg(test)]
+    fn render(&mut self, job: RenderJob) -> Result<Bitmap, Error> {
+        let recording = self.recording(job.page)?;
+        drawn(&recording, job)
+    }
+
+    /// Records a page here, where the document is, and has it drawn on a
+    /// painter, which replies; on the worker if no painter can take it.
+    fn render_apart(&mut self, job: RenderJob, reply: oneshot::Sender<Result<Bitmap, Error>>) {
+        let recording = match self.recording(job.page) {
+            Ok(recording) => recording,
+            Err(error) => {
+                reply.answer(Err(error));
+                return;
+            }
+        };
+        if let Some((recording, job, reply)) = self.painters.hand((recording, job, reply)) {
+            reply.answer(drawn(&recording, job));
+        }
     }
 
     /// Finds the links on some pages.
@@ -3073,6 +3163,7 @@ mod tests {
             inbox,
             deferred: VecDeque::new(),
             recordings: VecDeque::new(),
+            painters: Painters::new(),
         }
     }
 
@@ -3105,6 +3196,19 @@ mod tests {
         )
         .unwrap();
         assert_eq!(fresh.pixels, first.pixels);
+    }
+
+    #[test]
+    fn a_page_asked_for_is_drawn_on_a_painter_as_on_the_worker() {
+        let file = Scratch::new("painted", text_pdf());
+        let mut worker = worker(&file.0);
+        let here = worker.render(job(1.5)).unwrap();
+        let (reply, answer) = oneshot::channel();
+        worker.answer(Request::Render(job(1.5), reply));
+        let painted = iced::futures::executor::block_on(answer).unwrap().unwrap();
+        assert_eq!(painted.pixels, here.pixels, "the painter draws it as the worker does");
+        // The recording made for the worker is the one the painter played.
+        assert_eq!(worker.recordings.len(), 1, "one recording");
     }
 
     #[test]

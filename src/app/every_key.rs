@@ -143,7 +143,7 @@ fn every_key_of_the_lists_and_labels() {
 const ARGUMENTS: &[(&str, &[&str])] = &[
     ("apropos", &["zoom"]),
     ("delmarks", &["a", "!"]),
-    ("export", &["$DIR/page.png", "$DIR/page.svg"]),
+    ("export", &["$DIR/page.png", "$DIR/page.svg", "$DIR/notes.md"]),
     ("goto", &["2", "xii"]),
     ("help", &["visual"]),
     ("man", &["5"]),

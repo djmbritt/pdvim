@@ -187,6 +187,9 @@ pub enum Message {
     PictureCopied(Result<(), String>),
     /// A page was written to this file, or could not be.
     Exported(PathBuf, Result<(), backend::Error>),
+    /// The markings were written to this file as Markdown, so many of
+    /// them, or could not be.
+    NotesExported(PathBuf, Result<usize, String>),
     /// A command run with `:!`, as typed, finished, or could not be run.
     ShellRan(String, Result<crate::shell::Ran, crate::shell::Error>),
 }
@@ -918,6 +921,7 @@ impl App {
                 };
                 Task::none()
             }
+            Message::NotesExported(target, result) => self.on_notes_exported(&target, result),
             Message::ShellRan(command, result) => {
                 self.on_shell(&command, result);
                 Task::none()

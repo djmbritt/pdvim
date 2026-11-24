@@ -25,7 +25,7 @@ A PDF reader driven by vi keys. pdvim also opens EPUB and FB2 books, CBZ and CBT
   - tabs and sessions;
   - a list of recent documents, each reopened where you stopped;
   - password-protected PDFs and fillable forms;
-  - `:!` shell commands and `:export` to PNG or SVG;
+  - `:!` shell commands, `:export` of a page to PNG or SVG, and of the highlights and notes to Markdown;
   - the manual inside it, with `:man`.
 
 <details>
@@ -122,7 +122,7 @@ As in vi, a count repeats a key: `3j` scrolls three steps. Markings stay out of 
 | `:w`, `:w {file}`, `:q`, `:wq`, `:q!`     | Save, save a copy, close, both, close without saving               |
 | `:set {setting} {value}`, `:theme {name}` | Change a setting or the theme                                      |
 | `:map`, `:unmap`, `:mapclear`             | Change key bindings while running                                  |
-| `:export {file}`                          | Save the page as `.png` or `.svg`                                  |
+| `:export {file}`                          | Save the page as `.png` or `.svg`, or the markings as `.md`        |
 | `:!{command}`                             | Run a shell command, with `%` for the document's file              |
 | `:info`, `:marks`, `:note {text}`         | Document details, marks, a note on the window                      |
 | `:help [topic]`, `:man [5]`               | The keys, the manual                                               |

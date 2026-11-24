@@ -42,6 +42,7 @@ mod languages;
 mod layout;
 mod manual;
 mod markings;
+mod notes;
 mod num;
 mod outline;
 mod overview;

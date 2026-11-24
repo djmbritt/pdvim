@@ -294,7 +294,7 @@ pub fn description(name: &str) -> Option<&'static str> {
     Some(match canonical(name)? {
         "apropos" => "List the keys and commands whose description has a word",
         "delmarks" => "Take away the marks named by these letters",
-        "export" => "Save the page in view as a .png image or an .svg drawing",
+        "export" => "Save the page in view as .png or .svg, or the markings as .md",
         "goto" => "Go to the page with this printed number, such as xii or A-3",
         "help" => "Show the keys: all of them, or those about a topic",
         "info" => "Show the title, author, dates, pages and encryption",

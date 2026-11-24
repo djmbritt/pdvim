@@ -13,7 +13,8 @@ pub(super) struct Bars {
     /// The status bar. Hidden, it still shows while it has something to
     /// show, over the bottom of the pages.
     pub status: bool,
-    fullscreen: bool,
+    /// Whether the window fills the screen.
+    pub fullscreen: bool,
 }
 
 impl Default for Bars {

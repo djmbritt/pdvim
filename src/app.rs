@@ -4727,6 +4727,145 @@ mod tests {
         assert!(!shows(100.0, 400.0, 200.0, 420.0), "touching the bottom edge");
     }
 
+    #[test]
+    fn each_key_pressed_is_read_as_the_key_pdvim_knows_it_by() {
+        use keyboard::key::Named;
+        let none = keyboard::Modifiers::empty();
+        let (shift, ctrl) = (keyboard::Modifiers::SHIFT, keyboard::Modifiers::CTRL);
+        let named =
+            |named: Named, modifiers| translate(&keyboard::Key::Named(named), modifiers, None);
+        let mut cases = vec![
+            (Named::Escape, none, Key::Escape),
+            (Named::Enter, none, Key::Enter),
+            (Named::Backspace, none, Key::Backspace),
+            (Named::ArrowUp, none, Key::Up),
+            (Named::ArrowDown, none, Key::Down),
+            (Named::ArrowLeft, none, Key::Left),
+            (Named::ArrowRight, none, Key::Right),
+            (Named::PageUp, none, Key::PageUp),
+            (Named::PageDown, none, Key::PageDown),
+            (Named::Home, none, Key::Home),
+            (Named::End, none, Key::End),
+            (Named::Tab, none, Key::Tab),
+            (Named::Tab, shift, Key::ShiftTab),
+            (Named::Tab, ctrl, Key::CtrlTab),
+            (Named::Tab, ctrl | shift, Key::CtrlShiftTab),
+            (Named::Space, none, Key::Char(' ')),
+            (Named::Space, shift, Key::ShiftSpace),
+        ];
+        let function_keys = [
+            Named::F1,
+            Named::F2,
+            Named::F3,
+            Named::F4,
+            Named::F5,
+            Named::F6,
+            Named::F7,
+            Named::F8,
+            Named::F9,
+            Named::F10,
+            Named::F11,
+            Named::F12,
+        ];
+        let numbered = function_keys.into_iter().zip(1_u8..);
+        cases.extend(numbered.map(|(key, n)| (key, none, Key::Function(n))));
+        for (index, (key, modifiers, expected)) in cases.into_iter().enumerate() {
+            assert_eq!(named(key, modifiers), Some(expected), "case {index}");
+        }
+        // Keys held with Alt or the logo key are the desktop's.
+        let a = keyboard::Key::Character("a".into());
+        assert_eq!(translate(&a, none, Some("a")), Some(Key::Char('a')), "a alone");
+        assert_eq!(translate(&a, keyboard::Modifiers::ALT, Some("a")), None, "a with alt");
+        assert_eq!(translate(&a, keyboard::Modifiers::LOGO, Some("a")), None, "a with logo");
+        assert_eq!(translate(&a, ctrl, Some("a")), Some(Key::Ctrl('a')), "a with control");
+    }
+
+    /// Where the window is in the document, across and down, in points,
+    /// and its zoom.
+    fn view_of(session: &testing::Session) -> (f32, f32, f32) {
+        let view = session.app.document().map(|document| document.reader.view(false));
+        view.map_or((0.0, 0.0, 0.0), |view| (view.x, view.y, view.zoom))
+    }
+
+    /// Whether two distances are the same, to a hundredth of a point.
+    fn same(one: f32, other: f32) -> bool {
+        (one - other).abs() < 0.01
+    }
+
+    #[test]
+    fn the_wheel_scrolls_by_its_steps_or_its_pixels_times_its_speed() {
+        let mut session = testing::Session::open("text.pdf");
+        // Zoomed in, to have room to scroll across as well as down.
+        session.keys("++");
+        session.app.scroll_step = 7.0;
+        session.app.wheel_speed = 2.0;
+        let (x, y, zoom) = view_of(&session);
+        // A line of the wheel is three steps, at the wheel's speed: 42
+        // pixels here. Turned towards the reader, it scrolls down.
+        session.send(Message::Wheel(mouse::ScrollDelta::Lines { x: 0.0, y: -1.0 }));
+        let (_, down, _) = view_of(&session);
+        assert!(same(down - y, 42.0 / zoom), "a line scrolled {} pixels", (down - y) * zoom);
+        session.send(Message::Wheel(mouse::ScrollDelta::Lines { x: -1.0, y: 0.0 }));
+        let (right, _, _) = view_of(&session);
+        assert!(same(right - x, 42.0 / zoom), "a line across scrolled {}", (right - x) * zoom);
+        // Pixels are scrolled as they come, at the wheel's speed.
+        session.send(Message::Wheel(mouse::ScrollDelta::Pixels { x: 3.0, y: 5.0 }));
+        let (left, up, _) = view_of(&session);
+        assert!(same(right - left, 6.0 / zoom), "3 pixels left scrolled {}", (right - left) * zoom);
+        assert!(same(down - up, 10.0 / zoom), "5 pixels up scrolled {}", (down - up) * zoom);
+    }
+
+    #[test]
+    fn the_wheel_with_control_held_zooms_the_page_in_and_out() {
+        let mut session = testing::Session::open("text.pdf");
+        session.app.modifiers = keyboard::Modifiers::CTRL;
+        let (x, y, zoom) = view_of(&session);
+        let zoom_after = |session: &mut testing::Session, x: f32, y: f32| {
+            session.send(Message::Wheel(mouse::ScrollDelta::Lines { x, y }));
+            view_of(session).2
+        };
+        // Turned away from the reader, as to scroll up, it zooms in.
+        let wider = zoom_after(&mut session, 0.0, 1.0);
+        assert!(wider > zoom, "turned away from the reader, the wheel zooms in");
+        let back = zoom_after(&mut session, 0.0, -1.0);
+        assert!(same(back, zoom), "turned towards the reader, it zooms out again");
+        // Across, it neither zooms nor scrolls while control is held.
+        assert!(same(zoom_after(&mut session, -1.0, 0.0), zoom), "across, the wheel zooms");
+        let (across, down, _) = view_of(&session);
+        assert!(same(across, x) && same(down, y), "with control held, the wheel scrolls");
+    }
+
+    /// The test book, opened in a session of its own. The fuzzer's seed
+    /// starts with a byte that picks its format, left out here.
+    fn book() -> testing::Session {
+        let mut session = testing::Session::start();
+        let path = session.dir.join("book.epub");
+        let seed = include_bytes!("../fuzz/seeds/formats/book.epub");
+        let written = std::fs::write(&path, seed.get(1..).unwrap_or_default());
+        assert!(written.is_ok(), "the book cannot be written: {written:?}");
+        let opening = session.app.open_in_tab(path);
+        session.run(opening);
+        assert!(session.app.in_book(), "the book opens as a book");
+        session
+    }
+
+    #[test]
+    fn in_a_book_the_wheel_with_control_held_changes_the_size_of_the_type() {
+        let mut session = book();
+        let size = session.app.font_size;
+        let (_, y, zoom) = view_of(&session);
+        // Without control, the wheel scrolls the book.
+        session.send(Message::Wheel(mouse::ScrollDelta::Lines { x: 0.0, y: -1.0 }));
+        assert!(same(session.app.font_size, size), "the wheel alone changes the type");
+        assert!(view_of(&session).1 > y, "the wheel alone does not scroll the book");
+        session.app.modifiers = keyboard::Modifiers::CTRL;
+        session.send(Message::Wheel(mouse::ScrollDelta::Lines { x: 0.0, y: 1.0 }));
+        assert!(session.app.font_size > size, "away from the reader, the type grows");
+        assert!(same(view_of(&session).2, zoom), "the page is zoomed, not the type");
+        session.send(Message::Wheel(mouse::ScrollDelta::Lines { x: 0.0, y: -1.0 }));
+        assert!(same(session.app.font_size, size), "towards the reader, it shrinks back");
+    }
+
     /// A line of text at a height on its page, ten points a character.
     fn line_at(text: &str, top: f32) -> TextLine {
         TextLine {

@@ -376,8 +376,7 @@ fn from_headings(pages: &[PageText]) -> Vec<Entry> {
         let mut previous: Option<&Line> = None;
         for line in lines {
             let text = line.text.trim();
-            let in_margin =
-                line.top < page.height * MARGIN || line.bottom > page.height * (1.0 - MARGIN);
+            let in_margin = in_margin(line, page.height);
             let larger = line.size >= body * HEADING_SIZE;
             let bold_numbered = line.bold
                 && line.size >= body * 0.95
@@ -480,6 +479,12 @@ fn key_without_digits(text: &str) -> String {
     key(text).chars().filter(|c| !c.is_ascii_digit()).collect()
 }
 
+/// Whether a line is set in the top or bottom margin of a page this tall,
+/// where running heads and page numbers go.
+fn in_margin(line: &Line, height: f32) -> bool {
+    line.top < height * MARGIN || line.bottom > height * (1.0 - MARGIN)
+}
+
 /// The lines set in the top or bottom margin of three or more pages: the
 /// running heads and feet.
 fn running_heads(pages: &[PageText]) -> std::collections::HashSet<String> {
@@ -487,9 +492,7 @@ fn running_heads(pages: &[PageText]) -> std::collections::HashSet<String> {
     for page in pages {
         let mut seen = std::collections::HashSet::new();
         for line in &page.lines {
-            let in_margin =
-                line.top < page.height * MARGIN || line.bottom > page.height * (1.0 - MARGIN);
-            if in_margin && seen.insert(key_without_digits(&line.text)) {
+            if in_margin(line, page.height) && seen.insert(key_without_digits(&line.text)) {
                 let count = counts.entry(key_without_digits(&line.text)).or_default();
                 *count = count.saturating_add(1);
             }
@@ -553,6 +556,99 @@ mod tests {
         let mut out = Vec::new();
         titles(chapters, 0, &mut out);
         out
+    }
+
+    #[test]
+    fn a_line_is_in_the_margin_only_past_its_edge() {
+        let height = 1000.0;
+        let set = |top: f32, bottom: f32| Line {
+            bottom,
+            ..line("A line", 10.0, false, 72.0, top)
+        };
+        let top_edge = height * MARGIN;
+        let bottom_edge = height * (1.0 - MARGIN);
+        assert!(in_margin(&set(top_edge - 1.0, top_edge + 9.0), height), "above the top edge");
+        assert!(!in_margin(&set(top_edge, top_edge + 10.0), height), "on the top edge");
+        assert!(!in_margin(&set(500.0, 510.0), height), "in the middle");
+        assert!(!in_margin(&set(bottom_edge - 10.0, bottom_edge), height), "on the bottom edge");
+        assert!(in_margin(&set(bottom_edge - 9.0, bottom_edge + 1.0), height), "below it");
+    }
+
+    #[test]
+    fn only_lines_in_the_margins_of_three_pages_are_running_heads() {
+        let head = |text: &str| line(text, 9.0, false, 72.0, 30.0);
+        let pages = vec![
+            page(vec![head("Foxes"), head("Hounds")]),
+            page(vec![head("Foxes"), head("Hounds")]),
+            page(vec![head("Foxes")]),
+        ];
+        let mut running: Vec<String> = running_heads(&pages).into_iter().collect();
+        running.sort_unstable();
+        // The text of the pages repeats on every page too, but not in its
+        // margins.
+        assert_eq!(
+            running,
+            [key_without_digits("Foxes"), key_without_digits("Running Head of the Book")],
+            "only what is in the margins of three pages"
+        );
+    }
+
+    /// The headings found with these lines set on a page of their own,
+    /// after two chapters to rank them among.
+    fn headings_with(lines: Vec<Line>) -> Vec<String> {
+        let chapter = |title: &str| line(title, 20.0, true, 72.0, 100.0);
+        let pages = vec![
+            page(vec![chapter("1 Beginnings")]),
+            page(vec![chapter("2 Endings")]),
+            page(lines),
+        ];
+        from_headings(&pages)
+            .into_iter()
+            .map(|entry| entry.title)
+            .filter(|title| !["1 Beginnings", "2 Endings"].contains(&title.as_str()))
+            .collect()
+    }
+
+    #[test]
+    fn a_heading_is_set_larger_than_the_text_or_bold_and_numbered_at_its_size() {
+        // The text is set at 11 points: a heading at 12.65 or more.
+        let at = |size: f32, bold: bool| {
+            headings_with(vec![line("Foxes at Night", size, bold, 72.0, 150.0)])
+        };
+        assert_eq!(at(13.0, false), ["Foxes at Night"], "13 points is a heading");
+        assert!(at(12.5, false).is_empty(), "12.5 points is not");
+        let numbered = |size: f32, bold: bool| {
+            headings_with(vec![line("3 Foxes at Night", size, bold, 72.0, 150.0)])
+        };
+        assert_eq!(numbered(11.0, true), ["3 Foxes at Night"], "bold and numbered at 11 points");
+        assert!(numbered(10.0, true).is_empty(), "bold and numbered, but smaller than the text");
+        assert!(numbered(11.0, false).is_empty(), "numbered, but not bold");
+        // A number alone is not a heading to join to the title under it.
+        let under_a_number = headings_with(vec![
+            line("4", 11.0, true, 72.0, 150.0),
+            line("Foxes", 16.0, false, 72.0, 164.0),
+        ]);
+        assert_eq!(under_a_number, ["Foxes"], "a bold number at the text's size");
+    }
+
+    #[test]
+    fn a_heading_in_the_margin_is_kept_unless_it_runs_over_pages() {
+        let prologue = headings_with(vec![line("Prologue", 16.0, false, 72.0, 30.0)]);
+        assert_eq!(prologue, ["Prologue"], "a heading set high on its page");
+    }
+
+    #[test]
+    fn heading_lines_closer_than_a_line_and_a_fifth_are_one_heading() {
+        // Lines of 16 points: one heading if less than 19.2 points apart.
+        let apart = |gap: f32| {
+            headings_with(vec![
+                line("Foxes", 16.0, false, 72.0, -16.0),
+                line("at Night", 16.0, false, 72.0, gap),
+            ])
+        };
+        assert_eq!(apart(18.0), ["Foxes at Night"], "18 points apart");
+        assert_eq!(apart(16.0 * 1.2), ["Foxes", "at Night"], "a line and a fifth apart");
+        assert_eq!(apart(30.0), ["Foxes", "at Night"], "30 points apart");
     }
 
     #[test]

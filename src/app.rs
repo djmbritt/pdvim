@@ -1219,12 +1219,9 @@ impl App {
                 figures
                     .iter()
                     .filter(|&&area| {
-                        reader.area_on_screen(page, area).is_some_and(|shown| {
-                            shown.right > 0.0
-                                && shown.left < width
-                                && shown.bottom > 0.0
-                                && shown.top < height
-                        })
+                        reader
+                            .area_on_screen(page, area)
+                            .is_some_and(|shown| shows_in(shown, width, height))
                     })
                     .map(|&area| (page, Start::Figure(area))),
             );
@@ -1277,9 +1274,9 @@ impl App {
                     right: area.right.max(character.area.right),
                     bottom: area.bottom.max(character.area.bottom),
                 });
-                let shows = reader.area_on_screen(page, area).is_some_and(|area| {
-                    area.right > 0.0 && area.left < width && area.bottom > 0.0 && area.top < height
-                });
+                let shows = reader
+                    .area_on_screen(page, area)
+                    .is_some_and(|area| shows_in(area, width, height));
                 if shows {
                     lines.push((area, page, index));
                 }
@@ -4700,9 +4697,83 @@ fn rub_out_word(line: &mut String) {
     line.truncate(kept);
 }
 
+/// Whether an area, measured on the screen, shows at least partly in a
+/// window of this size: one that only touches an edge does not.
+fn shows_in(area: Rect, width: f32, height: f32) -> bool {
+    area.right > 0.0 && area.left < width && area.bottom > 0.0 && area.top < height
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::{TextChar, TextLine};
+
+    #[test]
+    fn an_area_shows_in_the_window_unless_it_only_touches_an_edge() {
+        let (width, height) = (600.0, 400.0);
+        let area = |left, top, right, bottom| Rect {
+            left,
+            top,
+            right,
+            bottom,
+        };
+        let shows =
+            |left, top, right, bottom| shows_in(area(left, top, right, bottom), width, height);
+        assert!(shows(-10.0, -10.0, 10.0, 10.0), "over the top left corner");
+        assert!(shows(590.0, 390.0, 610.0, 410.0), "over the bottom right corner");
+        assert!(!shows(-20.0, 100.0, 0.0, 200.0), "touching the left edge");
+        assert!(!shows(600.0, 100.0, 620.0, 200.0), "touching the right edge");
+        assert!(!shows(100.0, -20.0, 200.0, 0.0), "touching the top edge");
+        assert!(!shows(100.0, 400.0, 200.0, 420.0), "touching the bottom edge");
+    }
+
+    /// A line of text at a height on its page, ten points a character.
+    fn line_at(text: &str, top: f32) -> TextLine {
+        TextLine {
+            chars: text
+                .chars()
+                .zip(0_u8..)
+                .map(|(character, index)| TextChar {
+                    character,
+                    area: Rect {
+                        left: f32::from(index) * 10.0,
+                        top,
+                        right: f32::from(index).mul_add(10.0, 10.0),
+                        bottom: top + 10.0,
+                    },
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn each_line_in_view_is_labelled_with_the_sentences_that_start_along_it_on_its_own_page() {
+        let (mut app, _) = testing::showing("outline.pdf");
+        // Tall enough for the first two pages at once.
+        let _: Task<Message> = app.update(Message::Resized(Size::new(612.0, 2000.0)));
+        let document = app.document_mut().unwrap();
+        // A sentence starts partway along the first line of the first page,
+        // and along the second line of the second.
+        let first = vec![line_at("One. Two", 100.0), line_at("Three four", 120.0)];
+        let second = vec![line_at("Five six", 100.0), line_at("Seven. Eight", 120.0)];
+        let _: Option<Vec<TextLine>> = document.text.insert(0, first);
+        let _: Option<Vec<TextLine>> = document.text.insert(1, second);
+        app.show_line_hints(Kind::Lines);
+        let (_, hints) = app.line_hints.as_ref().unwrap();
+        let mut starts: Vec<(u32, usize, usize)> = hints
+            .shown()
+            .filter_map(|hint| match hint.item {
+                Start::Text(spot) => Some((spot.page, spot.line, spot.index)),
+                Start::Figure(_) => None,
+            })
+            .collect();
+        starts.sort_unstable();
+        assert_eq!(
+            starts,
+            [(0, 0, 0), (0, 0, 5), (0, 1, 0), (1, 0, 0), (1, 1, 0), (1, 1, 7)],
+            "each line's start, and each sentence's on its own line and page"
+        );
+    }
 
     #[test]
     fn the_commands_are_offered_at_once_and_narrow_as_typed() {

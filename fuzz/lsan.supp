@@ -1,0 +1,7 @@
+# Leaks LeakSanitizer is not to report.
+#
+# fontconfig reads its configuration once, the first time pdvim looks for
+# a font a document lacks, and keeps it for as long as the process runs.
+# libFuzzer blames the input being run at the time; in CI that was an
+# empty one.
+leak:libfontconfig.so

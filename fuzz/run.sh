@@ -10,6 +10,10 @@
 set -eu
 cd "$(dirname "$0")"
 
+# What fontconfig keeps for the whole run is not a leak: see lsan.supp.
+LSAN_OPTIONS="${LSAN_OPTIONS:+$LSAN_OPTIONS:}suppressions=$PWD/lsan.supp"
+export LSAN_OPTIONS
+
 run() {
     target=$1
     seconds=$2

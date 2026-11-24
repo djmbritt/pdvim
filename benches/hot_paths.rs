@@ -8,7 +8,10 @@
     clippy::significant_drop_tightening,
     reason = "a group of benchmarks has to live until it is finished, as each is"
 )]
-#![expect(clippy::print_stderr, reason = "what is timed, said beside criterion's report")]
+#![expect(
+    clippy::print_stderr,
+    reason = "what is timed, said beside criterion's report"
+)]
 
 use std::hint::black_box;
 
@@ -42,9 +45,13 @@ fn page(criterion: &mut Criterion) {
 
     let mut group = criterion.benchmark_group("text");
     for needle in ["e", "the", "a sentence ending"] {
-        group.bench_with_input(BenchmarkId::new("search", needle), needle, |bencher, needle| {
-            bencher.iter(|| page.search(black_box(needle)));
-        });
+        group.bench_with_input(
+            BenchmarkId::new("search", needle),
+            needle,
+            |bencher, needle| {
+                bencher.iter(|| page.search(black_box(needle)));
+            },
+        );
     }
     for typed in ["t", "the", "the cu"] {
         group.bench_with_input(BenchmarkId::new("flash", typed), typed, |bencher, typed| {
@@ -64,9 +71,13 @@ fn document(criterion: &mut Criterion) {
 
     let mut group = criterion.benchmark_group("layout");
     for pages in [100_u32, 10_000] {
-        group.bench_with_input(BenchmarkId::new("lay out", pages), &pages, |bencher, &pages| {
-            bencher.iter(|| bench::column(black_box(pages)));
-        });
+        group.bench_with_input(
+            BenchmarkId::new("lay out", pages),
+            &pages,
+            |bencher, &pages| {
+                bencher.iter(|| bench::column(black_box(pages)));
+            },
+        );
         // A screen's height of scrolling, a frame at a time, through the
         // middle of the document.
         let layout = bench::column(pages);
@@ -74,9 +85,13 @@ fn document(criterion: &mut Criterion) {
         let views: Vec<f32> = (0_u16..60)
             .map(|frame| 18.0_f32.mul_add(f32::from(frame), middle))
             .collect();
-        group.bench_with_input(BenchmarkId::new("pages in view", pages), &views, |bencher, views| {
-            bencher.iter(|| bench::pages_in_view(&layout, black_box(views), 1080.0));
-        });
+        group.bench_with_input(
+            BenchmarkId::new("pages in view", pages),
+            &views,
+            |bencher, views| {
+                bencher.iter(|| bench::pages_in_view(&layout, black_box(views), 1080.0));
+            },
+        );
     }
     group.finish();
 }

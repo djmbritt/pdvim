@@ -23,9 +23,9 @@ use crate::keymap::{self, Counts, Pending};
 use crate::layout::{PageSize, Rect, Rotation};
 use crate::num;
 use crate::outline::{self, Outline};
-use crate::reader::{PageMode, Reader};
-use crate::picker::{Choice, Entry, Picker};
 use crate::overview::Overview;
+use crate::picker::{Choice, Entry, Picker};
+use crate::reader::{PageMode, Reader};
 use crate::visual::{self, Kind, Spot, Text, Visual};
 
 /// The keys the reader tells apart that type no character.
@@ -128,7 +128,10 @@ fn key(byte: u8) -> Key {
 }
 
 /// Reads a configuration file.
-#[expect(clippy::wildcard_enum_match_arm, reason = "only the rules for paths are checked further")]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "only the rules for paths are checked further"
+)]
 pub fn config(data: &[u8]) {
     let text = String::from_utf8_lossy(data);
     let (commands, problems) = config::parse(&text);
@@ -356,7 +359,10 @@ fn hints_key(hints: &mut Hints<u32>, keymaps: &Keymaps, key: Key) -> bool {
         }
         hints::Outcome::Picked(hint) => {
             // Each thing was labelled with its own number.
-            assert_eq!(hint.page, hint.item, "a label picked another thing than its own");
+            assert_eq!(
+                hint.page, hint.item,
+                "a label picked another thing than its own"
+            );
             false
         }
         hints::Outcome::Cancel | hints::Outcome::NoMatch | hints::Outcome::Figures => false,
@@ -367,7 +373,10 @@ fn hints_key(hints: &mut Hints<u32>, keymaps: &Keymaps, key: Key) -> bool {
 fn picker_key(picker: &mut Picker<PathBuf>, keymaps: &Keymaps, key: Key) -> bool {
     let outcome = picker.feed(key, &keymaps.recent);
     let shown = picker.shown().count();
-    assert!(picker.selected() < shown.max(1), "the entry selected is not shown");
+    assert!(
+        picker.selected() < shown.max(1),
+        "the entry selected is not shown"
+    );
     match outcome {
         Some(Choice::Open(path)) => {
             assert!(
@@ -404,7 +413,10 @@ fn overview_key(overview: &mut Overview, keymaps: &Keymaps, key: Key, shape: (u3
     let shown = overview.shown(across, down);
     if pages > 0 {
         assert!(selected < pages, "page {selected} of {pages} is selected");
-        assert!(shown.contains(&selected), "{selected} is not among {shown:?}");
+        assert!(
+            shown.contains(&selected),
+            "{selected} is not among {shown:?}"
+        );
     } else {
         assert!(shown.is_empty(), "pages are shown of none");
     }
@@ -414,7 +426,10 @@ fn overview_key(overview: &mut Overview, keymaps: &Keymaps, key: Key, shape: (u3
         "{shown:?} is more than {across} by {down}"
     );
     if let crate::overview::Outcome::Go(page) = outcome {
-        assert_eq!(page, selected, "it goes to a page other than the one selected");
+        assert_eq!(
+            page, selected,
+            "it goes to a page other than the one selected"
+        );
     }
 }
 
@@ -627,7 +642,11 @@ pub fn reader(data: &[u8]) {
 
 fn check_reader(reader: &Reader, count: usize) {
     let pages = reader.page_count();
-    assert_eq!(num::index(pages), count, "the reader lost count of the pages");
+    assert_eq!(
+        num::index(pages),
+        count,
+        "the reader lost count of the pages"
+    );
     let zoom = reader.zoom();
     assert!(zoom.is_finite() && zoom > 0.0, "zoom is {zoom}");
     let view = reader.view(false);

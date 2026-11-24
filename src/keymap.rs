@@ -451,7 +451,10 @@ mod tests {
         );
         assert_eq!(parse_keys("ctrl+["), Ok(vec![Key::Ctrl('[')]));
         assert_eq!(parse_keys("é"), Ok(vec![Key::Char('é')]));
-        assert_eq!(parse_keys("F11 f1"), Ok(vec![Key::Function(11), Key::Function(1)]));
+        assert_eq!(
+            parse_keys("F11 f1"),
+            Ok(vec![Key::Function(11), Key::Function(1)])
+        );
         assert_eq!(parse_keys("f13"), Err(Error::UnknownKey("f13".into())));
     }
 

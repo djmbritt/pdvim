@@ -143,7 +143,10 @@ fn every_key_of_the_lists_and_labels() {
 const ARGUMENTS: &[(&str, &[&str])] = &[
     ("apropos", &["zoom"]),
     ("delmarks", &["a", "!"]),
-    ("export", &["$DIR/page.png", "$DIR/page.svg", "$DIR/notes.md"]),
+    (
+        "export",
+        &["$DIR/page.png", "$DIR/page.svg", "$DIR/notes.md"],
+    ),
     ("goto", &["2", "xii"]),
     ("help", &["visual"]),
     ("man", &["5"]),
@@ -151,7 +154,15 @@ const ARGUMENTS: &[(&str, &[&str])] = &[
     ("mapclear", &["visual"]),
     ("note", &["a note"]),
     ("open", &["$DIR/text.pdf", "$DIR/missing.pdf"]),
-    ("set", &["columns 2", "page-mode double", "backdrop paper", "recolor true"]),
+    (
+        "set",
+        &[
+            "columns 2",
+            "page-mode double",
+            "backdrop paper",
+            "recolor true",
+        ],
+    ),
     ("source", &["$DIR/config.toml"]),
     ("tabedit", &["$DIR/text.pdf"]),
     ("tabmove", &["0", "+1", "-1"]),
@@ -170,9 +181,17 @@ fn every_command_and_every_action_by_name() {
             .iter()
             .find(|(command, _)| *command == name)
             .map_or(&[][..], |(_, arguments)| arguments);
-        lines.extend(arguments.iter().map(|argument| format!("{name} {argument}")));
+        lines.extend(
+            arguments
+                .iter()
+                .map(|argument| format!("{name} {argument}")),
+        );
     }
-    lines.extend(input::Binding::ALL.iter().map(|(_, name, _)| (*name).to_owned()));
+    lines.extend(
+        input::Binding::ALL
+            .iter()
+            .map(|(_, name, _)| (*name).to_owned()),
+    );
     lines.extend(["3", "40%", "0%", "zoom-to 150", "next-page 2"].map(str::to_owned));
     let mut failures = Vec::new();
     for fixture in FIXTURES {
@@ -275,7 +294,10 @@ fn each_toggle_changes_its_setting_and_comes_back_to_where_it_began() {
 
 /// The match the search is at, if any.
 fn current_match(session: &Session) -> Option<usize> {
-    session.app.document().and_then(|document| document.results.current)
+    session
+        .app
+        .document()
+        .and_then(|document| document.results.current)
 }
 
 #[test]
@@ -288,10 +310,20 @@ fn n_and_capital_n_go_through_the_matches_and_g_slash_lists_them() {
     let next = current_match(&session);
     assert_ne!(next, first, "search-next stays on the match");
     press_bound(&mut session, "search-previous");
-    assert_eq!(current_match(&session), first, "search-previous does not go back");
-    assert!(session.app.match_list.is_none(), "the matches are listed before asked");
+    assert_eq!(
+        current_match(&session),
+        first,
+        "search-previous does not go back"
+    );
+    assert!(
+        session.app.match_list.is_none(),
+        "the matches are listed before asked"
+    );
     press_bound(&mut session, "matches");
-    assert!(session.app.match_list.is_some(), "matches does not list them");
+    assert!(
+        session.app.match_list.is_some(),
+        "matches does not list them"
+    );
 }
 
 #[test]
@@ -299,9 +331,16 @@ fn the_document_is_saved_from_its_key() {
     let mut session = Session::open("text.pdf");
     // A line struck out, to have something to save.
     session.keys("vaaeS");
-    let modified =
-        |session: &Session| session.app.document().is_some_and(super::Document::modified);
-    assert!(modified(&session), "striking out a line leaves nothing to save");
+    let modified = |session: &Session| {
+        session
+            .app
+            .document()
+            .is_some_and(super::Document::modified)
+    };
+    assert!(
+        modified(&session),
+        "striking out a line leaves nothing to save"
+    );
     press_bound(&mut session, "write");
     assert!(!modified(&session), "write leaves the change unsaved");
 }
@@ -315,14 +354,21 @@ fn the_last_selection_is_selected_again_from_its_key() {
     session.keys("<Esc><Esc>");
     assert!(session.app.visual.is_none(), "escape leaves the selection");
     press_bound(&mut session, "select-again");
-    assert_eq!(session.selected(), selected, "select-again selects something else, or nothing");
+    assert_eq!(
+        session.selected(),
+        selected,
+        "select-again selects something else, or nothing"
+    );
 }
 
 #[test]
 fn the_table_of_contents_and_the_pages_small_show_from_their_keys() {
     let mut session = Session::open("outline.pdf");
     press_bound(&mut session, "outline");
-    assert!(session.app.sidebar.is_some(), "outline shows no table of contents");
+    assert!(
+        session.app.sidebar.is_some(),
+        "outline shows no table of contents"
+    );
     let mut session = Session::open("outline.pdf");
     press_bound(&mut session, "overview");
     assert!(session.app.overview.is_some(), "overview shows no pages");
@@ -343,7 +389,11 @@ fn a_mark_set_on_a_page_is_gone_back_to() {
     assert_eq!(page(&session), Some(1), "G does not go to the last page");
     press_bound(&mut session, "go-to-mark");
     session.keys("a");
-    assert_eq!(page(&session), Some(0), "the mark does not go back to the first page");
+    assert_eq!(
+        page(&session),
+        Some(0),
+        "the mark does not go back to the first page"
+    );
 }
 
 #[test]

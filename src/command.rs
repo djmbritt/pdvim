@@ -482,12 +482,14 @@ fn tab_place(argument: &str) -> Result<TabPlace, Error> {
     let bad = || Error::NotPositive(argument.to_owned());
     match argument {
         "" | "$" => Ok(TabPlace::Last),
-        _ if let Some(by) = argument.strip_prefix('+') => {
-            by.parse::<i64>().map(TabPlace::By).map_err(|_not_a_number| bad())
-        }
-        _ if argument.starts_with('-') => {
-            argument.parse::<i64>().map(TabPlace::By).map_err(|_not_a_number| bad())
-        }
+        _ if let Some(by) = argument.strip_prefix('+') => by
+            .parse::<i64>()
+            .map(TabPlace::By)
+            .map_err(|_not_a_number| bad()),
+        _ if argument.starts_with('-') => argument
+            .parse::<i64>()
+            .map(TabPlace::By)
+            .map_err(|_not_a_number| bad()),
         _ => argument
             .parse::<usize>()
             .map(TabPlace::At)
@@ -780,9 +782,18 @@ mod tests {
 
     #[test]
     fn a_number_and_a_percent_sign_goes_that_far_through() {
-        assert_eq!(parse("40%"), Ok(Some(Command::Run(Binding::Percent, Some(40)))));
-        assert_eq!(parse(" 40 % "), Ok(Some(Command::Run(Binding::Percent, Some(40)))));
-        assert_eq!(parse("0%"), Ok(Some(Command::Run(Binding::Percent, Some(1)))));
+        assert_eq!(
+            parse("40%"),
+            Ok(Some(Command::Run(Binding::Percent, Some(40))))
+        );
+        assert_eq!(
+            parse(" 40 % "),
+            Ok(Some(Command::Run(Binding::Percent, Some(40))))
+        );
+        assert_eq!(
+            parse("0%"),
+            Ok(Some(Command::Run(Binding::Percent, Some(1))))
+        );
         assert_eq!(parse("%"), Err(Error::Unknown("%".into())));
         assert_eq!(parse("x%"), Err(Error::Unknown("x%".into())));
     }
@@ -868,7 +879,9 @@ mod tests {
     fn hint_letters_are_lower_case_and_different() {
         assert_eq!(
             parse("set hintchars hjkl"),
-            Ok(Some(Command::Set(Setting::HintChars(vec!['h', 'j', 'k', 'l']))))
+            Ok(Some(Command::Set(Setting::HintChars(vec![
+                'h', 'j', 'k', 'l'
+            ]))))
         );
         for bad in ["a", "aa", "aB", "a;", ""] {
             assert_eq!(

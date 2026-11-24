@@ -213,7 +213,10 @@ impl Visual {
 
     /// Selects a text object, as vim's `iw`, `as` or `ip` do. `around` says
     /// whether the selection was whole paragraphs and their gaps before.
-    #[expect(clippy::wildcard_enum_match_arm, reason = "the other bindings are handled elsewhere")]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "the other bindings are handled elsewhere"
+    )]
     fn select_object(&mut self, binding: Binding, times: u32, text: &Text, around: bool) {
         match binding {
             Binding::InnerWord | Binding::AroundWord => {
@@ -224,8 +227,8 @@ impl Visual {
             }
             _ => {
                 self.paragraphs(text, times);
-                self.around = binding == Binding::AroundParagraph
-                    || (around && self.anchor != self.cursor);
+                self.around =
+                    binding == Binding::AroundParagraph || (around && self.anchor != self.cursor);
             }
         }
     }
@@ -434,7 +437,10 @@ impl Visual {
 
     /// Does what a binding says, a number of times where that means
     /// anything.
-    #[expect(clippy::wildcard_enum_match_arm, reason = "the other bindings are handled elsewhere")]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "the other bindings are handled elsewhere"
+    )]
     fn act(&mut self, binding: Binding, times: u32, text: &Text) -> Outcome {
         if let Some(outcome) = self.act_on_figure(binding) {
             return outcome;
@@ -482,7 +488,10 @@ impl Visual {
     /// Does what a binding says to a picture or figure selected: copying
     /// or marking it, a note beside it, or leaving. Anything else lets it
     /// go, and is done to the text from the cursor, so `None`.
-    #[expect(clippy::wildcard_enum_match_arm, reason = "the other bindings are handled elsewhere")]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "the other bindings are handled elsewhere"
+    )]
     fn act_on_figure(&mut self, binding: Binding) -> Option<Outcome> {
         let (page, area) = self.figure?;
         let mark = |kind| Some(Outcome::Mark(kind, vec![(page, area)]));
@@ -647,7 +656,10 @@ impl Visual {
     }
 
     /// Where a motion along the text takes the cursor, if anywhere.
-    #[expect(clippy::wildcard_enum_match_arm, reason = "the other bindings are handled elsewhere")]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "the other bindings are handled elsewhere"
+    )]
     fn horizontal(&self, motion: Binding, text: &Text) -> Option<Spot> {
         let cursor = self.cursor;
         let length = line(text, cursor.page, cursor.line)?.chars.len();
@@ -924,12 +936,15 @@ fn every_sentence_start(lines: &[TextLine]) -> Vec<(usize, usize)> {
     // line break has come since. A page starts as if after one.
     let mut ended = true;
     let mut gap = true;
-    let (left, right) = lines
-        .iter()
-        .flat_map(|line| &line.chars)
-        .fold((f32::INFINITY, f32::NEG_INFINITY), |(left, right), character| {
-            (left.min(character.area.left), right.max(character.area.right))
-        });
+    let (left, right) = lines.iter().flat_map(|line| &line.chars).fold(
+        (f32::INFINITY, f32::NEG_INFINITY),
+        |(left, right), character| {
+            (
+                left.min(character.area.left),
+                right.max(character.area.right),
+            )
+        },
+    );
     for (row, line) in lines.iter().enumerate() {
         // A line that stops short of the text's edge ends what it is in,
         // unless it is short only because this line's first word did not
@@ -950,9 +965,8 @@ fn every_sentence_start(lines: &[TextLine]) -> Vec<(usize, usize)> {
                 continue;
             }
             // A capital, or in a script without capitals any letter.
-            let caseless = character.is_alphabetic()
-                && !character.is_lowercase()
-                && !character.is_uppercase();
+            let caseless =
+                character.is_alphabetic() && !character.is_lowercase() && !character.is_uppercase();
             let opens = character.is_uppercase()
                 || caseless
                 || character.is_ascii_digit()
@@ -1002,7 +1016,10 @@ fn stops_short(line: &TextLine, below: &TextLine, (left, right): (f32, f32)) -> 
     let (word_left, word_right) = word.iter().fold(
         (f32::INFINITY, f32::NEG_INFINITY),
         |(word_left, word_right), character| {
-            (word_left.min(character.area.left), word_right.max(character.area.right))
+            (
+                word_left.min(character.area.left),
+                word_right.max(character.area.right),
+            )
         },
     );
     let letters = f32::from(u16::try_from(word.len()).unwrap_or(u16::MAX)).max(1.0);
@@ -1113,12 +1130,15 @@ impl Shape {
             .chars
             .iter()
             .rfind(|character| !character.character.is_whitespace())?;
-        let (top, bottom) = line
-            .chars
-            .iter()
-            .fold((f32::INFINITY, f32::NEG_INFINITY), |(top, bottom), character| {
-                (top.min(character.area.top), bottom.max(character.area.bottom))
-            });
+        let (top, bottom) = line.chars.iter().fold(
+            (f32::INFINITY, f32::NEG_INFINITY),
+            |(top, bottom), character| {
+                (
+                    top.min(character.area.top),
+                    bottom.max(character.area.bottom),
+                )
+            },
+        );
         Some(Self {
             left: first.area.left,
             right: last.area.right,
@@ -1290,7 +1310,10 @@ fn is_space(text: &Text, spot: Spot) -> bool {
 /// in its line or after a space, or where a script written without spaces
 /// goes from one kind of character to another. A mark starts none.
 fn starts_word(text: &Text, spot: Spot) -> bool {
-    let before = spot.index.checked_sub(1).map(|index| Spot { index, ..spot });
+    let before = spot
+        .index
+        .checked_sub(1)
+        .map(|index| Spot { index, ..spot });
     !is_space(text, spot)
         && !char_at(text, spot).is_some_and(prose::is_mark)
         && before.is_none_or(|before| is_space(text, before) || kinds_differ(text, before, spot))
@@ -1340,12 +1363,13 @@ fn settled(text: &Text, spot: Spot, forward: bool) -> Spot {
     if !is_mark(spot.index) {
         return spot;
     }
-    if forward
-        && let Some(index) = (spot.index..line.chars.len()).find(|&index| !is_mark(index))
-    {
+    if forward && let Some(index) = (spot.index..line.chars.len()).find(|&index| !is_mark(index)) {
         return Spot { index, ..spot };
     }
-    let index = (0..spot.index).rev().find(|&index| !is_mark(index)).unwrap_or(0);
+    let index = (0..spot.index)
+        .rev()
+        .find(|&index| !is_mark(index))
+        .unwrap_or(0);
     Spot { index, ..spot }
 }
 
@@ -1605,18 +1629,69 @@ mod tests {
                 "goes on.",
             ]),
         );
-        let start = |line, index| sentence_start(&text, Spot { page: 0, line, index });
+        let start = |line, index| {
+            sentence_start(
+                &text,
+                Spot {
+                    page: 0,
+                    line,
+                    index,
+                },
+            )
+        };
         // Before any sentence starts, the page's first character.
-        assert_eq!(start(0, 4), Spot { page: 0, line: 0, index: 0 });
+        assert_eq!(
+            start(0, 4),
+            Spot {
+                page: 0,
+                line: 0,
+                index: 0
+            }
+        );
         // "First" starts at 9; "on here" is still in that sentence.
-        assert_eq!(start(0, 9), Spot { page: 0, line: 0, index: 9 });
-        assert_eq!(start(1, 3), Spot { page: 0, line: 0, index: 9 });
+        assert_eq!(
+            start(0, 9),
+            Spot {
+                page: 0,
+                line: 0,
+                index: 9
+            }
+        );
+        assert_eq!(
+            start(1, 3),
+            Spot {
+                page: 0,
+                line: 0,
+                index: 9
+            }
+        );
         // "Second" starts at 9 of the second line.
-        assert_eq!(start(2, 4), Spot { page: 0, line: 1, index: 9 });
+        assert_eq!(
+            start(2, 4),
+            Spot {
+                page: 0,
+                line: 1,
+                index: 9
+            }
+        );
         // A line after a short one starts a sentence: the heading, and
         // the paragraph after it.
-        assert_eq!(start(3, 2), Spot { page: 0, line: 3, index: 0 });
-        assert_eq!(start(5, 2), Spot { page: 0, line: 4, index: 0 });
+        assert_eq!(
+            start(3, 2),
+            Spot {
+                page: 0,
+                line: 3,
+                index: 0
+            }
+        );
+        assert_eq!(
+            start(5, 2),
+            Spot {
+                page: 0,
+                line: 4,
+                index: 0
+            }
+        );
     }
 
     /// Lines of text, each character ten points wide and each line twenty
@@ -1855,7 +1930,10 @@ mod tests {
     #[test]
     fn a_sentence_ending_a_full_last_line_goes_on_over_the_page() {
         let text = HashMap::from([
-            (0, page(&["a line as long as the next", "ends a sentence right there."])),
+            (
+                0,
+                page(&["a line as long as the next", "ends a sentence right there."]),
+            ),
             (1, page(&["Then the page goes on.", "with more"])),
         ]);
         let mut visual = Visual::new(Kind::Characters, spot(0, 1, 0));
@@ -2001,7 +2079,10 @@ mod tests {
         assert!(!visual.selecting());
         assert_eq!(visual.kind, Kind::Characters);
         assert_eq!(visual.cursor(), spot(0, 0, 4));
-        assert_eq!((visual.anchor, visual.cursor), (spot(0, 0, 4), spot(0, 0, 4)));
+        assert_eq!(
+            (visual.anchor, visual.cursor),
+            (spot(0, 0, 4), spot(0, 0, 4))
+        );
     }
 
     #[test]
@@ -2033,12 +2114,18 @@ mod tests {
             visual.select_figure(1, area);
             visual
         };
-        assert_eq!(keys(&mut with_figure(), &text, "y"), Outcome::CopyPicture(1, area));
+        assert_eq!(
+            keys(&mut with_figure(), &text, "y"),
+            Outcome::CopyPicture(1, area)
+        );
         assert_eq!(
             keys(&mut with_figure(), &text, "H"),
             Outcome::Mark(MarkupKind::Highlight, vec![(1, area)])
         );
-        assert_eq!(keys(&mut with_figure(), &text, "d"), Outcome::Unmark(vec![(1, area)]));
+        assert_eq!(
+            keys(&mut with_figure(), &text, "d"),
+            Outcome::Unmark(vec![(1, area)])
+        );
         assert_eq!(keys(&mut with_figure(), &text, "n"), Outcome::Note(1, area));
         assert_eq!(keys(&mut with_figure(), &text, "I"), Outcome::Figure);
         assert_eq!(keys(&mut with_figure(), &text, "o"), Outcome::Stay);
@@ -2056,7 +2143,10 @@ mod tests {
         let mut visual = Visual::new(Kind::Characters, spot(0, 0, 2));
         visual.move_to(spot(0, 1, 5));
         assert!(visual.selecting());
-        assert_eq!((visual.anchor, visual.cursor), (spot(0, 0, 2), spot(0, 1, 5)));
+        assert_eq!(
+            (visual.anchor, visual.cursor),
+            (spot(0, 0, 2), spot(0, 1, 5))
+        );
     }
 
     #[test]
@@ -2064,11 +2154,17 @@ mod tests {
         let text = text();
         let mut visual = Visual::cursor_at(spot(0, 0, 0));
         keys(&mut visual, &text, "ll");
-        assert_eq!((visual.anchor, visual.cursor), (spot(0, 0, 2), spot(0, 0, 2)));
+        assert_eq!(
+            (visual.anchor, visual.cursor),
+            (spot(0, 0, 2), spot(0, 0, 2))
+        );
         assert_eq!(keys(&mut visual, &text, "v"), Outcome::Stay);
         assert!(visual.selecting());
         keys(&mut visual, &text, "l");
-        assert_eq!((visual.anchor, visual.cursor), (spot(0, 0, 2), spot(0, 0, 3)));
+        assert_eq!(
+            (visual.anchor, visual.cursor),
+            (spot(0, 0, 2), spot(0, 0, 3))
+        );
         let mut lines = Visual::cursor_at(spot(0, 0, 2));
         keys(&mut lines, &text, "V");
         assert!(lines.selecting());

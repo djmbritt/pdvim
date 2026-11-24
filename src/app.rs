@@ -20,29 +20,26 @@ use crate::config;
 use crate::help::{Help, Line};
 use crate::hints::{Hints, Outcome};
 use crate::history::{Fit, History, View};
-use crate::input::{
-    self, Action, ConfirmBinding, Key, LinkGoal, MarkVerb, Prompt, PromptBinding,
-};
+use crate::input::{self, Action, ConfirmBinding, Key, LinkGoal, MarkVerb, Prompt, PromptBinding};
 use crate::jumps::Jumps;
 use crate::keymap::{self, Counts, Fed, Match, Pending};
 use crate::layout::Rect;
 use crate::num;
 use crate::outline::{self, Outline};
+use crate::picker::{self, Choice, Entry, Picker};
 use crate::reader::{PageMode, Place, Reader};
 use crate::recall::{Lines, Recall};
-use crate::picker::{self, Choice, Entry, Picker};
 use crate::recolor::{Palette, Rgb};
 use crate::theme::{self, Colours};
 use crate::visual::{self, Kind, Spot, Visual};
 
 mod bars;
 mod chapters;
-#[cfg(test)]
-mod every_key;
+mod copy;
 #[cfg(test)]
 mod drawing;
-mod copy;
-mod run;
+#[cfg(test)]
+mod every_key;
 mod flash;
 mod forms;
 mod incsearch;
@@ -55,6 +52,7 @@ mod overview;
 mod paragraphs;
 mod pointer;
 mod reflow;
+mod run;
 mod tabs;
 #[cfg(test)]
 mod testing;
@@ -810,7 +808,10 @@ impl App {
             let _: Task<Message> = self.run_command(command);
         }
         self.sourcing = false;
-        #[expect(clippy::print_stderr, reason = "pdvim(5): every mistake goes to standard error")]
+        #[expect(
+            clippy::print_stderr,
+            reason = "pdvim(5): every mistake goes to standard error"
+        )]
         for problem in &problems {
             eprintln!("pdvim: config.toml: {problem}");
         }
@@ -1218,7 +1219,11 @@ impl App {
         let (width, height) = (self.area.width, self.area.height);
         let reader = &document.reader;
         for page in reader.visible_pages() {
-            let figures = document.figures.get(&page).map(Vec::as_slice).unwrap_or_default();
+            let figures = document
+                .figures
+                .get(&page)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
             spots.extend(
                 figures
                     .iter()
@@ -1238,7 +1243,8 @@ impl App {
         };
         // Stable, so that a line's sentences keep their order.
         spots.sort_by(|(page, one), (other_page, other)| {
-            page.cmp(other_page).then_with(|| top(one).total_cmp(&top(other)))
+            page.cmp(other_page)
+                .then_with(|| top(one).total_cmp(&top(other)))
         });
         match Hints::new(spots, &self.hint_chars) {
             Some(mut hints) => {
@@ -1981,7 +1987,10 @@ impl App {
 
     /// Shows the list of recent documents, the cheat sheet, or what the
     /// document says about itself.
-    #[expect(clippy::wildcard_enum_match_arm, reason = "the other actions are not of this kind")]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "the other actions are not of this kind"
+    )]
     fn show_panel(&mut self, action: Action) {
         match action {
             Action::ShowRecent => self.show_recent(),
@@ -2047,7 +2056,10 @@ impl App {
     }
 
     /// Edits the prompt, or runs it once enter is pressed.
-    #[expect(clippy::wildcard_enum_match_arm, reason = "the other keys do nothing here")]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "the other keys do nothing here"
+    )]
     fn on_prompt_key(&mut self, key: Key) -> Task<Message> {
         let Some((prompt, mut line)) = self.prompt.take() else {
             return Task::none();
@@ -2478,7 +2490,10 @@ impl App {
 
     /// Carries out an action from the keyboard.
     /// Goes to the next tab, or back, or to the one with a number.
-    #[expect(clippy::wildcard_enum_match_arm, reason = "the other actions are not of this kind")]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "the other actions are not of this kind"
+    )]
     fn switch_tab(&mut self, action: Action) {
         match action {
             Action::NextTab => self.step_tab(1),
@@ -2488,7 +2503,10 @@ impl App {
         }
     }
 
-    #[expect(clippy::wildcard_enum_match_arm, reason = "the other actions move the view, below")]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "the other actions move the view, below"
+    )]
     fn act(&mut self, action: Action) -> Task<Message> {
         match action {
             Action::Quit => return self.close_tab(),
@@ -2500,9 +2518,7 @@ impl App {
             Action::Repeat(times) => return self.repeat_line(times),
             Action::OpenPrompt(prompt) => {
                 // The commands are offered at once, to narrow by typing.
-                self.completing = (prompt == Prompt::Command)
-                    .then(|| narrowed(""))
-                    .flatten();
+                self.completing = (prompt == Prompt::Command).then(|| narrowed("")).flatten();
                 self.prompt = Some((prompt, String::new()));
                 self.prompt_pending = Pending::new();
                 return Task::none();
@@ -3214,7 +3230,10 @@ impl App {
                     .or_else(|| tab.opening.as_ref().map(|(_, path)| path.clone()))
             })
             .collect();
-        #[expect(clippy::print_stderr, reason = "quitting, with no window left to say it in")]
+        #[expect(
+            clippy::print_stderr,
+            reason = "quitting, with no window left to say it in"
+        )]
         if let Some(history) = &mut self.history
             && let Err(error) = history.save_session(&open, self.current)
         {
@@ -4724,11 +4743,20 @@ mod tests {
         let shows =
             |left, top, right, bottom| shows_in(area(left, top, right, bottom), width, height);
         assert!(shows(-10.0, -10.0, 10.0, 10.0), "over the top left corner");
-        assert!(shows(590.0, 390.0, 610.0, 410.0), "over the bottom right corner");
+        assert!(
+            shows(590.0, 390.0, 610.0, 410.0),
+            "over the bottom right corner"
+        );
         assert!(!shows(-20.0, 100.0, 0.0, 200.0), "touching the left edge");
-        assert!(!shows(600.0, 100.0, 620.0, 200.0), "touching the right edge");
+        assert!(
+            !shows(600.0, 100.0, 620.0, 200.0),
+            "touching the right edge"
+        );
         assert!(!shows(100.0, -20.0, 200.0, 0.0), "touching the top edge");
-        assert!(!shows(100.0, 400.0, 200.0, 420.0), "touching the bottom edge");
+        assert!(
+            !shows(100.0, 400.0, 200.0, 420.0),
+            "touching the bottom edge"
+        );
     }
 
     #[test]
@@ -4778,16 +4806,35 @@ mod tests {
         }
         // Keys held with Alt or the logo key are the desktop's.
         let a = keyboard::Key::Character("a".into());
-        assert_eq!(translate(&a, none, Some("a")), Some(Key::Char('a')), "a alone");
-        assert_eq!(translate(&a, keyboard::Modifiers::ALT, Some("a")), None, "a with alt");
-        assert_eq!(translate(&a, keyboard::Modifiers::LOGO, Some("a")), None, "a with logo");
-        assert_eq!(translate(&a, ctrl, Some("a")), Some(Key::Ctrl('a')), "a with control");
+        assert_eq!(
+            translate(&a, none, Some("a")),
+            Some(Key::Char('a')),
+            "a alone"
+        );
+        assert_eq!(
+            translate(&a, keyboard::Modifiers::ALT, Some("a")),
+            None,
+            "a with alt"
+        );
+        assert_eq!(
+            translate(&a, keyboard::Modifiers::LOGO, Some("a")),
+            None,
+            "a with logo"
+        );
+        assert_eq!(
+            translate(&a, ctrl, Some("a")),
+            Some(Key::Ctrl('a')),
+            "a with control"
+        );
     }
 
     /// Where the window is in the document, across and down, in points,
     /// and its zoom.
     fn view_of(session: &testing::Session) -> (f32, f32, f32) {
-        let view = session.app.document().map(|document| document.reader.view(false));
+        let view = session
+            .app
+            .document()
+            .map(|document| document.reader.view(false));
         view.map_or((0.0, 0.0, 0.0), |view| (view.x, view.y, view.zoom))
     }
 
@@ -4806,17 +4853,42 @@ mod tests {
         let (x, y, zoom) = view_of(&session);
         // A line of the wheel is three steps, at the wheel's speed: 42
         // pixels here. Turned towards the reader, it scrolls down.
-        session.send(Message::Wheel(mouse::ScrollDelta::Lines { x: 0.0, y: -1.0 }));
+        session.send(Message::Wheel(mouse::ScrollDelta::Lines {
+            x: 0.0,
+            y: -1.0,
+        }));
         let (_, down, _) = view_of(&session);
-        assert!(same(down - y, 42.0 / zoom), "a line scrolled {} pixels", (down - y) * zoom);
-        session.send(Message::Wheel(mouse::ScrollDelta::Lines { x: -1.0, y: 0.0 }));
+        assert!(
+            same(down - y, 42.0 / zoom),
+            "a line scrolled {} pixels",
+            (down - y) * zoom
+        );
+        session.send(Message::Wheel(mouse::ScrollDelta::Lines {
+            x: -1.0,
+            y: 0.0,
+        }));
         let (right, _, _) = view_of(&session);
-        assert!(same(right - x, 42.0 / zoom), "a line across scrolled {}", (right - x) * zoom);
+        assert!(
+            same(right - x, 42.0 / zoom),
+            "a line across scrolled {}",
+            (right - x) * zoom
+        );
         // Pixels are scrolled as they come, at the wheel's speed.
-        session.send(Message::Wheel(mouse::ScrollDelta::Pixels { x: 3.0, y: 5.0 }));
+        session.send(Message::Wheel(mouse::ScrollDelta::Pixels {
+            x: 3.0,
+            y: 5.0,
+        }));
         let (left, up, _) = view_of(&session);
-        assert!(same(right - left, 6.0 / zoom), "3 pixels left scrolled {}", (right - left) * zoom);
-        assert!(same(down - up, 10.0 / zoom), "5 pixels up scrolled {}", (down - up) * zoom);
+        assert!(
+            same(right - left, 6.0 / zoom),
+            "3 pixels left scrolled {}",
+            (right - left) * zoom
+        );
+        assert!(
+            same(down - up, 10.0 / zoom),
+            "5 pixels up scrolled {}",
+            (down - up) * zoom
+        );
     }
 
     #[test]
@@ -4830,13 +4902,25 @@ mod tests {
         };
         // Turned away from the reader, as to scroll up, it zooms in.
         let wider = zoom_after(&mut session, 0.0, 1.0);
-        assert!(wider > zoom, "turned away from the reader, the wheel zooms in");
+        assert!(
+            wider > zoom,
+            "turned away from the reader, the wheel zooms in"
+        );
         let back = zoom_after(&mut session, 0.0, -1.0);
-        assert!(same(back, zoom), "turned towards the reader, it zooms out again");
+        assert!(
+            same(back, zoom),
+            "turned towards the reader, it zooms out again"
+        );
         // Across, it neither zooms nor scrolls while control is held.
-        assert!(same(zoom_after(&mut session, -1.0, 0.0), zoom), "across, the wheel zooms");
+        assert!(
+            same(zoom_after(&mut session, -1.0, 0.0), zoom),
+            "across, the wheel zooms"
+        );
         let (across, down, _) = view_of(&session);
-        assert!(same(across, x) && same(down, y), "with control held, the wheel scrolls");
+        assert!(
+            same(across, x) && same(down, y),
+            "with control held, the wheel scrolls"
+        );
     }
 
     /// The test book, opened in a session of its own. The fuzzer's seed
@@ -4859,15 +4943,36 @@ mod tests {
         let size = session.app.font_size;
         let (_, y, zoom) = view_of(&session);
         // Without control, the wheel scrolls the book.
-        session.send(Message::Wheel(mouse::ScrollDelta::Lines { x: 0.0, y: -1.0 }));
-        assert!(same(session.app.font_size, size), "the wheel alone changes the type");
-        assert!(view_of(&session).1 > y, "the wheel alone does not scroll the book");
+        session.send(Message::Wheel(mouse::ScrollDelta::Lines {
+            x: 0.0,
+            y: -1.0,
+        }));
+        assert!(
+            same(session.app.font_size, size),
+            "the wheel alone changes the type"
+        );
+        assert!(
+            view_of(&session).1 > y,
+            "the wheel alone does not scroll the book"
+        );
         session.app.modifiers = keyboard::Modifiers::CTRL;
         session.send(Message::Wheel(mouse::ScrollDelta::Lines { x: 0.0, y: 1.0 }));
-        assert!(session.app.font_size > size, "away from the reader, the type grows");
-        assert!(same(view_of(&session).2, zoom), "the page is zoomed, not the type");
-        session.send(Message::Wheel(mouse::ScrollDelta::Lines { x: 0.0, y: -1.0 }));
-        assert!(same(session.app.font_size, size), "towards the reader, it shrinks back");
+        assert!(
+            session.app.font_size > size,
+            "away from the reader, the type grows"
+        );
+        assert!(
+            same(view_of(&session).2, zoom),
+            "the page is zoomed, not the type"
+        );
+        session.send(Message::Wheel(mouse::ScrollDelta::Lines {
+            x: 0.0,
+            y: -1.0,
+        }));
+        assert!(
+            same(session.app.font_size, size),
+            "towards the reader, it shrinks back"
+        );
     }
 
     /// A line of text at a height on its page, ten points a character.
@@ -4913,7 +5018,14 @@ mod tests {
         starts.sort_unstable();
         assert_eq!(
             starts,
-            [(0, 0, 0), (0, 0, 5), (0, 1, 0), (1, 0, 0), (1, 1, 0), (1, 1, 7)],
+            [
+                (0, 0, 0),
+                (0, 0, 5),
+                (0, 1, 0),
+                (1, 0, 0),
+                (1, 1, 0),
+                (1, 1, 7)
+            ],
             "each line's start, and each sentence's on its own line and page"
         );
     }
@@ -4927,12 +5039,22 @@ mod tests {
         assert!(app.command_hint("").contains("completes"));
         testing::typing(&mut app, "tabo");
         let completing = app.completing.as_ref().unwrap();
-        let labels: Vec<_> = completing.candidates.iter().map(|c| c.label.as_str()).collect();
+        let labels: Vec<_> = completing
+            .candidates
+            .iter()
+            .map(|c| c.label.as_str())
+            .collect();
         assert_eq!(labels, ["tabonly"]);
-        assert_eq!(app.command_hint("tabo"), "tabo: Close every tab but this one");
+        assert_eq!(
+            app.command_hint("tabo"),
+            "tabo: Close every tab but this one"
+        );
         assert_eq!(
             app.command_hint("zoom-in"),
-            format!("zoom-in: {}", keymap::Bindable::description(input::Binding::ZoomIn))
+            format!(
+                "zoom-in: {}",
+                keymap::Bindable::description(input::Binding::ZoomIn)
+            )
         );
         assert_eq!(app.command_hint("12"), "go to page 12");
         // The bar names the file alone, not the directories it is in.

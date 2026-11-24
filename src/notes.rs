@@ -70,7 +70,10 @@ fn block(marking: &Marking) -> Vec<String> {
         .map(str::trim)
         .filter(|note| !note.is_empty());
     if marking.kind == MarkupKind::Note {
-        blocks.push(format!("**Note:** {}", paragraphs(note.unwrap_or_default())));
+        blocks.push(format!(
+            "**Note:** {}",
+            paragraphs(note.unwrap_or_default())
+        ));
         return blocks;
     }
     let kind = match marking.kind {
@@ -82,7 +85,11 @@ fn block(marking: &Marking) -> Vec<String> {
     if let Some(kind) = kind {
         blocks.push(format!("*{kind}:*"));
     }
-    let text = marking.text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let text = marking
+        .text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     if !text.is_empty() {
         blocks.push(format!("> {}", escaped(&text)));
     }
@@ -118,7 +125,11 @@ fn escaped(text: &str) -> String {
     // A number and a full stop or bracket starts a numbered list: the stop
     // is escaped, as a digit cannot be.
     let digits = out.chars().take_while(char::is_ascii_digit).count();
-    if digits > 0 && out.get(digits..).is_some_and(|rest| rest.starts_with(['.', ')'])) {
+    if digits > 0
+        && out
+            .get(digits..)
+            .is_some_and(|rest| rest.starts_with(['.', ')']))
+    {
         out.insert(digits, '\\');
     }
     out
@@ -147,7 +158,12 @@ mod tests {
     fn markings_are_written_page_by_page_with_their_notes() {
         let markings = [
             marking(0, MarkupKind::Highlight, "The quick brown fox", None),
-            marking(0, MarkupKind::Underline, "jumps over\nthe lazy dog", Some("Why?")),
+            marking(
+                0,
+                MarkupKind::Underline,
+                "jumps over\nthe lazy dog",
+                Some("Why?"),
+            ),
             marking(2, MarkupKind::StrikeOut, "again", None),
             marking(2, MarkupKind::Note, "", Some("Look this up.\n\nAnd this.")),
             marking(2, MarkupKind::Squiggly, "agian", None),
@@ -177,7 +193,11 @@ mod tests {
     fn a_page_is_named_by_its_printed_number_too_when_that_is_another() {
         let labels = ["i".to_owned(), "2".to_owned(), String::new()];
         let heading_of = |page| heading(page, Some(&labels));
-        assert_eq!(heading_of(0), "## Page i (1)", "a printed number of its own");
+        assert_eq!(
+            heading_of(0),
+            "## Page i (1)",
+            "a printed number of its own"
+        );
         assert_eq!(heading_of(1), "## Page 2", "the same number");
         assert_eq!(heading_of(2), "## Page 3", "no printed number");
         assert_eq!(heading_of(7), "## Page 8", "past the labels");
@@ -199,8 +219,16 @@ mod tests {
         assert_eq!(inline, "a \\*b\\* \\[c\\](d) \\<e\\> \\`f\\`", "inline");
         assert_eq!(escaped("# not a heading"), "\\# not a heading", "a heading");
         assert_eq!(escaped("- not a list"), "\\- not a list", "a list");
-        assert_eq!(escaped("12. not a list"), "12\\. not a list", "a numbered list");
-        assert_eq!(escaped("12 foxes. And more"), "12 foxes. And more", "a number in a sentence");
+        assert_eq!(
+            escaped("12. not a list"),
+            "12\\. not a list",
+            "a numbered list"
+        );
+        assert_eq!(
+            escaped("12 foxes. And more"),
+            "12 foxes. And more",
+            "a number in a sentence"
+        );
         assert_eq!(escaped("> not a quote"), "\\> not a quote", "a quote");
     }
 

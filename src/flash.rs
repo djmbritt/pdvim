@@ -156,7 +156,10 @@ impl Flash {
                     continue;
                 };
                 if window.len() != pattern.len()
-                    || !window.iter().zip(&pattern).all(|(one, other)| same(*one, *other))
+                    || !window
+                        .iter()
+                        .zip(&pattern)
+                        .all(|(one, other)| same(*one, *other))
                 {
                     continue;
                 }
@@ -205,7 +208,11 @@ fn labels(firsts: &[char], count: usize) -> Vec<String> {
     }
     firsts
         .iter()
-        .flat_map(|first| LABELS.chars().map(move |second| [*first, second].iter().collect()))
+        .flat_map(|first| {
+            LABELS
+                .chars()
+                .map(move |second| [*first, second].iter().collect())
+        })
         .take(count)
         .collect()
 }
@@ -261,9 +268,17 @@ mod tests {
         let mut flash = Flash::new();
         assert_eq!(typing(&mut flash, &lines, "th"), Outcome::Stay);
         let starts: Vec<Spot> = flash.targets().iter().map(|target| target.start).collect();
-        assert_eq!(starts, vec![spot(0, 0), spot(0, 15), spot(1, 0), spot(1, 5)]);
+        assert_eq!(
+            starts,
+            vec![spot(0, 0), spot(0, 15), spot(1, 0), spot(1, 5)]
+        );
         // "e" follows every match, so no label starts with it.
-        assert!(flash.targets().iter().all(|target| !target.label.starts_with('e')));
+        assert!(
+            flash
+                .targets()
+                .iter()
+                .all(|target| !target.label.starts_with('e'))
+        );
         assert_eq!(flash.targets()[0].label, "a");
         assert_eq!(flash.targets()[2].label, "d");
         assert_eq!(typing(&mut flash, &lines, "d"), Outcome::Jump(spot(1, 0)));
@@ -303,7 +318,12 @@ mod tests {
         let mut flash = Flash::new();
         typing(&mut flash, &lines, "x");
         assert_eq!(flash.targets().len(), 40);
-        assert!(flash.targets().iter().all(|target| target.label.chars().count() == 2));
+        assert!(
+            flash
+                .targets()
+                .iter()
+                .all(|target| target.label.chars().count() == 2)
+        );
         let label = flash.targets()[30].label.clone();
         let jumped = typing(&mut flash, &lines, &label);
         assert_eq!(jumped, Outcome::Jump(spot(30, 0)));

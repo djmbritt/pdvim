@@ -198,7 +198,10 @@ impl<T: Clone> Hints<T> {
     /// Takes a key while text to narrow the labels is typed. Enter picks
     /// the only label left, or stops typing text so that a label can be
     /// typed.
-    #[expect(clippy::wildcard_enum_match_arm, reason = "the other keys do nothing here")]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "the other keys do nothing here"
+    )]
     fn narrow(&mut self, fed: Fed<Binding>, key: Key) -> Outcome<T> {
         match fed {
             Fed::Bound(Binding::Cancel, _) => return Outcome::Cancel,
@@ -313,7 +316,10 @@ mod tests {
         seen.dedup();
         assert_eq!(seen.len(), 100);
         // Beyond 26 × 26, the rest are left out.
-        assert_eq!(Hints::new(links(700), &home_row()).unwrap().shown().count(), 676);
+        assert_eq!(
+            Hints::new(links(700), &home_row()).unwrap().shown().count(),
+            676
+        );
     }
 
     #[test]

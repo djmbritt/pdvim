@@ -111,7 +111,10 @@ impl App {
     /// Carries out a zoom key in a book: bigger or smaller type, the type
     /// set again, or a share of it. A book always fits the window's width,
     /// so fitting it otherwise does nothing.
-    #[expect(clippy::wildcard_enum_match_arm, reason = "the other actions are not of this kind")]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "the other actions are not of this kind"
+    )]
     pub(super) fn zoom_book(&mut self, action: Action) -> Task<Message> {
         let size = match action {
             Action::ZoomIn => self.font_size + FONT_STEP,

@@ -47,12 +47,12 @@ mod num;
 mod outline;
 mod overview;
 mod paths;
+mod picker;
 mod prose;
 mod reader;
-mod shell;
 mod recall;
-mod picker;
 mod recolor;
+mod shell;
 mod theme;
 mod visual;
 

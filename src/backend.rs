@@ -491,7 +491,10 @@ pub enum MarkupKind {
 
 impl MarkupKind {
     /// The kind of marking an annotation is, if it is one.
-    #[expect(clippy::wildcard_enum_match_arm, reason = "the other annotations are not markings")]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "the other annotations are not markings"
+    )]
     const fn of(kind: mupdf::pdf::PdfAnnotationType) -> Option<Self> {
         match kind {
             mupdf::pdf::PdfAnnotationType::Highlight => Some(Self::Highlight),
@@ -875,7 +878,10 @@ impl<T> Answer<T> for oneshot::Sender<T> {
 /// A path as MuPDF takes it: as it is on Unix, and as text on Windows,
 /// where it must be valid UTF-8.
 #[cfg(unix)]
-#[expect(clippy::unnecessary_wraps, reason = "the same result as on Windows, where it can fail")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the same result as on Windows, where it can fail"
+)]
 const fn file_path(path: &Path) -> Result<&Path, mupdf::Error> {
     Ok(path)
 }
@@ -2234,7 +2240,10 @@ impl mupdf::NativeDevice for Noting {
             x1: 1.0,
             y1: 1.0,
         };
-        self.0.borrow_mut().pictures.push(unit.transform(&transform));
+        self.0
+            .borrow_mut()
+            .pictures
+            .push(unit.transform(&transform));
     }
 }
 
@@ -2433,7 +2442,11 @@ struct Worker {
 }
 
 /// A page to draw from its recording, and where to send the picture.
-type Painting = (Arc<Recording>, RenderJob, oneshot::Sender<Result<Bitmap, Error>>);
+type Painting = (
+    Arc<Recording>,
+    RenderJob,
+    oneshot::Sender<Result<Bitmap, Error>>,
+);
 
 /// Threads that draw pages from their recordings, apart from the worker,
 /// so that a page that takes long to draw, as a crafted font can make it,
@@ -3048,7 +3061,10 @@ mod tests {
         );
         // Measured down from the top of the page, as links are.
         let (area, _) = &found[0];
-        assert!((area.top - 72.0).abs() < 0.5 && (area.left - 72.0).abs() < 0.5, "{area:?}");
+        assert!(
+            (area.top - 72.0).abs() < 0.5 && (area.left - 72.0).abs() < 0.5,
+            "{area:?}"
+        );
     }
 
     #[test]
@@ -3206,7 +3222,10 @@ mod tests {
         let (reply, answer) = oneshot::channel();
         worker.answer(Request::Render(job(1.5), reply));
         let painted = iced::futures::executor::block_on(answer).unwrap().unwrap();
-        assert_eq!(painted.pixels, here.pixels, "the painter draws it as the worker does");
+        assert_eq!(
+            painted.pixels, here.pixels,
+            "the painter draws it as the worker does"
+        );
         // The recording made for the worker is the one the painter played.
         assert_eq!(worker.recordings.len(), 1, "one recording");
     }
@@ -3387,10 +3406,16 @@ mod tests {
             rect(100.0, 600.0, 101.0, 641.0),
             rect(499.0, 600.0, 500.0, 641.0),
         ];
-        let pictures = [rect(170.0, 120.0, 260.0, 200.0), rect(400.0, 700.0, 410.0, 710.0)];
+        let pictures = [
+            rect(170.0, 120.0, 260.0, 200.0),
+            rect(400.0, 700.0, 410.0, 710.0),
+        ];
         assert_eq!(
             figures(&pictures, &shapes, page),
-            [rect(100.0, 100.0, 260.0, 300.0), rect(100.0, 600.0, 500.0, 641.0)]
+            [
+                rect(100.0, 100.0, 260.0, 300.0),
+                rect(100.0, 600.0, 500.0, 641.0)
+            ]
         );
     }
 
@@ -3476,11 +3501,17 @@ mod tests {
             })
             .collect();
         assert!(!placed.is_empty(), "{svg}");
-        assert!(placed.iter().all(|&(x, y)| x >= 0.0 && y >= 0.0), "{placed:?}");
+        assert!(
+            placed.iter().all(|&(x, y)| x >= 0.0 && y >= 0.0),
+            "{placed:?}"
+        );
 
         let other = Path::new("page.jpg");
         assert_eq!(ExportFormat::of(other), None);
-        assert_eq!(ExportFormat::of(Path::new("Page.PNG")), Some(ExportFormat::Png));
+        assert_eq!(
+            ExportFormat::of(Path::new("Page.PNG")),
+            Some(ExportFormat::Png)
+        );
     }
 
     /// A one-page PDF saying "Hello world", locked with the password
@@ -4099,10 +4130,6 @@ mod tests {
             outline(&document, || Document::from_bytes(bytes, "application/pdf")).unwrap();
         let titles: Vec<_> = chapters
             .iter()
-
-
-
-
             .map(|chapter| chapter.title.as_str())
             .collect();
         assert_eq!(titles, ["Chapter 1", ""]);
@@ -4258,10 +4285,7 @@ mod tests {
     #[test]
     fn a_search_for_a_word_skips_it_inside_others() {
         let rows = ["foxes, fox. fox_y outfox", "fox"];
-        assert_eq!(
-            found(&rows, "fox", false, true),
-            [(70.0, 0.0), (0.0, 20.0)]
-        );
+        assert_eq!(found(&rows, "fox", false, true), [(70.0, 0.0), (0.0, 20.0)]);
     }
 
     #[test]

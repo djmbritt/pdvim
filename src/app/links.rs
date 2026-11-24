@@ -166,20 +166,22 @@ impl App {
         } else {
             Vec::new()
         };
-        links.extend(reader
-            .visible_pages()
-            .flat_map(|page| {
-                document
-                    .links
-                    .get(&page)
-                    .into_iter()
-                    .flatten()
-                    .map(move |link| (page, link))
-            })
-            .filter(|_| !pictures)
-            .filter(|(_, link)| following || !matches!(link.target, Target::Field(_)))
-            .filter(|(page, link)| on_screen(*page, link.area))
-            .map(|(page, link)| (page, link.area, Labelled::Link(link.clone()))));
+        links.extend(
+            reader
+                .visible_pages()
+                .flat_map(|page| {
+                    document
+                        .links
+                        .get(&page)
+                        .into_iter()
+                        .flatten()
+                        .map(move |link| (page, link))
+                })
+                .filter(|_| !pictures)
+                .filter(|(_, link)| following || !matches!(link.target, Target::Field(_)))
+                .filter(|(page, link)| on_screen(*page, link.area))
+                .map(|(page, link)| (page, link.area, Labelled::Link(link.clone()))),
+        );
         if following {
             links.extend(self.markings_in_view().into_iter().filter_map(|marking| {
                 let area = *marking.areas.first()?;
@@ -203,9 +205,7 @@ impl App {
             self.notice = Notice::Info(
                 match self.link_goal {
                     LinkGoal::Follow => "no links, fields or markings in view",
-                    LinkGoal::Picture | LinkGoal::SelectFigure => {
-                        "no pictures or figures in view"
-                    }
+                    LinkGoal::Picture | LinkGoal::SelectFigure => "no pictures or figures in view",
                     LinkGoal::NewTab | LinkGoal::Copy => "no links in view",
                 }
                 .to_owned(),
@@ -342,8 +342,7 @@ impl App {
         Task::perform(
             async move {
                 let picture = rendering.await.map_err(|error| error.to_string())?;
-                crate::clipboard::copy_picture(picture.width, picture.height, picture.pixels)
-                    .await
+                crate::clipboard::copy_picture(picture.width, picture.height, picture.pixels).await
             },
             Message::PictureCopied,
         )
@@ -384,9 +383,7 @@ impl App {
             .reader
             .page_size(page)
             .map_or(0.0, |size| size.height);
-        let down = top
-            .filter(|_| height > 0.0)
-            .map_or(0.0, |top| top / height);
+        let down = top.filter(|_| height > 0.0).map_or(0.0, |top| top / height);
         let beside = self.current.saturating_add(1);
         let task = self.open_new_tab(path.clone(), beside, Place { page, down });
         self.notice = Notice::Info(format!(
@@ -514,7 +511,11 @@ mod tests {
             .shown()
             .find(|hint| matches!(hint.item, crate::app::Start::Figure(_)))
             .unwrap();
-        assert!(hints.shown().any(|hint| matches!(hint.item, crate::app::Start::Text(_))));
+        assert!(
+            hints
+                .shown()
+                .any(|hint| matches!(hint.item, crate::app::Start::Text(_)))
+        );
         let label: String = figure.label.iter().collect();
         typing(&mut app, &label);
         assert!(app.line_hints.is_none());

@@ -138,9 +138,10 @@ impl App {
     /// are not yet rendered as they are wanted now.
     pub(super) fn render_small(&mut self) -> Task<Message> {
         let (columns, rows) = self.overview_shape();
-        let Some(shown) = self.overview().map(|overview| {
-            overview.shown(columns, rows.saturating_add(AHEAD.saturating_mul(2)))
-        }) else {
+        let Some(shown) = self
+            .overview()
+            .map(|overview| overview.shown(columns, rows.saturating_add(AHEAD.saturating_mul(2))))
+        else {
             return Task::none();
         };
         let palette = self.palette();
@@ -223,10 +224,15 @@ impl App {
         let (width, height) = self.small_size();
         let shown: Vec<u32> = overview.shown(columns, rows).collect();
         let lines = shown.chunks(num::index(columns)).map(|line| {
-            Row::with_children(
-                line.iter()
-                    .map(|&page| small_page(document, page, overview.selected() == page, (width, height), chrome)),
-            )
+            Row::with_children(line.iter().map(|&page| {
+                small_page(
+                    document,
+                    page,
+                    overview.selected() == page,
+                    (width, height),
+                    chrome,
+                )
+            }))
             .spacing(GAP)
             .into()
         });

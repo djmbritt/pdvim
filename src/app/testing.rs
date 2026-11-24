@@ -255,7 +255,9 @@ impl Session {
         let size = Size::new(612.0, 400.0);
         let mut window =
             iced_test::Simulator::with_size(iced::Settings::default(), size, self.app.view());
-        window.snapshot(&self.app.theme()).expect("the window draws");
+        window
+            .snapshot(&self.app.theme())
+            .expect("the window draws");
     }
 
     /// The text selected in visual mode.
@@ -299,8 +301,18 @@ fn key_event(key: Key) -> keyboard::Event {
         Key::End => named(Named::End, Modifiers::empty()),
         Key::Function(number) => {
             let function = [
-                Named::F1, Named::F2, Named::F3, Named::F4, Named::F5, Named::F6, Named::F7,
-                Named::F8, Named::F9, Named::F10, Named::F11, Named::F12,
+                Named::F1,
+                Named::F2,
+                Named::F3,
+                Named::F4,
+                Named::F5,
+                Named::F6,
+                Named::F7,
+                Named::F8,
+                Named::F9,
+                Named::F10,
+                Named::F11,
+                Named::F12,
             ];
             let which = usize::from(number.clamp(1, 12)).saturating_sub(1);
             named(function[which], Modifiers::empty())

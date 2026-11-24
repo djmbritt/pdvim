@@ -40,7 +40,12 @@ pub fn prose_pdf(pages: u32) -> Vec<u8> {
     let mut text = String::new();
     for line in 0..LINES {
         let words = PROSE
-            .get(usize::try_from(line).unwrap_or(0).checked_rem(PROSE.len()).unwrap_or(0))
+            .get(
+                usize::try_from(line)
+                    .unwrap_or(0)
+                    .checked_rem(PROSE.len())
+                    .unwrap_or(0),
+            )
             .copied()
             .unwrap_or_default();
         // A paragraph starts after a line left blank.

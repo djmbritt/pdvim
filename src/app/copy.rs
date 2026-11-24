@@ -61,7 +61,9 @@ impl App {
             write_new(&written, text.as_bytes(), force)?;
             Ok(markings.len())
         };
-        Task::perform(exporting, move |result| Message::NotesExported(target, result))
+        Task::perform(exporting, move |result| {
+            Message::NotesExported(target, result)
+        })
     }
 
     /// Says how many markings were exported, or why none were.
@@ -221,18 +223,28 @@ mod tests {
         let mut session = super::super::testing::Session::open("text.pdf");
         // The first line struck out, and not saved.
         session.keys("vaaeS");
-        let struck = session
-            .app
-            .document()
-            .map(super::super::Document::modified);
+        let struck = session.app.document().map(super::super::Document::modified);
         assert_eq!(struck, Some(true), "the strike-out is not yet saved");
         let target = session.dir.join("notes.md");
         command(&mut session, &format!("export {}", target.display()));
-        assert!(said(&session).starts_with("exported 1 marking to"), "said {:?}", said(&session));
+        assert!(
+            said(&session).starts_with("exported 1 marking to"),
+            "said {:?}",
+            said(&session)
+        );
         let written = std::fs::read_to_string(&target).unwrap_or_default();
-        assert!(written.starts_with("# "), "a heading with the title: {written}");
-        assert!(written.contains("1 marking from text.pdf."), "where it is from: {written}");
-        assert!(written.contains("## Page 1\n\n*Struck out:*\n\n> "), "the strike-out: {written}");
+        assert!(
+            written.starts_with("# "),
+            "a heading with the title: {written}"
+        );
+        assert!(
+            written.contains("1 marking from text.pdf."),
+            "where it is from: {written}"
+        );
+        assert!(
+            written.contains("## Page 1\n\n*Struck out:*\n\n> "),
+            "the strike-out: {written}"
+        );
     }
 
     #[test]
@@ -243,12 +255,19 @@ mod tests {
         let kept = std::fs::write(&target, "mine");
         assert!(kept.is_ok(), "a file to keep");
         command(&mut session, &format!("export {}", target.display()));
-        assert!(said(&session).ends_with(":export! writes over it"), "said {:?}", said(&session));
+        assert!(
+            said(&session).ends_with(":export! writes over it"),
+            "said {:?}",
+            said(&session)
+        );
         let kept = std::fs::read_to_string(&target).unwrap_or_default();
         assert_eq!(kept, "mine", "the file is kept");
         command(&mut session, &format!("export! {}", target.display()));
         let written = std::fs::read_to_string(&target).unwrap_or_default();
-        assert!(written.contains("Struck out"), "the file is written over: {written}");
+        assert!(
+            written.contains("Struck out"),
+            "the file is written over: {written}"
+        );
     }
 
     #[test]
@@ -256,7 +275,11 @@ mod tests {
         let mut session = super::super::testing::Session::open("text.pdf");
         let target = session.dir.join("notes.md");
         command(&mut session, &format!("export {}", target.display()));
-        assert_eq!(said(&session), "no highlights or notes to export", "what is said");
+        assert_eq!(
+            said(&session),
+            "no highlights or notes to export",
+            "what is said"
+        );
         assert!(!target.exists(), "no file is written");
     }
 }

@@ -77,7 +77,10 @@ pub const SENTENCE_ENDS: &[char] = &[
 /// Whether a character ends a sentence with no space needed after it, as
 /// the ideographic full stop does.
 pub const fn ends_without_space(character: char) -> bool {
-    matches!(character, '\u{3002}' | '\u{ff01}' | '\u{ff1f}' | '\u{ff0e}' | '\u{ff61}')
+    matches!(
+        character,
+        '\u{3002}' | '\u{ff01}' | '\u{ff1f}' | '\u{ff0e}' | '\u{ff61}'
+    )
 }
 
 /// Whether a character is a mark that belongs to the letter before it,
@@ -126,12 +129,16 @@ pub fn is_mark(character: char) -> bool {
 pub fn unspaced(character: char) -> Option<u8> {
     Some(match u32::from(character) {
         // Ideographic and full-width punctuation.
-        0x3000..=0x303f | 0xff00..=0xff0f | 0xff1a..=0xff20 | 0xff3b..=0xff40
-        | 0xff5b..=0xff65 => 1,
+        0x3000..=0x303f | 0xff00..=0xff0f | 0xff1a..=0xff20 | 0xff3b..=0xff40 | 0xff5b..=0xff65 => {
+            1
+        }
         0x3040..=0x309f => 2,
         0x30a0..=0x30ff | 0x31f0..=0x31ff | 0xff66..=0xff9f => 3,
         // Chinese characters, as Japanese uses them too.
-        0x2e80..=0x2fdf | 0x3400..=0x4dbf | 0x4e00..=0x9fff | 0xf900..=0xfaff
+        0x2e80..=0x2fdf
+        | 0x3400..=0x4dbf
+        | 0x4e00..=0x9fff
+        | 0xf900..=0xfaff
         | 0x20000..=0x3134f => 4,
         0x0e00..=0x0e7f => 5,
         0x0e80..=0x0eff => 6,

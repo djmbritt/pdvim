@@ -87,9 +87,8 @@ impl Table {
     /// The recoloured value of a pixel.
     pub fn apply(&self, Rgb(red, green, blue): Rgb) -> Rgb {
         // Every u8 is an index into 256 entries, so nothing is missed.
-        let look_up = |table: &[u8; 256], shade: u8| {
-            table.get(usize::from(shade)).copied().unwrap_or(shade)
-        };
+        let look_up =
+            |table: &[u8; 256], shade: u8| table.get(usize::from(shade)).copied().unwrap_or(shade);
         Rgb(
             look_up(&self.red, red),
             look_up(&self.green, green),

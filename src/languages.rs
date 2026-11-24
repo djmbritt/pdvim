@@ -44,7 +44,10 @@ fn samples() -> Vec<Sample> {
                 code: fields[0].to_owned(),
                 language: fields[1].to_owned(),
                 spaced: fields[2] == "spaced",
-                sentences: fields[5..].iter().map(|&sentence| sentence.to_owned()).collect(),
+                sentences: fields[5..]
+                    .iter()
+                    .map(|&sentence| sentence.to_owned())
+                    .collect(),
             }
         })
         .collect()
@@ -256,13 +259,18 @@ fn report(check: &str, failures: &[String]) {
 /// The text without its spaces, to compare where text is split apart from
 /// how it is spaced.
 fn unspaced(text: &str) -> String {
-    text.chars().filter(|character| !character.is_whitespace()).collect()
+    text.chars()
+        .filter(|character| !character.is_whitespace())
+        .collect()
 }
 
 #[test]
 fn the_pdfs_read_back_as_written() {
     let mut failures = Vec::new();
-    for page in pages().into_iter().filter(|page| page.source == Source::Pdf) {
+    for page in pages()
+        .into_iter()
+        .filter(|page| page.source == Source::Pdf)
+    {
         let read: String = page.text[&0]
             .iter()
             .flat_map(|line| line.chars.iter().map(|character| character.character))
@@ -363,7 +371,11 @@ fn the_cursor_stops_at_every_word_and_never_inside_a_letter() {
             for (line, row) in text[&0].iter().enumerate() {
                 for index in 1..row.chars.len() {
                     let after_space = row.chars[index - 1].character == ' ';
-                    let spot = Spot { page: 0, line, index };
+                    let spot = Spot {
+                        page: 0,
+                        line,
+                        index,
+                    };
                     if after_space && !stops.contains(&spot) {
                         failures.push(format!("{name}: `w` passes over the word at {spot:?}"));
                     }

@@ -134,7 +134,9 @@ mod tests {
         assert!(matches!(session.app.prompt, Some((Prompt::Password, _))));
         session.keys("wrong<Enter>");
         assert!(session.app.document().is_none());
-        assert!(matches!(session.app.prompt, Some((Prompt::Password, ref typed)) if typed.is_empty()));
+        assert!(
+            matches!(session.app.prompt, Some((Prompt::Password, ref typed)) if typed.is_empty())
+        );
         session.keys("secret<Enter>");
         assert!(session.app.prompt.is_none());
         assert!(session.app.document().is_some());

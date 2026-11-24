@@ -104,7 +104,10 @@ fn the_question_for_a_password() {
 
 #[test]
 fn two_pages_side_by_side_recoloured() {
-    drawn("outline.pdf", ":set page-mode double<Enter>:set recolor true<Enter>");
+    drawn(
+        "outline.pdf",
+        ":set page-mode double<Enter>:set recolor true<Enter>",
+    );
 }
 
 #[test]

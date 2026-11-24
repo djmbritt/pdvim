@@ -103,7 +103,10 @@ impl<T: Clone> Picker<T> {
 
     /// Takes a key, bound as in the keymap. Moving the selection and typing
     /// keep the list open; a choice closes it.
-    #[expect(clippy::wildcard_enum_match_arm, reason = "the other keys do nothing here")]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "the other keys do nothing here"
+    )]
     pub fn feed(&mut self, key: Key, keymap: &Keymap<Binding>) -> Option<Choice<T>> {
         let last = self.shown.len().saturating_sub(1);
         match self.pending.feed(key, keymap, Counts::NotTaken) {

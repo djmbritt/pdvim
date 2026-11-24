@@ -29,7 +29,10 @@ pub struct Settings {
 
 impl Settings {
     /// Takes a setting, if it is one a rule can give.
-    #[expect(clippy::wildcard_enum_match_arm, reason = "the other settings are not set by path")]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "the other settings are not set by path"
+    )]
     pub fn set(&mut self, setting: &Setting) -> Result<(), String> {
         match *setting {
             Setting::Recolor(recolor) => self.recolor = Some(recolor),
@@ -293,7 +296,9 @@ mod tests {
         let rule = |pattern, settings: &[(&'static str, &str)]| {
             Rule::new(
                 pattern,
-                settings.iter().map(|(name, value)| (*name, (*value).to_owned())),
+                settings
+                    .iter()
+                    .map(|(name, value)| (*name, (*value).to_owned())),
             )
         };
         let rules = [

@@ -85,13 +85,17 @@ pub fn parse(text: &str) -> (Vec<Command>, Vec<Problem>) {
                 for (index, rule) in rules.iter().enumerate() {
                     match path_rule(rule) {
                         Ok(rule) => commands.push(Command::PathRule(rule)),
-                        Err(message) => problems.push(Problem(format!("paths[{index}]: {message}"))),
+                        Err(message) => {
+                            problems.push(Problem(format!("paths[{index}]: {message}")));
+                        }
                     }
                 }
                 continue;
             }
             ("paths", _) => {
-                problems.push(Problem("paths is not a list of [[paths]] tables".to_owned()));
+                problems.push(Problem(
+                    "paths is not a list of [[paths]] tables".to_owned(),
+                ));
                 continue;
             }
             ("settings" | "keys", Value::Table(entries)) => entries,

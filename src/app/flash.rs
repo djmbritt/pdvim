@@ -33,7 +33,10 @@ impl App {
     }
 
     /// Takes a key typed while text to jump to is asked for.
-    #[expect(clippy::wildcard_enum_match_arm, reason = "the other keys do nothing here")]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "the other keys do nothing here"
+    )]
     pub(super) fn on_flash_key(&mut self, key: Key) -> Task<Message> {
         let Some(mut flash) = self.flash.take() else {
             return Task::none();
@@ -67,7 +70,9 @@ impl App {
             };
             let lines: Vec<_> = order
                 .iter()
-                .filter_map(|&(page, line)| Some((page, line, document.text.get(&page)?.get(line)?)))
+                .filter_map(|&(page, line)| {
+                    Some((page, line, document.text.get(&page)?.get(line)?))
+                })
                 .collect();
             flash.feed(press, &lines, from)
         };
@@ -140,7 +145,14 @@ mod tests {
         session.keys("swor<Enter>");
         assert_eq!(session.app.mode(), Mode::Cursor);
         let cursor = session.app.visual.as_ref().unwrap().cursor();
-        assert_eq!(cursor, Spot { page: 0, line: 0, index: 7 });
+        assert_eq!(
+            cursor,
+            Spot {
+                page: 0,
+                line: 0,
+                index: 7
+            }
+        );
         // v starts selecting from the cursor; y copies and leaves.
         session.keys("vey");
         assert_eq!(session.copied, ["world."]);
@@ -155,10 +167,17 @@ mod tests {
         assert_eq!(session.app.mode(), Mode::Visual);
         session.keys("swor");
         let flash = session.app.flash.as_ref().unwrap();
-        let words = flash.targets().iter().find(|target| target.start.line == 1).unwrap();
+        let words = flash
+            .targets()
+            .iter()
+            .find(|target| target.start.line == 1)
+            .unwrap();
         let label = words.label.clone();
         session.keys(&label);
-        assert_eq!(session.selected(), "Hello, world. A line of text second line -- with w");
+        assert_eq!(
+            session.selected(),
+            "Hello, world. A line of text second line -- with w"
+        );
     }
 
     #[test]

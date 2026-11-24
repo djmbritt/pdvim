@@ -567,11 +567,23 @@ mod tests {
         };
         let top_edge = height * MARGIN;
         let bottom_edge = height * (1.0 - MARGIN);
-        assert!(in_margin(&set(top_edge - 1.0, top_edge + 9.0), height), "above the top edge");
-        assert!(!in_margin(&set(top_edge, top_edge + 10.0), height), "on the top edge");
+        assert!(
+            in_margin(&set(top_edge - 1.0, top_edge + 9.0), height),
+            "above the top edge"
+        );
+        assert!(
+            !in_margin(&set(top_edge, top_edge + 10.0), height),
+            "on the top edge"
+        );
         assert!(!in_margin(&set(500.0, 510.0), height), "in the middle");
-        assert!(!in_margin(&set(bottom_edge - 10.0, bottom_edge), height), "on the bottom edge");
-        assert!(in_margin(&set(bottom_edge - 9.0, bottom_edge + 1.0), height), "below it");
+        assert!(
+            !in_margin(&set(bottom_edge - 10.0, bottom_edge), height),
+            "on the bottom edge"
+        );
+        assert!(
+            in_margin(&set(bottom_edge - 9.0, bottom_edge + 1.0), height),
+            "below it"
+        );
     }
 
     #[test]
@@ -588,7 +600,10 @@ mod tests {
         // margins.
         assert_eq!(
             running,
-            [key_without_digits("Foxes"), key_without_digits("Running Head of the Book")],
+            [
+                key_without_digits("Foxes"),
+                key_without_digits("Running Head of the Book")
+            ],
             "only what is in the margins of three pages"
         );
     }
@@ -615,20 +630,35 @@ mod tests {
         let at = |size: f32, bold: bool| {
             headings_with(vec![line("Foxes at Night", size, bold, 72.0, 150.0)])
         };
-        assert_eq!(at(13.0, false), ["Foxes at Night"], "13 points is a heading");
+        assert_eq!(
+            at(13.0, false),
+            ["Foxes at Night"],
+            "13 points is a heading"
+        );
         assert!(at(12.5, false).is_empty(), "12.5 points is not");
         let numbered = |size: f32, bold: bool| {
             headings_with(vec![line("3 Foxes at Night", size, bold, 72.0, 150.0)])
         };
-        assert_eq!(numbered(11.0, true), ["3 Foxes at Night"], "bold and numbered at 11 points");
-        assert!(numbered(10.0, true).is_empty(), "bold and numbered, but smaller than the text");
+        assert_eq!(
+            numbered(11.0, true),
+            ["3 Foxes at Night"],
+            "bold and numbered at 11 points"
+        );
+        assert!(
+            numbered(10.0, true).is_empty(),
+            "bold and numbered, but smaller than the text"
+        );
         assert!(numbered(11.0, false).is_empty(), "numbered, but not bold");
         // A number alone is not a heading to join to the title under it.
         let under_a_number = headings_with(vec![
             line("4", 11.0, true, 72.0, 150.0),
             line("Foxes", 16.0, false, 72.0, 164.0),
         ]);
-        assert_eq!(under_a_number, ["Foxes"], "a bold number at the text's size");
+        assert_eq!(
+            under_a_number,
+            ["Foxes"],
+            "a bold number at the text's size"
+        );
     }
 
     #[test]
@@ -647,7 +677,11 @@ mod tests {
             ])
         };
         assert_eq!(apart(18.0), ["Foxes at Night"], "18 points apart");
-        assert_eq!(apart(16.0 * 1.2), ["Foxes", "at Night"], "a line and a fifth apart");
+        assert_eq!(
+            apart(16.0 * 1.2),
+            ["Foxes", "at Night"],
+            "a line and a fifth apart"
+        );
         assert_eq!(apart(30.0), ["Foxes", "at Night"], "30 points apart");
     }
 

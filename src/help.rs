@@ -105,7 +105,13 @@ const NORMAL: [(&str, &[input::Binding]); 10] = {
         ),
         (
             "Selecting text",
-            &[B::Visual, B::VisualLine, B::Flash, B::SelectFigure, B::SelectAgain],
+            &[
+                B::Visual,
+                B::VisualLine,
+                B::Flash,
+                B::SelectFigure,
+                B::SelectAgain,
+            ],
         ),
         (
             "Highlights and other markings",
@@ -470,11 +476,17 @@ mod tests {
             Some(&Line::Heading("Visual mode: selecting text"))
         );
         assert!(help.go_to("Zoom", rows));
-        assert_eq!(help.shown(rows).first(), Some(&Line::Heading("Zoom and view")));
+        assert_eq!(
+            help.shown(rows).first(),
+            Some(&Line::Heading("Zoom and view"))
+        );
         assert!(help.go_to("rotate", rows));
         assert!(matches!(
             help.shown(rows).first(),
-            Some(Line::Entry { action: "rotate", .. })
+            Some(Line::Entry {
+                action: "rotate",
+                ..
+            })
         ));
         assert!(!help.go_to("nothing like it", rows));
         // Near the end, the sheet stays full.

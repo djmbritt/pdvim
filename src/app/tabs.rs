@@ -8,9 +8,9 @@ use iced::Task;
 
 use super::{App, Message, Notice, Tab, info, tilde};
 use crate::backend;
-use crate::reader::Place;
 use crate::command::TabPlace;
 use crate::picker::{Choice, Entry, Picker};
+use crate::reader::Place;
 
 /// How many closed tabs are kept to open again.
 const CLOSED_KEPT: usize = 20;
@@ -45,7 +45,12 @@ impl App {
 
     /// Opens a document in a new tab at a place among the tabs, and goes
     /// to a place in it, whether or not it is open in another tab already.
-    pub(super) fn open_new_tab(&mut self, path: PathBuf, index: usize, place: Place) -> Task<Message> {
+    pub(super) fn open_new_tab(
+        &mut self,
+        path: PathBuf,
+        index: usize,
+        place: Place,
+    ) -> Task<Message> {
         let request = self.next_id();
         let index = index.min(self.tabs.len());
         self.tabs.insert(
@@ -202,7 +207,10 @@ mod tests {
     #[test]
     fn tabs_open_beside_each_other_and_are_gone_between() {
         let mut session = three();
-        assert_eq!(tabs(&session), (named(["text.pdf", "links.pdf", "outline.pdf"]), 2));
+        assert_eq!(
+            tabs(&session),
+            (named(["text.pdf", "links.pdf", "outline.pdf"]), 2)
+        );
         session.keys("gt");
         assert_eq!(tabs(&session).1, 0);
         session.keys("gT");
@@ -215,9 +223,15 @@ mod tests {
     fn a_tab_is_moved() {
         let mut session = three();
         session.keys(":tabmove 0<Enter>");
-        assert_eq!(tabs(&session), (named(["outline.pdf", "text.pdf", "links.pdf"]), 0));
+        assert_eq!(
+            tabs(&session),
+            (named(["outline.pdf", "text.pdf", "links.pdf"]), 0)
+        );
         session.keys(":tabmove +1<Enter>");
-        assert_eq!(tabs(&session), (named(["text.pdf", "outline.pdf", "links.pdf"]), 1));
+        assert_eq!(
+            tabs(&session),
+            (named(["text.pdf", "outline.pdf", "links.pdf"]), 1)
+        );
     }
 
     #[test]

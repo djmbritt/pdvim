@@ -95,12 +95,8 @@ pub fn complete(line: &str) -> Completion {
         Some("set") if words_before == 1 => match rest.split_whitespace().next() {
             Some(
                 "autosave" | "confirm-quit" | "confirm-tab-close" | "incsearch" | "page-borders"
-                | "session"
-                | "smartcase"
-                | "statusbar" | "tabbar" | "trim",
-            ) => {
-                words(last_word, ["true", "false"])
-            }
+                | "session" | "smartcase" | "statusbar" | "tabbar" | "trim",
+            ) => words(last_word, ["true", "false"]),
             Some("recolor") => words(last_word, ["true", "false", "auto"]),
             Some("page-mode") => words(last_word, crate::reader::PageMode::NAMES),
             Some("backdrop") => words(last_word, ["paper", "theme"]),
@@ -275,7 +271,10 @@ mod tests {
             ]
         );
         assert_eq!(texts(&complete("qu")), ["quit"]);
-        assert_eq!(texts(&complete("r")), ["recent", "redo", "reopen-tab", "repeat", "rotate"]);
+        assert_eq!(
+            texts(&complete("r")),
+            ["recent", "redo", "reopen-tab", "repeat", "rotate"]
+        );
         assert_eq!(texts(&complete("  rec")), ["recent"]);
         assert_eq!(complete("  rec").start, 2);
         assert_eq!(texts(&complete("map")), ["map", "mapclear"]);
@@ -365,7 +364,10 @@ mod tests {
             .iter()
             .map(|candidate| candidate.label.as_str())
             .collect();
-        assert_eq!(labels, ["Book.PDF", "paper one.pdf", "Papers/", "story.epub"]);
+        assert_eq!(
+            labels,
+            ["Book.PDF", "paper one.pdf", "Papers/", "story.epub"]
+        );
         assert!(
             completion
                 .candidates

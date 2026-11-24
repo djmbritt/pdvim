@@ -41,23 +41,23 @@
   <screenshots>
     <screenshot type="default">
       <caption>Reading, with two tabs open</caption>
-      <image>https://raw.githubusercontent.com/djmbritt/pdvim/v0.2.20/docs/screenshots/reading.png</image>
+      <image>https://raw.githubusercontent.com/djmbritt/pdvim/v0.2.21/docs/screenshots/reading.png</image>
     </screenshot>
     <screenshot>
       <caption>The table of contents, over a recolored page</caption>
-      <image>https://raw.githubusercontent.com/djmbritt/pdvim/v0.2.20/docs/screenshots/contents.png</image>
+      <image>https://raw.githubusercontent.com/djmbritt/pdvim/v0.2.21/docs/screenshots/contents.png</image>
     </screenshot>
     <screenshot>
       <caption>Labels on each line of text, to start selecting from</caption>
-      <image>https://raw.githubusercontent.com/djmbritt/pdvim/v0.2.20/docs/screenshots/labels.png</image>
+      <image>https://raw.githubusercontent.com/djmbritt/pdvim/v0.2.21/docs/screenshots/labels.png</image>
     </screenshot>
     <screenshot>
       <caption>Lines highlighted, underlined and squiggled</caption>
-      <image>https://raw.githubusercontent.com/djmbritt/pdvim/v0.2.20/docs/screenshots/visual.png</image>
+      <image>https://raw.githubusercontent.com/djmbritt/pdvim/v0.2.21/docs/screenshots/visual.png</image>
     </screenshot>
     <screenshot>
       <caption>The cheat sheet of key bindings</caption>
-      <image>https://raw.githubusercontent.com/djmbritt/pdvim/v0.2.20/docs/screenshots/help.png</image>
+      <image>https://raw.githubusercontent.com/djmbritt/pdvim/v0.2.21/docs/screenshots/help.png</image>
     </screenshot>
   </screenshots>
   <branding>
@@ -65,6 +65,7 @@
     <color type="primary" scheme_preference="dark">#2d5e34</color>
   </branding>
   <releases>
+    <release version="0.2.21" date="2026-11-24"/>
     <release version="0.2.20" date="2026-11-24"/>
     <release version="0.2.19" date="2026-11-24"/>
     <release version="0.2.18" date="2026-11-24"/>

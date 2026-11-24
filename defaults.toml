@@ -111,6 +111,12 @@ incsearch = true
 # find any case, as in vim.
 smartcase = true
 
+# The key "leader" stands for in key bindings, so that your own bindings
+# start with a key of their own: with "leader d" = ":!sdcv ...", typing \ d
+# runs it. Any one key, as keys are written below: "space" would do, once
+# space is unbound from scroll-full-down.
+leader = "\\"
+
 # Show the tab bar along the top when more than one tab is open.
 tabbar = true
 
@@ -157,12 +163,18 @@ note-color = "#fdd835"
 # "shift+tab", "ctrl+shift+tab". "shift+q" is the same as "Q".
 #
 # Separate the keys of a sequence with spaces: "g g". If one binding is the
-# start of a longer one, the shorter one wins.
+# start of a longer one, the shorter one wins. "leader" in a sequence is the
+# key the leader setting names: "leader d".
 #
 # In normal mode, keys can also run a command line, written after a colon;
 # a semicolon separates several commands, which run in turn:
 # "ctrl+t" = ":theme catppuccin-latte"
 # "g x" = ":set recolor false; zoom-to 150"
+#
+# A command line can run a shell command after !, with % for the file and
+# the document's state in $PDVIM_PAGE, $PDVIM_SELECTION and the rest (see
+# pdvim(1)):
+# "leader d" = ":!notify-send \"$(sdcv -n \"$PDVIM_SELECTION\")\""
 #
 # :help lists every action of every mode, with the keys bound to it now.
 

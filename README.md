@@ -123,7 +123,7 @@ As in vi, a count repeats a key: `3j` scrolls three steps. Markings stay out of 
 | `:set {setting} {value}`, `:theme {name}` | Change a setting or the theme                                      |
 | `:map`, `:unmap`, `:mapclear`             | Change key bindings while running                                  |
 | `:export {file}`                          | Save the page as `.png` or `.svg`, or the markings as `.md`        |
-| `:!{command}`                             | Run a shell command, with `%` for the document's file              |
+| `:!{command}`                             | Run a shell command, with `%` for the file and `$PDVIM_*` for more |
 | `:info`, `:marks`, `:note {text}`         | Document details, marks, a note on the window                      |
 | `:help [topic]`, `:man [5]`               | The keys, the manual                                               |
 
@@ -153,12 +153,24 @@ recolor = false
 trim = true
 ```
 
-Keys are written as characters or names, such as `j`, `space`, `pageup`, `ctrl+d` or `shift+tab`. A sequence is written with spaces between its keys, as in `"g g"`. A `[[paths]]` pattern without a `/` matches the file's name, and when several match, the last one wins. If an entry has a mistake, pdvim skips it and says so in the status bar.
+Keys are written as characters or names, such as `j`, `space`, `pageup`, `ctrl+d` or `shift+tab`. A sequence is written with spaces between its keys, as in `"g g"`, and `leader` in one stands for the key the `leader` setting names, `\` unless you set another. A `[[paths]]` pattern without a `/` matches the file's name, and when several match, the last one wins. If an entry has a mistake, pdvim skips it and says so in the status bar.
 
 |                 | Linux                                 | macOS                  | Windows                |
 | --------------- | ------------------------------------- | ---------------------- | ---------------------- |
 | Configuration   | `~/.config/pdvim/config.toml`         | `~/.config/pdvim`      | `%APPDATA%\pdvim`      |
 | Reading history | `~/.local/share/pdvim/history.sqlite` | `~/.local/share/pdvim` | `%LOCALAPPDATA%\pdvim` |
+
+Your own keys can hand the document to scripts. A command run with `:!` finds where you are in its environment: `$PDVIM_FILE`, `$PDVIM_PAGE`, `$PDVIM_PAGES`, `$PDVIM_PAGE_LABEL`, `$PDVIM_TITLE`, `$PDVIM_SELECTION` (the text selected, or last selected) and `$PDVIM_SEARCH`. pdvim shows the last line the command prints:
+
+```toml
+[settings]
+leader = ","
+
+[keys.normal]
+"leader d" = ':!sdcv -n "$PDVIM_SELECTION" | tail -1'           # look up the word selected
+"leader z" = ':!zotero-add "$PDVIM_FILE"'                       # hand the file to a script
+"leader c" = ':!echo "$PDVIM_TITLE, p. $PDVIM_PAGE" | wl-copy'  # copy a citation
+```
 
 The history keeps each document's place, zoom and marks, your command history, and the tabs open when you last quit. The Flatpak keeps its history in `~/.var/app/io.github.djmbritt.pdvim`.
 

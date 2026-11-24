@@ -94,11 +94,15 @@ pub enum Error {
     UnknownMode(String),
 }
 
+/// The leader until `:set leader` names another key, as in vim.
+pub const DEFAULT_LEADER: Key = Key::Char('\\');
+
 /// Parses a sequence of keys separated by spaces, as in `g g` or
 /// `ctrl+w j`. Each key is a single character, which stands for itself, or
 /// a named key such as `space` or `pagedown`, with modifiers in front:
-/// `ctrl+d`, `shift+space`, `ctrl+shift+tab`. Names and modifiers are not
-/// case sensitive; single characters are.
+/// `ctrl+d`, `shift+space`, `ctrl+shift+tab`. `leader` stands for the
+/// leader, whichever key that is when the keys are typed. Names and
+/// modifiers are not case sensitive; single characters are.
 pub fn parse_keys(written: &str) -> Result<Vec<Key>, Error> {
     let keys = written
         .split_whitespace()
@@ -155,6 +159,7 @@ fn parse_key(written: &str) -> Result<Key, Error> {
             "pagedown" => Key::PageDown,
             "home" => Key::Home,
             "end" => Key::End,
+            "leader" => Key::Leader,
             function => match function.strip_prefix('f').map(str::parse::<u8>) {
                 Some(Ok(number @ 1..=12)) => Key::Function(number),
                 _ => return Err(unknown()),
@@ -192,6 +197,8 @@ pub struct Keymap<A> {
     /// Key sequences bound to command lines, as typed after `:`, which
     /// may be several separated by `;`.
     commands: Vec<(Vec<Key>, String)>,
+    /// The key typed for `leader` in a bound sequence.
+    leader: Key,
 }
 
 impl<A> Default for Keymap<A> {
@@ -200,7 +207,31 @@ impl<A> Default for Keymap<A> {
         Self {
             bindings: Vec::new(),
             commands: Vec::new(),
+            leader: DEFAULT_LEADER,
         }
+    }
+}
+
+impl<A> Keymap<A> {
+    /// Makes `leader` in every bound sequence stand for this key.
+    pub const fn set_leader(&mut self, leader: Key) {
+        self.leader = leader;
+    }
+
+    /// Whether keys typed are a bound sequence, the leader standing in
+    /// for `leader`.
+    fn typed_as(&self, bound: &[Key], typed: &[Key]) -> bool {
+        bound.len() == typed.len()
+            && bound.iter().zip(typed).all(|(bound, typed)| {
+                bound == typed || (*bound == Key::Leader && *typed == self.leader)
+            })
+    }
+
+    /// Whether keys typed are the start of a bound sequence.
+    fn starts(&self, bound: &[Key], typed: &[Key]) -> bool {
+        bound
+            .get(..typed.len())
+            .is_some_and(|start| self.typed_as(start, typed))
     }
 }
 
@@ -274,16 +305,16 @@ impl<A: Bindable> Keymap<A> {
     pub fn lookup(&self, keys: &[Key]) -> Match<A> {
         let mut prefix = false;
         for (bound, to) in &self.bindings {
-            if bound == keys {
+            if self.typed_as(bound, keys) {
                 return Match::Bound(*to);
             }
-            prefix |= bound.starts_with(keys);
+            prefix |= self.starts(bound, keys);
         }
         for (index, (bound, _)) in self.commands.iter().enumerate() {
-            if bound == keys {
+            if self.typed_as(bound, keys) {
                 return Match::Command(index);
             }
-            prefix |= bound.starts_with(keys);
+            prefix |= self.starts(bound, keys);
         }
         if prefix { Match::Prefix } else { Match::None }
     }
@@ -426,6 +457,32 @@ mod tests {
         assert_eq!(keymap.first(Test::Top), "g g");
         keymap.unbind(&parse_keys("0").unwrap());
         assert_eq!(keymap.first(Test::Zero), "-");
+    }
+
+    #[test]
+    fn leader_in_a_binding_is_the_key_the_leader_is_set_to() {
+        let mut keymap = keymap();
+        keymap.bind(parse_keys("Leader j").unwrap(), Test::Top);
+        assert_eq!(keymap.first(Test::Top), "g g");
+        assert_eq!(written(&parse_keys("leader j").unwrap()), "leader j");
+        let backslash = [DEFAULT_LEADER];
+        assert_eq!(keymap.lookup(&backslash), Match::Prefix);
+        assert_eq!(
+            keymap.lookup(&[DEFAULT_LEADER, Key::Char('j')]),
+            Match::Bound(Test::Top)
+        );
+        keymap.set_leader(Key::Char(' '));
+        assert_eq!(keymap.lookup(&backslash), Match::None);
+        assert_eq!(
+            keymap.lookup(&[Key::Char(' '), Key::Char('j')]),
+            Match::Bound(Test::Top)
+        );
+        // A key bound alone wins over the bindings it starts, as any.
+        keymap.bind(vec![Key::Char(' ')], Test::Down);
+        assert_eq!(keymap.lookup(&[Key::Char(' ')]), Match::Bound(Test::Down));
+        // Unbinding goes by what was written.
+        assert!(keymap.unbind(&parse_keys("leader j").unwrap()));
+        assert!(!keymap.unbind(&parse_keys("space j").unwrap()));
     }
 
     #[test]

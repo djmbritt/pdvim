@@ -44,7 +44,7 @@ impl App {
         match shell::expand(&line, file.as_deref()) {
             Ok(expanded) => {
                 self.notice = Notice::Info(format!("!{line}"));
-                Task::perform(shell::run(expanded), move |result| {
+                Task::perform(shell::run(expanded, self.shell_context()), move |result| {
                     Message::ShellRan(line, result)
                 })
             }
@@ -52,6 +52,38 @@ impl App {
                 self.notice = Notice::Error(error.to_string());
                 Task::none()
             }
+        }
+    }
+
+    /// Where the reader is, for a command run with `:!` to be told.
+    fn shell_context(&self) -> shell::Context {
+        let Some(document) = self.document() else {
+            return shell::Context::default();
+        };
+        let page = document.reader.current_page();
+        let selection = self
+            .visual
+            .as_ref()
+            .or_else(|| {
+                self.last_selection
+                    .as_ref()
+                    .filter(|(made_in, _)| *made_in == document.id)
+                    .map(|(_, visual)| visual)
+            })
+            .map(|visual| visual.text(&document.text))
+            .filter(|text| !text.is_empty());
+        shell::Context {
+            file: Some(document.path.clone()),
+            page: Some(page.saturating_add(1)),
+            pages: Some(document.reader.page_count()),
+            label: document.label(page).map(str::to_owned),
+            title: Some(document.name()),
+            selection,
+            search: document
+                .results
+                .search
+                .as_ref()
+                .map(|search| search.needle.clone()),
         }
     }
 
@@ -86,7 +118,40 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    use crate::app::Notice;
     use crate::app::testing::Session;
+
+    /// What the reader says now.
+    fn said(session: &Session) -> &str {
+        match &session.app.notice {
+            Notice::Info(said) | Notice::Error(said) => said,
+            Notice::None => "",
+        }
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn keys_after_the_leader_run_a_command_told_where_the_reader_is() {
+        let mut session = Session::open("text.pdf");
+        // The labels of visual mode, the first, and to the end of its word.
+        session.keys("vaae");
+        let word = session.selected();
+        assert!(!word.is_empty(), "the fixture has a word to select");
+        session.keys("<Esc><Esc>");
+        session.keys(concat!(
+            ":map leader x :!echo ",
+            "\"$PDVIM_PAGE/$PDVIM_PAGES [$PDVIM_SELECTION] $PDVIM_TITLE\"<Enter>",
+        ));
+        let told = format!("1/1 [{word}] {}", session.app.document().unwrap().name());
+        session.keys("\\x");
+        assert_eq!(said(&session), told, "with the leader at first, \\");
+        session.keys(":set leader ,<Enter>");
+        session.app.notice = Notice::None;
+        session.keys("\\x");
+        assert_eq!(said(&session), "", "\\ is no longer the leader");
+        session.keys(",x");
+        assert_eq!(said(&session), told, "with the leader set to ,");
+    }
 
     #[test]
     fn a_repeat_repeats_the_last_line_but_never_itself() {

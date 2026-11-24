@@ -111,6 +111,11 @@ macro_rules! modes {
                 }
             }
 
+            /// Makes `leader` stand for this key in every mode.
+            pub const fn set_leader(&mut self, leader: Key) {
+                $(self.$field.set_leader(leader);)*
+            }
+
             /// Unbinds every key sequence in a mode.
             pub fn clear(&mut self, mode: Mode) {
                 match mode {

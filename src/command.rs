@@ -186,6 +186,8 @@ pub enum Setting {
     /// Whether the backdrop behind the pages is the colour of their
     /// paper, so that pages and backdrop are one, or the theme's.
     PaperBackdrop(bool),
+    /// The key `leader` stands for in key bindings.
+    Leader(Key),
 }
 
 /// Whether pages are recoloured for a dark background.
@@ -231,6 +233,8 @@ pub enum Error {
     NotFontSize(String),
     #[error("`{0}` is not two or more different lower-case letters or digits")]
     NotHintChars(String),
+    #[error("`{0}` is not one key to be the leader")]
+    NotLeader(String),
     #[error("commands can only be bound to keys in normal mode")]
     CommandOutsideNormal,
     #[error(transparent)]
@@ -327,7 +331,7 @@ pub fn description(name: &str) -> Option<&'static str> {
 }
 
 /// The names of the settings `:set` knows.
-pub const SETTINGS: [&str; 28] = [
+pub const SETTINGS: [&str; 29] = [
     "autosave",
     "backdrop",
     "columns",
@@ -337,6 +341,7 @@ pub const SETTINGS: [&str; 28] = [
     "highlight-color",
     "hintchars",
     "incsearch",
+    "leader",
     "note-color",
     "page-borders",
     "page-mode",
@@ -701,6 +706,10 @@ pub fn setting(name: &str, value: &str) -> Result<Setting, Error> {
             }
             _ => Err(Error::NotWheelSpeed(value.to_owned())),
         },
+        "leader" => match keymap::parse_keys(value).as_deref() {
+            Ok(&[key]) if key != Key::Leader => Ok(Setting::Leader(key)),
+            _ => Err(Error::NotLeader(value.to_owned())),
+        },
         other => Err(Error::UnknownSetting(other.to_owned())),
     }
 }
@@ -986,6 +995,30 @@ mod tests {
             assert_eq!(
                 parse(&format!("set wheel-speed {bad}")),
                 Err(Error::NotWheelSpeed(bad.to_owned()))
+            );
+        }
+    }
+
+    #[test]
+    fn the_leader_is_any_one_key() {
+        let leader = |value: &str| parse(&format!("set leader {value}"));
+        assert_eq!(
+            leader(","),
+            Ok(Some(Command::Set(Setting::Leader(Key::Char(',')))))
+        );
+        assert_eq!(
+            leader("space"),
+            Ok(Some(Command::Set(Setting::Leader(Key::Char(' ')))))
+        );
+        assert_eq!(
+            leader("ctrl+k"),
+            Ok(Some(Command::Set(Setting::Leader(Key::Ctrl('k')))))
+        );
+        for bad in ["", "g g", "leader", "nope"] {
+            assert_eq!(
+                leader(bad),
+                Err(Error::NotLeader(bad.to_owned())),
+                "{bad:?}"
             );
         }
     }

@@ -504,6 +504,28 @@ itself.
 pdvim goes on while it runs, and shows the last line it printed:
 .B ":!xdg\-open %"
 opens the document in another program.
+The command is told where the reader is in its environment, so that a
+script bound to a key can act on the page or the selection:
+.B PDVIM_FILE
+(the file, as
+.BR % ),
+.B PDVIM_PAGE
+(the page in view, from 1),
+.BR PDVIM_PAGES ,
+.B PDVIM_PAGE_LABEL
+(the number printed on the page, when the document gives one),
+.B PDVIM_TITLE
+(the title, or else the file's name),
+.B PDVIM_SELECTION
+(the text selected in visual mode, or else last selected in the document)
+and
+.B PDVIM_SEARCH
+(what was last searched for).
+What is not known is not set.
+Bound to keys after the leader, as in
+.BR ":map leader d :!sdcv \-n \(dq$PDVIM_SELECTION\(dq | tail \-1" ,
+.B \e d
+looks up the word last selected.
 .TP
 .BI ":set " "setting value"
 Change a setting, as listed in pdvim(5).

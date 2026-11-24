@@ -317,6 +317,8 @@ fn key_event(key: Key) -> keyboard::Event {
             let which = usize::from(number.clamp(1, 12)).saturating_sub(1);
             named(function[which], Modifiers::empty())
         }
+        // The key that stands for it unless the test sets another.
+        Key::Leader => key_event(crate::keymap::DEFAULT_LEADER),
     }
 }
 

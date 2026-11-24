@@ -2462,6 +2462,7 @@ impl App {
             Setting::NoteColour(colour) => self.markup_colours.note = colour,
             Setting::ScrollStep(step) => self.scroll_step = step,
             Setting::WheelSpeed(speed) => self.wheel_speed = speed,
+            Setting::Leader(key) => self.keymaps.set_leader(key),
             Setting::FontSize(size) => {
                 self.font_base = size;
                 return self.set_font_size(size);

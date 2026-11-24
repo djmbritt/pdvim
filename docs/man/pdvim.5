@@ -200,6 +200,19 @@ than at
 Default
 .BR false .
 .TP
+.B leader
+The key that
+.B leader
+stands for in key bindings, written as keys are in
+.BR KEYS ,
+such as
+.B ,
+or
+.BR space .
+A key bound on its own hides the bindings it starts, so unbind it first.
+Default
+.BR \e .
+.TP
 .B hintchars
 The letters labels are made of, the first used most.
 Default
@@ -345,6 +358,16 @@ is the same as
 .BR Q .
 The keys of a sequence are separated by spaces, as in
 .BR """g g""" .
+.B leader
+in a sequence stands for the key the
+.B leader
+setting names, as
+.B <Leader>
+does in vim:
+.B """leader d"""
+is
+.B \e d
+until the leader is set to another key.
 If one binding starts a longer one, the shorter wins.
 A count typed before the keys is passed to the action.
 .PP

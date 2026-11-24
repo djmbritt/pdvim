@@ -34,6 +34,10 @@ pub enum Key {
     End,
     /// A function key: 1 for F1, up to 12.
     Function(u8),
+    /// The leader, written `leader` in a key sequence: whichever key
+    /// `:set leader` names, `\` unless it is set. Only bindings hold it;
+    /// a key typed is never the leader itself.
+    Leader,
 }
 
 /// What the bottom line is asking for.
@@ -522,6 +526,7 @@ impl std::fmt::Display for Key {
             Self::Home => formatter.write_str("home"),
             Self::End => formatter.write_str("end"),
             Self::Function(number) => write!(formatter, "f{number}"),
+            Self::Leader => formatter.write_str("leader"),
         }
     }
 }

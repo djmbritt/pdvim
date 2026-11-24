@@ -3190,7 +3190,7 @@ dependencies = [
 
 [[package]]
 name = "pdvim"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "arboard",
  "criterion",

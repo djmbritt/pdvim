@@ -1,0 +1,124 @@
+# Sends pdvim to the Windows Package Manager, so that
+#
+#     winget install djmbritt.pdvim
+#
+# installs the newest release on Windows. It runs when a release is
+# published, and by hand from the Actions tab for a release named by its
+# tag, or the latest.
+#
+# packaging/winget/manifest.sh makes the manifests from the release's
+# SHA256SUMS. Before they are sent, winget validates them, installs pdvim
+# from them, and checks it starts.
+#
+# Sending them opens a pull request on microsoft/winget-pkgs, from a fork
+# under the token's owner; winget has the version once it is merged. It
+# needs the secret WINGET_TOKEN: a classic token with the public_repo scope
+# (see packaging/winget/README.md). Without it, the manifests are checked
+# but not sent.
+name: winget
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release to publish, as v0.1.31; the latest if empty"
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  check:
+    name: Install on Windows
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download ${TAG:+"$TAG"} --repo "$GITHUB_REPOSITORY" \
+            --pattern SHA256SUMS --dir release
+          tag=${TAG:-$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)}
+          echo "VERSION=${tag#v}" >> "$GITHUB_ENV"
+
+      - name: Make the manifests
+        run: |
+          packaging/winget/manifest.sh "$VERSION" release/SHA256SUMS manifests
+          cat manifests/*
+
+      - name: Validate them
+        shell: pwsh
+        run: |
+          winget --version
+          winget validate --manifest manifests
+
+      # Installs from the release on GitHub, as a user's winget would.
+      - name: Install it and check it starts
+        shell: pwsh
+        run: |
+          winget settings --enable LocalManifestFiles
+          winget install --manifest manifests --accept-package-agreements `
+            --accept-source-agreements --disable-interactivity
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # The PATH winget adds to reaches only shells started after it,
+          # so pdvim is looked for where winget links portable programs.
+          $links = "$env:LOCALAPPDATA\Microsoft\WinGet\Links\pdvim.exe",
+                   "$env:ProgramFiles\WinGet\Links\pdvim.exe"
+          $exe = $links | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) { Write-Error "pdvim.exe is not linked"; exit 1 }
+          # A program for the windows subsystem writes to a pipe it is
+          # given, but not to a console, so its output is piped.
+          $out = & $exe --version | Out-String
+          Write-Output $out
+          if ($out -notmatch [regex]::Escape($env:VERSION)) {
+            Write-Error "pdvim --version does not say $env:VERSION"; exit 1
+          }
+          winget uninstall --id djmbritt.pdvim --disable-interactivity
+          exit $LASTEXITCODE
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: winget-manifests
+          path: manifests
+
+  publish:
+    name: Send to winget-pkgs
+    needs: check
+    runs-on: windows-2025
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: winget-manifests
+          path: manifests
+
+      - name: Open the pull request
+        shell: pwsh
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if (-not $env:WINGET_TOKEN) {
+            Write-Output "::notice::WINGET_TOKEN is not set, so nothing is sent to winget-pkgs"
+            exit 0
+          }
+          $version = (Select-String -Path manifests\djmbritt.pdvim.yaml `
+            -Pattern '^PackageVersion: (.+)$').Matches[0].Groups[1].Value
+          gh api "repos/microsoft/winget-pkgs/contents/manifests/d/djmbritt/pdvim/$version" --silent 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Output "winget-pkgs already has pdvim $version"
+            exit 0
+          }
+          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          .\wingetcreate.exe submit --token $env:WINGET_TOKEN `
+            --prtitle "New version: djmbritt.pdvim version $version" manifests
+          exit $LASTEXITCODE

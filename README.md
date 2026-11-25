@@ -63,7 +63,7 @@ A highlight, an underline, a squiggly underline, and a selection in progress:
 | Arch Linux       | `makepkg -si` in [`packaging/`](packaging/)                                                                                                    |
 | Nix              | `nix run github:djmbritt/pdvim`, or `nix profile add github:djmbritt/pdvim`                                                                    |
 | macOS            | `brew install djmbritt/pdvim/pdvim`, or the `.dmg` from a release                                                                              |
-| Windows          | The `.zip` from a release                                                                                                                      |
+| Windows          | `winget install djmbritt.pdvim`, or the `.zip` from a release                                                                                  |
 
 On Debian and Ubuntu:
 

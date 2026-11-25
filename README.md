@@ -4,7 +4,7 @@
 
 A PDF reader driven by vi keys. pdvim also opens EPUB and FB2 books, CBZ and CBT comics, XPS documents, SVG drawings and images. It renders pages with [MuPDF](https://mupdf.com/) and draws its window with [iced](https://iced.rs/).
 
-![pdvim showing the first page of Alice's Adventures in Wonderland, with two tabs open](docs/screenshots/reading.png)
+![pdvim going to a chapter from the table of contents, highlighting a line, labelling links, searching as you type, showing two pages side by side and every page small, and changing the theme](docs/screenshots/demo.gif)
 
 - **Moves and searches like vim:**
   - motions and counts, such as `j`, `12G`, `50%` and `}`;
@@ -30,6 +30,10 @@ A PDF reader driven by vi keys. pdvim also opens EPUB and FB2 books, CBZ and CBT
 
 <details>
 <summary>More screenshots</summary>
+
+The first page of Alice's Adventures in Wonderland, with two tabs open:
+
+![pdvim showing the first page of Alice's Adventures in Wonderland, with two tabs open](docs/screenshots/reading.png)
 
 The table of contents, in Catppuccin Mocha, with the page recolored to match:
 

@@ -1,0 +1,127 @@
+   Compiling serde v1.0.229
+   Compiling iced_graphics v0.14.0
+   Compiling generic-array v0.14.7
+   Compiling typenum v1.20.1
+   Compiling zmij v1.0.23
+   Compiling serde_json v1.0.154
+   Compiling alloca v0.4.0
+   Compiling plotters-backend v0.3.7
+   Compiling regex-syntax v0.8.12
+   Compiling anstyle v1.0.14
+   Compiling clap_lex v1.1.2
+   Compiling itoa v1.0.19
+   Compiling ciborium-io v0.2.2
+   Compiling itertools v0.13.0
+   Compiling cast v0.3.0
+   Compiling cpufeatures v0.2.17
+   Compiling ciborium-ll v0.2.2
+   Compiling iced_selector v0.14.0
+   Compiling page_size v0.6.0
+   Compiling anes v0.1.6
+   Compiling oorandom v11.1.5
+   Compiling clap_builder v4.6.7
+   Compiling plotters-svg v0.3.7
+   Compiling plotters v0.3.7
+   Compiling enumflags2 v0.7.12
+   Compiling zcheapstr v1.4.0
+   Compiling zvariant_utils v4.2.0
+   Compiling ciborium v0.2.2
+   Compiling tinytemplate v1.2.1
+   Compiling regex-automata v0.4.19
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling criterion-plot v0.8.2
+   Compiling digest v0.10.7
+   Compiling iced_wgpu v0.14.0
+   Compiling iced_tiny_skia v0.14.1
+   Compiling iced_program v0.14.0
+   Compiling sha2 v0.10.9
+   Compiling zvariant v5.15.1
+   Compiling clap v4.6.9
+   Compiling iced_renderer v0.14.0
+   Compiling regex v1.13.2
+   Compiling iced_widget v0.14.2
+   Compiling iced_test v0.14.0
+   Compiling zbus_names v4.3.5
+   Compiling criterion v0.8.2
+   Compiling zbus v5.19.0
+   Compiling mundy v0.2.3
+   Compiling iced_winit v0.14.1
+   Compiling iced v0.14.0
+   Compiling pdvim v0.2.27 (/tmp/claude-1000/-home-kwihi-Work-pdvim/27324544-ceb3-49ce-8ed6-d4e9e107a83e/scratchpad/base-tree)
+    Finished `bench` profile [optimized] target(s) in 19.96s
+     Running benches/hot_paths.rs (/tmp/claude-1000/-home-kwihi-Work-pdvim/27324544-ceb3-49ce-8ed6-d4e9e107a83e/scratchpad/base-target/release/build/pdvim/57958d711801319d/out/hot_paths-57958d711801319d)
+Gnuplot not found, using plotters backend
+timing a page of 64 lines
+page/record             time:   [268.13 µs 269.56 µs 271.36 µs]
+Found 7 outliers among 100 measurements (7.00%)
+  4 (4.00%) high mild
+  3 (3.00%) high severe
+page/render/1           time:   [788.87 µs 795.70 µs 804.33 µs]
+Found 13 outliers among 100 measurements (13.00%)
+  7 (7.00%) high mild
+  6 (6.00%) high severe
+page/render recoloured/1
+                        time:   [932.26 µs 941.86 µs 953.33 µs]
+Found 2 outliers among 100 measurements (2.00%)
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+page/render/2.5         time:   [3.1655 ms 3.2152 ms 3.2671 ms]
+Found 2 outliers among 100 measurements (2.00%)
+  2 (2.00%) high mild
+page/render recoloured/2.5
+                        time:   [3.8444 ms 3.8671 ms 3.8912 ms]
+Found 2 outliers among 100 measurements (2.00%)
+  2 (2.00%) high mild
+page/read text          time:   [511.36 µs 515.10 µs 519.69 µs]
+Found 3 outliers among 100 measurements (3.00%)
+  3 (3.00%) high mild
+text/search/e           time:   [62.626 µs 62.944 µs 63.235 µs]
+Found 6 outliers among 100 measurements (6.00%)
+  5 (5.00%) high mild
+  1 (1.00%) high severe
+text/search/the         time:   [57.823 µs 58.216 µs 58.698 µs]
+Found 2 outliers among 100 measurements (2.00%)
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+text/search/a sentence ending
+                        time:   [56.141 µs 56.924 µs 57.725 µs]
+Found 12 outliers among 100 measurements (12.00%)
+  7 (7.00%) high mild
+  5 (5.00%) high severe
+text/flash/t            time:   [67.059 µs 67.799 µs 68.470 µs]
+text/flash/the          time:   [175.35 µs 176.41 µs 177.51 µs]
+Found 3 outliers among 100 measurements (3.00%)
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+text/flash/the cu       time:   [345.28 µs 348.94 µs 353.04 µs]
+Found 4 outliers among 100 measurements (4.00%)
+  4 (4.00%) high mild
+text/sentences          time:   [14.156 µs 14.212 µs 14.262 µs]
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high mild
+text/paragraphs         time:   [5.7330 µs 5.7668 µs 5.8013 µs]
+Found 2 outliers among 100 measurements (2.00%)
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+config defaults         time:   [140.19 µs 141.94 µs 143.71 µs]
+Found 19 outliers among 100 measurements (19.00%)
+  9 (9.00%) high mild
+  10 (10.00%) high severe
+layout/lay out/100      time:   [1.0976 µs 1.1146 µs 1.1330 µs]
+Found 2 outliers among 100 measurements (2.00%)
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+layout/pages in view/100
+                        time:   [960.58 ns 972.52 ns 983.56 ns]
+Found 7 outliers among 100 measurements (7.00%)
+  7 (7.00%) high mild
+layout/lay out/10000    time:   [66.318 µs 66.656 µs 67.054 µs]
+Found 3 outliers among 100 measurements (3.00%)
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+layout/pages in view/10000
+                        time:   [2.1975 µs 2.2160 µs 2.2378 µs]
+Found 20 outliers among 100 measurements (20.00%)
+  19 (19.00%) high mild
+  1 (1.00%) high severe

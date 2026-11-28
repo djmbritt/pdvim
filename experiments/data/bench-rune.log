@@ -1,0 +1,109 @@
+   Compiling serde v1.0.229
+   Compiling alloca v0.4.0
+   Compiling either v1.19.0
+   Compiling plotters-backend v0.3.7
+   Compiling regex-syntax v0.8.12
+   Compiling ciborium-io v0.2.2
+   Compiling anstyle v1.0.14
+   Compiling clap_lex v1.1.2
+   Compiling cast v0.3.0
+   Compiling page_size v0.6.0
+   Compiling anes v0.1.6
+   Compiling oorandom v11.1.5
+   Compiling ciborium-ll v0.2.2
+   Compiling clap_builder v4.6.7
+   Compiling plotters-svg v0.3.7
+   Compiling itertools v0.13.0
+   Compiling plotters v0.3.7
+   Compiling rune-core v0.0.1 (https://github.com/anomalyco/rune?rev=7e3d2662b4b2ded3d350cbb6cb46db79d2fc2dd3#7e3d2662)
+   Compiling enumflags2 v0.7.12
+   Compiling zcheapstr v1.4.0
+   Compiling zvariant_utils v4.2.0
+   Compiling ciborium v0.2.2
+   Compiling tinytemplate v1.2.1
+   Compiling regex-automata v0.4.19
+   Compiling zvariant v5.15.1
+   Compiling criterion-plot v0.8.2
+   Compiling rune-image v0.0.1 (https://github.com/anomalyco/rune?rev=7e3d2662b4b2ded3d350cbb6cb46db79d2fc2dd3#7e3d2662)
+   Compiling rune-gpu v0.0.1 (https://github.com/anomalyco/rune?rev=7e3d2662b4b2ded3d350cbb6cb46db79d2fc2dd3#7e3d2662)
+   Compiling rune-spell v0.0.1 (https://github.com/anomalyco/rune?rev=7e3d2662b4b2ded3d350cbb6cb46db79d2fc2dd3#7e3d2662)
+   Compiling clap v4.6.9
+   Compiling regex v1.13.2
+   Compiling rune-text v0.0.1 (https://github.com/anomalyco/rune?rev=7e3d2662b4b2ded3d350cbb6cb46db79d2fc2dd3#7e3d2662)
+   Compiling rune-media v0.0.1 (https://github.com/anomalyco/rune?rev=7e3d2662b4b2ded3d350cbb6cb46db79d2fc2dd3#7e3d2662)
+   Compiling criterion v0.8.2
+   Compiling zbus_names v4.3.5
+   Compiling zbus v5.19.0
+   Compiling rune-edit v0.0.1 (https://github.com/anomalyco/rune?rev=7e3d2662b4b2ded3d350cbb6cb46db79d2fc2dd3#7e3d2662)
+   Compiling rune v0.0.1 (https://github.com/anomalyco/rune?rev=7e3d2662b4b2ded3d350cbb6cb46db79d2fc2dd3#7e3d2662)
+   Compiling pdvim v0.2.27 (/home/kwihi/Work/pdvim)
+    Finished `bench` profile [optimized] target(s) in 2m 19s
+     Running benches/hot_paths.rs (/tmp/claude-1000/-home-kwihi-Work-pdvim/27324544-ceb3-49ce-8ed6-d4e9e107a83e/scratchpad/rune-target/release/build/pdvim/dc2c91112149dc66/out/hot_paths-dc2c91112149dc66)
+Gnuplot not found, using plotters backend
+timing a page of 64 lines
+page/record             time:   [413.44 µs 447.63 µs 490.04 µs]
+page/render/1           time:   [888.38 µs 899.49 µs 912.03 µs]
+Found 22 outliers among 100 measurements (22.00%)
+  14 (14.00%) low mild
+  2 (2.00%) high mild
+  6 (6.00%) high severe
+page/render recoloured/1
+                        time:   [932.65 µs 934.11 µs 935.71 µs]
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high mild
+page/render/2.5         time:   [2.9647 ms 2.9727 ms 2.9812 ms]
+Found 3 outliers among 100 measurements (3.00%)
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+page/render recoloured/2.5
+                        time:   [3.8046 ms 3.8247 ms 3.8488 ms]
+Found 6 outliers among 100 measurements (6.00%)
+  1 (1.00%) high mild
+  5 (5.00%) high severe
+page/read text          time:   [500.52 µs 500.94 µs 501.37 µs]
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high mild
+text/search/e           time:   [61.497 µs 61.636 µs 61.806 µs]
+Found 10 outliers among 100 measurements (10.00%)
+  5 (5.00%) high mild
+  5 (5.00%) high severe
+text/search/the         time:   [57.700 µs 57.814 µs 57.920 µs]
+text/search/a sentence ending
+                        time:   [55.442 µs 55.510 µs 55.588 µs]
+Found 3 outliers among 100 measurements (3.00%)
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+text/flash/t            time:   [62.031 µs 62.253 µs 62.465 µs]
+Found 2 outliers among 100 measurements (2.00%)
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+text/flash/the          time:   [173.13 µs 173.86 µs 174.57 µs]
+text/flash/the cu       time:   [327.43 µs 329.33 µs 331.19 µs]
+text/sentences          time:   [12.699 µs 12.731 µs 12.766 µs]
+Found 13 outliers among 100 measurements (13.00%)
+  8 (8.00%) high mild
+  5 (5.00%) high severe
+text/paragraphs         time:   [5.6505 µs 5.6739 µs 5.6958 µs]
+Found 10 outliers among 100 measurements (10.00%)
+  3 (3.00%) low mild
+  5 (5.00%) high mild
+  2 (2.00%) high severe
+config defaults         time:   [139.25 µs 140.09 µs 141.06 µs]
+Found 2 outliers among 100 measurements (2.00%)
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+layout/lay out/100      time:   [1.1859 µs 1.1902 µs 1.1947 µs]
+layout/pages in view/100
+                        time:   [971.56 ns 976.42 ns 980.83 ns]
+Found 2 outliers among 100 measurements (2.00%)
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+layout/lay out/10000    time:   [65.307 µs 65.417 µs 65.545 µs]
+Found 8 outliers among 100 measurements (8.00%)
+  4 (4.00%) high mild
+  4 (4.00%) high severe
+layout/pages in view/10000
+                        time:   [2.0215 µs 2.0334 µs 2.0474 µs]
+Found 8 outliers among 100 measurements (8.00%)
+  4 (4.00%) high mild
+  4 (4.00%) high severe

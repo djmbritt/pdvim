@@ -186,8 +186,7 @@ impl Pattern {
     pub fn matches(&self, path: &Path) -> bool {
         let text = if self.name_only {
             path.file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_default()
+                .map_or_default(|name| name.to_string_lossy().into_owned())
         } else {
             slashed(&path.to_string_lossy())
         };

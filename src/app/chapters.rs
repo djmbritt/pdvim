@@ -1,6 +1,6 @@
 //! Going from one chapter to the next, from the table of contents.
 
-use iced::Task;
+use crate::task::Task;
 
 use super::{App, Message, Notice, current_document};
 use crate::layout::Rect;

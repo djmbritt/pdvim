@@ -2,7 +2,7 @@
 //! with its page and its line, to go to by moving through the list,
 //! narrowing it by typing, or clicking.
 
-use iced::Task;
+use crate::task::Task;
 
 use super::{App, Message, Notice, TextFor, current_document, jump_to};
 use crate::backend::TextLine;
@@ -64,8 +64,7 @@ impl App {
                 let line = document
                     .text
                     .get(&hit.page)
-                    .map(|lines| line_around(lines, hit.area))
-                    .unwrap_or_default();
+                    .map_or_default(|lines| line_around(lines, hit.area));
                 Entry {
                     text: format!("{page:>5}  {line}"),
                     value: index,
@@ -77,8 +76,7 @@ impl App {
             .results
             .search
             .as_ref()
-            .map(|search| search.needle.clone())
-            .unwrap_or_default();
+            .map_or_default(|search| search.needle.clone());
         self.match_list = Picker::new(entries).map(|mut list| {
             if let Some(current) = current {
                 list.select(current);
@@ -193,12 +191,12 @@ mod tests {
 
 #[cfg(test)]
 mod app_tests {
-    use iced::futures::executor::block_on;
+    use futures::executor::block_on;
 
     use crate::app::pointer::{Click, Pointer};
     use crate::app::testing::{on_screen, read, selected, showing};
     use crate::app::{Action, App, Message, Search, move_view};
-    use iced::Task;
+    use crate::task::Task;
 
     /// Searches the document in view at once, as `/` does once the
     /// backend answers.

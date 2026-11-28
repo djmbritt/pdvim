@@ -2,8 +2,8 @@
 //! matches on the pages in view are highlighted, as vim's `incsearch`
 //! does.
 
-use iced::Task;
-use iced::widget::canvas;
+use crate::task::Task;
+use crate::ui::Frame;
 
 use super::{App, Document, HIT, Message, rectangle};
 use crate::backend::{self, Hit};
@@ -76,7 +76,7 @@ impl App {
 }
 
 /// Highlights the matches found so far for the search being typed.
-pub(super) fn draw(frame: &mut canvas::Frame, document: &Document, hits: &[Hit]) {
+pub(super) fn draw(frame: &mut Frame, document: &Document, hits: &[Hit]) {
     for hit in hits {
         if let Some(area) = document.reader.area_on_screen(hit.page, hit.area) {
             let area = rectangle(area);

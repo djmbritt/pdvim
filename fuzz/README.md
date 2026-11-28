@@ -14,7 +14,7 @@ These are [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) targets, run wit
 
 ## Running
 
-You need a nightly toolchain and `cargo install cargo-fuzz`. The first build takes a few minutes, because it compiles MuPDF and iced with sanitizer flags.
+You need a nightly toolchain and `cargo install cargo-fuzz`. The first build takes a few minutes, because it compiles MuPDF and Rune with sanitizer flags.
 
 ```sh
 fuzz/run.sh                 # every target for a minute each
@@ -91,7 +91,7 @@ Measured on 2026-11-21, over a corpus of about 41,000 inputs from earlier runs:
 | `src/visual.rs` | 93% | 92% | 94% |
 | **Total** | **28%** | **29%** | **28%** |
 
-The targets reach most of what they are meant to: parsing commands, keys and the configuration, laying out and moving through pages, the labels, visual mode and recolouring. `src/app.rs` and `src/app/` are at 0% because the window, iced's event loop and its drawing are not fuzzed; the targets drive the parts the app is built from instead. `backend.rs` is about a quarter covered because the fuzzers open documents and read their first pages, but don't highlight, fill in forms or save. `history.rs` and `recall.rs` are not fuzzed, as the history comes from pdvim's own database rather than from outside.
+The targets reach most of what they are meant to: parsing commands, keys and the configuration, laying out and moving through pages, the labels, visual mode and recolouring. `src/app.rs` and `src/app/` are at 0% because the window, Rune's event loop and its drawing are not fuzzed; the targets drive the parts the app is built from instead. `backend.rs` is about a quarter covered because the fuzzers open documents and read their first pages, but don't highlight, fill in forms or save. `history.rs` and `recall.rs` are not fuzzed, as the history comes from pdvim's own database rather than from outside.
 
 ## In CI
 

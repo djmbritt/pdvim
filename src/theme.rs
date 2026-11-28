@@ -5,7 +5,7 @@
 //! of Catppuccin (<https://catppuccin.com/palette>): Latte, which is light,
 //! and Frappé, Macchiato and Mocha, from lightest to darkest.
 
-use iced::Color;
+use crate::ui::Color;
 
 use crate::recolor::{Palette, Rgb};
 
@@ -73,18 +73,6 @@ impl Theme {
             Self::CatppuccinFrappe => FRAPPE_MODES,
             Self::CatppuccinMacchiato => MACCHIATO_MODES,
             Self::CatppuccinMocha => MOCHA_MODES,
-        }
-    }
-
-    /// The iced theme for what is not given colours of its own.
-    pub const fn iced(self) -> iced::Theme {
-        match self {
-            Self::PdvimDark => iced::Theme::Dark,
-            Self::PdvimLight => iced::Theme::Light,
-            Self::CatppuccinLatte => iced::Theme::CatppuccinLatte,
-            Self::CatppuccinFrappe => iced::Theme::CatppuccinFrappe,
-            Self::CatppuccinMacchiato => iced::Theme::CatppuccinMacchiato,
-            Self::CatppuccinMocha => iced::Theme::CatppuccinMocha,
         }
     }
 }

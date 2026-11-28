@@ -4,7 +4,8 @@
 
 use std::time::{Duration, Instant};
 
-use iced::{Point, Task};
+use crate::task::Task;
+use crate::ui::Point;
 
 use super::{App, Message, Notice, Sidebar, current_document};
 use crate::backend::Link;
@@ -27,6 +28,15 @@ pub enum Pointer {
     Drag(Point),
     /// The button held went up.
     Release(Point),
+}
+
+/// How far the wheel turned: by lines, as a mouse's notches go, or by
+/// pixels, as a touchpad goes. Positive is up and to the left, the
+/// content moving down and right.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ScrollDelta {
+    Lines { x: f32, y: f32 },
+    Pixels { x: f32, y: f32 },
 }
 
 /// A click on an entry of a list, the tab bar or the overview.
@@ -57,6 +67,8 @@ pub struct Mouse {
     /// A click on a page whose links were not yet found, to follow once
     /// they are: the document, the page, and the spot on it.
     pub(super) waiting: Option<(u64, u32, (f32, f32))>,
+    /// Whether control was held as the wheel last turned, to zoom.
+    pub(super) control: bool,
 }
 
 /// A button held down over the pages.
@@ -348,7 +360,7 @@ fn link_at(links: &[Link], (across, down): (f32, f32)) -> Option<Link> {
 
 #[cfg(test)]
 mod tests {
-    use iced::futures::executor::block_on;
+    use futures::executor::block_on;
 
     use super::*;
     use crate::app::testing::{on_screen, read, selected, showing};

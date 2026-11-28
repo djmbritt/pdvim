@@ -4,6 +4,7 @@
 //! moves them in response to commands. It knows nothing about rendering or
 //! the window toolkit, so it can be tested by itself.
 
+use std::cell::Cell;
 use std::ops::Range;
 
 use crate::history::{Fit, View};
@@ -126,6 +127,10 @@ pub struct Reader {
     /// The page shown, when a page or a spread shows at a time: the window
     /// stays on its row.
     shown: u32,
+    /// While the window draws its pages from where the view was when they
+    /// were laid out, which it then slides to where the view is now, that
+    /// corner: screen positions are given from it. See [`Self::draw_from`].
+    drawn_from: Cell<Option<(f32, f32)>>,
 }
 
 impl Reader {
@@ -146,6 +151,7 @@ impl Reader {
             columns: 1,
             mode: PageMode::Continuous,
             shown: 0,
+            drawn_from: Cell::new(None),
         };
         reader.refit(Anchor::Top);
         reader
@@ -291,6 +297,18 @@ impl Reader {
         }
         self.layout
             .pages_between(self.y, self.y + self.window.1 / self.zoom)
+    }
+
+    /// Where the window's top-left corner is in the document, in points.
+    pub const fn corner(&self) -> (f32, f32) {
+        (self.x, self.y)
+    }
+
+    /// Gives screen positions as if the window's top-left corner were at
+    /// this corner of the document, until called again with none: for
+    /// drawing the pages where they were laid out, to be slid from there.
+    pub fn draw_from(&self, corner: Option<(f32, f32)>) {
+        self.drawn_from.set(corner);
     }
 
     /// Tells the reader the window's size, in screen pixels.
@@ -616,11 +634,12 @@ impl Reader {
 
     /// Converts a rectangle in the document to screen pixels.
     fn to_screen(&self, area: Rect) -> Rect {
+        let (x, y) = self.drawn_from.get().unwrap_or((self.x, self.y));
         Rect {
-            left: (area.left - self.x) * self.zoom,
-            top: (area.top - self.y) * self.zoom,
-            right: (area.right - self.x) * self.zoom,
-            bottom: (area.bottom - self.y) * self.zoom,
+            left: (area.left - x) * self.zoom,
+            top: (area.top - y) * self.zoom,
+            right: (area.right - x) * self.zoom,
+            bottom: (area.bottom - y) * self.zoom,
         }
     }
 

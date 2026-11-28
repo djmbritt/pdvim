@@ -2,7 +2,7 @@
 //! of the page in view, as Tridactyl's `yy` copies a page's address; and
 //! exporting the page in view to a file, or the markings to Markdown.
 
-use iced::Task;
+use crate::task::Task;
 
 use super::{App, Message, Notice, TextFor, tilde};
 use std::path::PathBuf;
@@ -93,12 +93,12 @@ impl App {
             CopyWhat::Path => {
                 let path = document.path.to_string_lossy().into_owned();
                 self.notice = Notice::Info(format!("copied {}", tilde(&document.path)));
-                iced::clipboard::write(path)
+                crate::task::copy(path)
             }
             CopyWhat::Title => {
                 let title = document.name();
                 self.notice = Notice::Info(format!("copied {title}"));
-                iced::clipboard::write(title)
+                crate::task::copy(title)
             }
             CopyWhat::Page => {
                 let page = document.reader.current_page();
@@ -130,7 +130,7 @@ impl App {
             "copied page {number}: {count} character{}",
             if count == 1 { "" } else { "s" }
         ));
-        iced::clipboard::write(text)
+        crate::task::copy(text)
     }
 }
 

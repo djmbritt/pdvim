@@ -4,8 +4,9 @@
 //! starts a selection from it. While selecting, the cursor moves there and
 //! the selection runs to it.
 
-use iced::widget::canvas;
-use iced::{Point, Task};
+use crate::task::Task;
+use crate::ui::Frame;
+use crate::ui::Point;
 
 use super::{
     App, Document, LINK, Message, Pending, TextFor, Wanted, draw_text_label, label_size, rectangle,
@@ -105,7 +106,7 @@ impl App {
 }
 
 /// Marks each match of the text typed, and puts its label just after it.
-pub(super) fn draw(frame: &mut canvas::Frame, document: &Document, flash: &Flash) {
+pub(super) fn draw(frame: &mut Frame, document: &Document, flash: &Flash) {
     for target in flash.targets() {
         let mut last = None;
         for step in 0..target.len {

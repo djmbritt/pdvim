@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::thread;
 
-use iced::futures::channel::oneshot;
+use futures::channel::oneshot;
 use mupdf::{
     Colorspace, DestinationKind, Device, DisplayList, Document, ImageFormat, Matrix, Pixmap,
     TextCharFlags, TextPageFlags,
@@ -3221,7 +3221,7 @@ mod tests {
         let here = worker.render(job(1.5)).unwrap();
         let (reply, answer) = oneshot::channel();
         worker.answer(Request::Render(job(1.5), reply));
-        let painted = iced::futures::executor::block_on(answer).unwrap().unwrap();
+        let painted = futures::executor::block_on(answer).unwrap().unwrap();
         assert_eq!(
             painted.pixels, here.pixels,
             "the painter draws it as the worker does"

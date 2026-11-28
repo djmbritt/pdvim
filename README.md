@@ -2,7 +2,7 @@
 
 # pdvim
 
-A PDF reader driven by vi keys. pdvim also opens EPUB and FB2 books, CBZ and CBT comics, XPS documents, SVG drawings and images. It renders pages with [MuPDF](https://mupdf.com/) and draws its window with [iced](https://iced.rs/).
+A PDF reader driven by vi keys. pdvim also opens EPUB and FB2 books, CBZ and CBT comics, XPS documents, SVG drawings and images. It renders pages with [MuPDF](https://mupdf.com/) and draws its window with [Rune](https://github.com/anomalyco/rune).
 
 ![pdvim going to a chapter from the table of contents, highlighting a line, labelling links, searching as you type, showing two pages side by side and every page small, and changing the theme](docs/screenshots/demo.gif)
 

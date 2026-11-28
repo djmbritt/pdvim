@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use iced::Task;
+use crate::task::Task;
 
 use super::{
     App, Labelled, Message, Notice, TextFor, Wanted, document_by_id, open_externally, tilde,
@@ -232,8 +232,7 @@ impl App {
                 Labelled::Marking(marking) => marking.text.clone(),
                 Labelled::Picture(area) => text
                     .get(&page)
-                    .map(|lines| text_within(lines, *area))
-                    .unwrap_or_default(),
+                    .map_or_default(|lines| text_within(lines, *area)),
             });
         }
     }
@@ -367,7 +366,7 @@ impl App {
             Target::Field(_) => return Task::none(),
         };
         self.notice = Notice::Info(format!("copied {address}"));
-        iced::clipboard::write(address)
+        crate::task::copy(address)
     }
 
     /// Opens the document in view again in a new tab beside it, at a spot
@@ -399,8 +398,7 @@ impl App {
 fn link_text(text: &Text, page: u32, link: &Link) -> String {
     let words = text
         .get(&page)
-        .map(|lines| text_within(lines, link.area))
-        .unwrap_or_default();
+        .map_or_default(|lines| text_within(lines, link.area));
     match &link.target {
         Target::Uri(uri) => format!("{words} {uri}"),
         Target::Page { page, .. } => format!("{words} page {}", page.saturating_add(1)),
@@ -434,7 +432,7 @@ pub(super) fn text_within(lines: &[TextLine], area: Rect) -> String {
 
 #[cfg(test)]
 mod tests {
-    use iced::futures::executor::block_on;
+    use futures::executor::block_on;
 
     use super::*;
     use crate::app::mode::Mode;

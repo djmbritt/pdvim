@@ -812,8 +812,7 @@ impl Visual {
                         .entry(page)
                         .or_insert_with(|| {
                             text.get(&page)
-                                .map(|lines| paragraph_starts(lines))
-                                .unwrap_or_default()
+                                .map_or_default(|lines| paragraph_starts(lines))
                         })
                         .contains(&line_index)
                 };
@@ -1464,8 +1463,7 @@ pub fn page_starts_paragraph(text: &Text, page: u32) -> bool {
     };
     let last: String = lines
         .get(row)
-        .map(|line| line.chars.iter().map(|c| c.character).collect())
-        .unwrap_or_default();
+        .map_or_default(|line| line.chars.iter().map(|c| c.character).collect());
     let opening: String = first.chars.iter().map(|c| c.character).collect();
     prose::ends_sentence(&last)
         && ends_short(lines)

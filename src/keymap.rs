@@ -372,10 +372,7 @@ impl<A> Pending<A> {
 impl<A: Bindable> Pending<A> {
     /// What has been typed so far, for the status bar.
     pub fn display(&self) -> String {
-        let mut shown = self
-            .count
-            .map(|count| count.to_string())
-            .unwrap_or_default();
+        let mut shown = self.count.map_or_default(|count| count.to_string());
         shown.push_str(&written(&self.keys));
         shown
     }
@@ -416,8 +413,7 @@ impl<A: Bindable> Pending<A> {
                 let line = keymap
                     .commands
                     .get(index)
-                    .map(|(_, line)| line.clone())
-                    .unwrap_or_default();
+                    .map_or_default(|(_, line)| line.clone());
                 Fed::Command(line, count)
             }
             Match::None => {

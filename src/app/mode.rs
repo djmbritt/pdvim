@@ -1,7 +1,7 @@
 //! The mode the reader is in, which the box at the left of the status bar
 //! names, in a colour for its kind.
 
-use iced::Color;
+use crate::ui::Color;
 
 use super::{App, Sidebar};
 use crate::input::Prompt;

@@ -1,5 +1,5 @@
-//! Copying pictures to the clipboard, which iced's clipboard cannot: it
-//! holds only text.
+//! Copying pictures to the clipboard: the window's own clipboard (Rune's)
+//! is used for text.
 //!
 //! On Linux a program offers what it copied for as long as it keeps the
 //! clipboard open, so one is opened the first time a picture is copied
@@ -8,7 +8,7 @@
 
 use std::sync::{Mutex, PoisonError};
 
-use iced::futures::channel::oneshot;
+use futures::channel::oneshot;
 
 /// The clipboard, once opened.
 static CLIPBOARD: Mutex<Option<arboard::Clipboard>> = Mutex::new(None);

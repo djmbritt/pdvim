@@ -5,7 +5,7 @@
 
 use std::ops::Range;
 
-use iced::Task;
+use crate::task::Task;
 
 use super::{App, Message, Notice, TextFor};
 use crate::layout::Rect;

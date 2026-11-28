@@ -53,7 +53,9 @@ mod reader;
 mod recall;
 mod recolor;
 mod shell;
+mod task;
 mod theme;
+mod ui;
 mod visual;
 
 pub use app::run;

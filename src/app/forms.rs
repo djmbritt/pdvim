@@ -2,8 +2,8 @@
 //! box; a text field is typed into where it is on the page, and a list
 //! opens under its field to pick from.
 
-use iced::widget::canvas;
-use iced::{Font, Point, Size, Task};
+use crate::task::Task;
+use crate::ui::{Align, Color, Frame, Point, Rectangle, Size, Text};
 
 use super::{App, Document, Message, Notice, rectangle};
 use crate::backend::{Annotation, Field, FieldKind, OFF};
@@ -362,7 +362,7 @@ impl App {
         };
         match edit.editor.feed(fed) {
             Typed::Stay => Task::none(),
-            Typed::Paste => iced::clipboard::read().map(Message::Pasted),
+            Typed::Paste => crate::task::paste(Message::Pasted),
             Typed::Cancel => {
                 self.field_edit = None;
                 Task::none()
@@ -569,12 +569,7 @@ fn field_index(
 
 /// Draws a field being filled in over the field on the page: its text and
 /// the cursor, or what is typed and, under it, the list to pick from.
-pub(super) fn draw(
-    frame: &mut canvas::Frame,
-    document: &Document,
-    edit: &FieldEdit,
-    chrome: Colours,
-) {
+pub(super) fn draw(frame: &mut Frame, document: &Document, edit: &FieldEdit, chrome: Colours) {
     if document.id != edit.id {
         return;
     }
@@ -585,15 +580,9 @@ pub(super) fn draw(
         return;
     };
     let field = rectangle(area);
-    let stroke = canvas::Stroke::default()
-        .with_color(super::CURSOR)
-        .with_width(2.0);
     // A box keeps its look, framed.
     if edit.editor == Editor::Toggle {
-        frame.stroke(
-            &canvas::Path::rectangle(field.position(), field.size()),
-            stroke,
-        );
+        frame.stroke_rectangle(field.position(), field.size(), 2.0, super::CURSOR);
         return;
     }
     let size = (field.height * 0.62).clamp(8.0, 28.0);
@@ -630,10 +619,7 @@ pub(super) fn draw(
         Size::new(2.0, size * 1.2),
         chrome.bar_text,
     );
-    frame.stroke(
-        &canvas::Path::rectangle(field.position(), field.size()),
-        stroke,
-    );
+    frame.stroke_rectangle(field.position(), field.size(), 2.0, super::CURSOR);
     if let Editor::Choice { selected, .. } = &edit.editor {
         draw_list(frame, field, &edit.editor.shown(), *selected, size, chrome);
     }
@@ -642,8 +628,8 @@ pub(super) fn draw(
 /// Draws the options left under the field, or over it when there is no
 /// room under it, as many as fit around the one picked.
 fn draw_list(
-    frame: &mut canvas::Frame,
-    field: iced::Rectangle,
+    frame: &mut Frame,
+    field: Rectangle,
     shown: &[&String],
     selected: usize,
     size: f32,
@@ -657,7 +643,7 @@ fn draw_list(
     } else {
         (field.y - height).max(0.0)
     };
-    let list = iced::Rectangle {
+    let list = Rectangle {
         x: field.x,
         y: top,
         width: field.width.max(160.0),
@@ -692,27 +678,19 @@ fn draw_list(
             chrome.bar_text,
         );
     }
-    let stroke = canvas::Stroke::default()
-        .with_color(chrome.list_border)
-        .with_width(1.0);
-    frame.stroke(
-        &canvas::Path::rectangle(list.position(), list.size()),
-        stroke,
-    );
+    frame.stroke_rectangle(list.position(), list.size(), 1.0, chrome.list_border);
 }
 
 /// Writes a line of text, starting at a point on its left and centred on
 /// it from top to bottom.
-fn write(frame: &mut canvas::Frame, content: String, at: Point, size: f32, colour: iced::Color) {
-    frame.fill_text(canvas::Text {
+fn write(frame: &mut Frame, content: String, at: Point, size: f32, colour: Color) {
+    frame.fill_text(Text {
         content,
         position: at,
         color: colour,
-        size: size.into(),
-        font: Font::MONOSPACE,
-        align_x: iced::widget::text::Alignment::Left,
-        align_y: iced::alignment::Vertical::Center,
-        ..canvas::Text::default()
+        size,
+        bold: false,
+        align: Align::Left,
     });
 }
 
@@ -876,7 +854,7 @@ mod tests {
 /// ticking and picking from a list, and leaving a field as it was.
 #[cfg(test)]
 mod sessions {
-    use iced::futures::executor::block_on;
+    use futures::executor::block_on;
 
     use crate::app::testing::Session;
 

@@ -3,25 +3,36 @@ name = "pdvim"
 version = "0.2.27"
 edition = "2024"
 # The oldest Rust that builds pdvim and the locked versions of its crates.
-rust-version = "1.90"
+rust-version = "1.99"
 description = "A minimal, keyboard-driven PDF reader"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/djmbritt/pdvim"
 
 [dependencies]
-# The clipboard, for pictures, which iced's holds only text of: see
+# The clipboard, for pictures; text goes through the window's. See
 # src/clipboard.rs.
 arboard = { version = "3.7.0", default-features = false, features = ["image-data", "wayland-data-control"] }
 # Fonts installed on the system, for what documents lack: see src/fonts.rs.
-font-kit = "0.14.3"
-iced = { version = "0.14.0", features = ["canvas", "image"] }
+# Fontconfig is loaded when first used, as Rune loads it: the two share it,
+# and one way of reaching it must be chosen for both.
+font-kit = { version = "0.14.3", features = ["source-fontconfig-dlopen"] }
+# What waits on the backend's answers: see src/task.rs.
+futures = { version = "0.3.31", default-features = false, features = ["std", "executor", "thread-pool"] }
 mupdf = { version = "0.8.0", default-features = false, features = ["base14-fonts", "epub", "html", "cbz", "img", "xps", "svg"] }
+# The window, drawn with wgpu. Pre-release, so pinned to a revision of its
+# `dev` branch; the patches at the end of this file go with it.
+rune = { git = "https://github.com/anomalyco/rune", rev = "7e3d2662b4b2ded3d350cbb6cb46db79d2fc2dd3", default-features = false, features = ["dbus", "embedded-fonts"] }
 rusqlite = { version = "0.43", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2.0.21"
 toml = { version = "1.2.2", default-features = false, features = ["parse", "serde", "preserve_order"] }
 
 # For `cargo deb`, which the release workflow runs to make the `.deb`.
+[features]
+# Rune's per-frame timings: with RUNE_FRAME_LOG=FILE, each frame the window
+# draws is written to FILE as a JSON line, split by stage. For measuring.
+frame-profile = ["rune/frame-profile"]
+
 [package.metadata.deb]
 maintainer = "David Britt"
 section = "graphics"
@@ -125,21 +136,18 @@ suspicious_xor_used_as_pow = "deny"
 # Times the hot paths: `cargo bench`, with the benchmarks in benches/. The
 # reports to browse go in target/criterion/.
 criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support", "plotters", "html_reports"] }
-# Runs the tasks the app returns in its tests, as the runtime would: see
-# src/app/testing.rs. The same version as iced's own.
-iced_runtime = "0.14.0"
-# Draws the window in the tests, with `tiny-skia` and no screen: see
-# `src/app/drawing.rs`, and `.cargo/config.toml` for why `tiny-skia`.
-iced_test = "0.14.0"
 
 [[bench]]
 name = "hot_paths"
 harness = false
 
-# The renderer the tests draw the window with, so slow unoptimized that
-# drawing once takes a second, rather than a sixth of one.
-[profile.dev.package.tiny-skia]
-opt-level = 3
-
-[profile.dev.package.tiny-skia-path]
-opt-level = 3
+# Rune builds on these crates as patched in its own repository, at the same
+# revision as Rune itself (see Rune's Cargo.toml): Cargo does not take a
+# dependency's patches, so the app that uses Rune names them. Its patches
+# of AccessKit are left out: pdvim builds Rune without accessibility.
+[patch.crates-io]
+winit = { git = "https://github.com/anomalyco/rune", rev = "7e3d2662b4b2ded3d350cbb6cb46db79d2fc2dd3" }
+sctk-adwaita = { git = "https://github.com/anomalyco/rune", rev = "7e3d2662b4b2ded3d350cbb6cb46db79d2fc2dd3" }
+parley_engine = { git = "https://github.com/anomalyco/rune", rev = "7e3d2662b4b2ded3d350cbb6cb46db79d2fc2dd3" }
+wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "7e3d2662b4b2ded3d350cbb6cb46db79d2fc2dd3" }
+naga = { git = "https://github.com/anomalyco/rune", rev = "7e3d2662b4b2ded3d350cbb6cb46db79d2fc2dd3" }

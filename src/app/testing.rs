@@ -1,21 +1,18 @@
 //! Helpers for testing the app with real documents: opened through the
-//! backend at once, rather than by a task the runtime would carry out; or
+//! backend at once, rather than by a task the window would carry out; or
 //! driven as a [`Session`], which carries out every task the app returns,
-//! as the runtime does, so that a test types keys and finds what they did.
+//! as the window does, so that a test types keys and finds what they did.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use iced::futures::StreamExt;
-use iced::futures::executor::block_on;
-use iced::keyboard::{self, Location, Modifiers, key};
-use iced::{Element, Point, Size, Task};
-use iced_runtime::Action;
-use iced_runtime::clipboard;
+use futures::executor::block_on;
 
 use super::{App, Message};
 use crate::input::Key;
 use crate::layout::Rect;
+use crate::task::{Step, Task};
+use crate::ui::{Point, Size};
 
 /// The app, with no history, so that tests leave the reader's alone,
 /// showing a fixture document in a window half a page high, so that
@@ -66,25 +63,10 @@ pub fn read(app: &mut App, id: u64, page: u32) {
     let _: Task<Message> = app.update(Message::TextFound(id, vec![page], text));
 }
 
-/// Types characters at the app, a key press each, as the keyboard would:
-/// a capital with shift held.
+/// Types characters at the app, a key press each, as the keyboard would.
 pub fn typing(app: &mut App, characters: &str) {
     for character in characters.chars() {
-        let typed = keyboard::Key::Character(character.to_string().into());
-        let modifiers = if character.is_uppercase() {
-            Modifiers::SHIFT
-        } else {
-            Modifiers::empty()
-        };
-        let _: Task<Message> = app.update(Message::Keyboard(keyboard::Event::KeyPressed {
-            key: typed.clone(),
-            modified_key: typed,
-            physical_key: key::Physical::Unidentified(key::NativeCode::Unidentified),
-            location: Location::Standard,
-            modifiers,
-            text: Some(character.to_string().into()),
-            repeat: false,
-        }));
+        let _: Task<Message> = app.update(Message::Keyboard(Key::Char(character)));
     }
 }
 
@@ -179,16 +161,19 @@ impl Session {
 
     /// Presses a key, as pdvim names it.
     pub fn press(&mut self, key: Key) {
-        self.send(Message::Keyboard(key_event(key)));
+        // The key that stands for it unless the test sets another.
+        let key = if key == Key::Leader {
+            crate::keymap::DEFAULT_LEADER
+        } else {
+            key
+        };
+        self.send(Message::Keyboard(key));
     }
 
-    /// Gives the app a message, carries out all it leads to, and makes the
-    /// window of what it shows then, as the runtime would, so that what
-    /// would fail on screen fails the test.
+    /// Gives the app a message, and carries out all it leads to.
     pub fn send(&mut self, message: Message) {
         let task = self.app.update(message);
         self.run(task);
-        let _: Element<'_, Message> = self.app.view();
     }
 
     /// Types keys, each carried out in full before the next: characters as
@@ -203,61 +188,56 @@ impl Session {
                 .strip_prefix('<')
                 .and_then(|after| after.split_once('>'))
                 .filter(|(name, _)| !name.is_empty() && !name.contains('<'));
-            let event = if let Some((name, after)) = named {
+            let key = if let Some((name, after)) = named {
                 rest = after;
                 named_key(name)
             } else {
                 rest = rest.get(character.len_utf8()..).unwrap_or_default();
-                character_key(character)
+                Key::Char(character)
             };
-            self.send(Message::Keyboard(event));
+            self.press(key);
         }
     }
 
     /// Carries out a task, and the tasks of the messages it gives.
-    #[expect(
-        clippy::wildcard_enum_match_arm,
-        reason = "the runtime's other actions do nothing in tests"
-    )]
     pub fn run(&mut self, task: Task<Message>) {
-        let mut tasks = vec![task];
+        let mut steps: Vec<Step<Message>> = task.into_steps();
         let mut messages: usize = 0;
-        while let Some(task) = tasks.pop() {
-            let Some(mut stream) = iced_runtime::task::into_stream(task) else {
-                continue;
-            };
-            while let Some(action) = block_on(stream.next()) {
-                match action {
-                    Action::Output(message) => {
-                        messages = messages.saturating_add(1);
-                        assert!(messages < MOST_MESSAGES, "the app does not settle");
-                        tasks.push(self.app.update(message));
-                    }
-                    Action::Clipboard(clipboard::Action::Write { contents, .. }) => {
-                        self.copied.push(contents);
-                    }
-                    Action::Clipboard(clipboard::Action::Read { channel, .. }) => {
-                        let _: Result<(), Option<String>> = channel.send(self.clipboard.clone());
-                    }
-                    Action::Exit => self.exited = true,
-                    // The window and its widgets are not there to ask:
-                    // what waits on them is let go.
-                    _ => {}
+        while let Some(step) = steps.pop() {
+            let message = match step {
+                Step::Future(future) => block_on(future),
+                Step::Copy(text) => {
+                    self.copied.push(text);
+                    continue;
                 }
-            }
+                Step::Paste(message) => message(self.clipboard.clone()),
+                Step::Exit => {
+                    self.exited = true;
+                    continue;
+                }
+                // There is no window to fill the screen with.
+                Step::FullScreen(_) => continue,
+            };
+            messages = messages.saturating_add(1);
+            assert!(messages < MOST_MESSAGES, "the app does not settle");
+            steps.extend(self.app.update(message).into_steps());
         }
     }
 
-    /// Draws the window as it is now, its canvases and pictures too, with
-    /// a renderer that needs no screen, so that what would fail drawing
-    /// fails the test.
-    pub fn draw(&self) {
-        let size = Size::new(612.0, 400.0);
-        let mut window =
-            iced_test::Simulator::with_size(iced::Settings::default(), size, self.app.view());
-        window
-            .snapshot(&self.app.theme())
-            .expect("the window draws");
+    /// Lays out and builds the window as it is now, its pages and all that
+    /// is drawn over them, as the window would, with no screen, so that
+    /// what would fail drawing fails the test.
+    pub fn draw(&mut self) {
+        let app = std::mem::replace(&mut self.app, App::empty());
+        let env = rune::Env {
+            system_dark: true,
+            scale: 1.0,
+        };
+        let mut window = rune::Runtime::new(app, super::window::view, (612.0, 400.0), env);
+        window.frame(0.0);
+        window.frame(1.0 / 60.0);
+        assert!(!window.elements().is_empty(), "the window draws");
+        self.app = std::mem::replace(&mut window.state, App::empty());
     }
 
     /// The text selected in visual mode.
@@ -272,122 +252,28 @@ impl Drop for Session {
     }
 }
 
-/// The event of a key as pdvim names it, as the keyboard would report it.
-fn key_event(key: Key) -> keyboard::Event {
-    use keyboard::key::Named;
-    let named = |named, modifiers| press(keyboard::Key::Named(named), modifiers, None);
-    match key {
-        Key::Char(character) => character_key(character),
-        Key::Ctrl(letter) => press(
-            keyboard::Key::Character(letter.to_string().into()),
-            Modifiers::CTRL,
-            None,
-        ),
-        Key::Escape => named(Named::Escape, Modifiers::empty()),
-        Key::Enter => named(Named::Enter, Modifiers::empty()),
-        Key::Backspace => named(Named::Backspace, Modifiers::empty()),
-        Key::ShiftSpace => named(Named::Space, Modifiers::SHIFT),
-        Key::Tab => named(Named::Tab, Modifiers::empty()),
-        Key::ShiftTab => named(Named::Tab, Modifiers::SHIFT),
-        Key::CtrlTab => named(Named::Tab, Modifiers::CTRL),
-        Key::CtrlShiftTab => named(Named::Tab, Modifiers::CTRL | Modifiers::SHIFT),
-        Key::Up => named(Named::ArrowUp, Modifiers::empty()),
-        Key::Down => named(Named::ArrowDown, Modifiers::empty()),
-        Key::Left => named(Named::ArrowLeft, Modifiers::empty()),
-        Key::Right => named(Named::ArrowRight, Modifiers::empty()),
-        Key::PageUp => named(Named::PageUp, Modifiers::empty()),
-        Key::PageDown => named(Named::PageDown, Modifiers::empty()),
-        Key::Home => named(Named::Home, Modifiers::empty()),
-        Key::End => named(Named::End, Modifiers::empty()),
-        Key::Function(number) => {
-            let function = [
-                Named::F1,
-                Named::F2,
-                Named::F3,
-                Named::F4,
-                Named::F5,
-                Named::F6,
-                Named::F7,
-                Named::F8,
-                Named::F9,
-                Named::F10,
-                Named::F11,
-                Named::F12,
-            ];
-            let which = usize::from(number.clamp(1, 12)).saturating_sub(1);
-            named(function[which], Modifiers::empty())
-        }
-        // The key that stands for it unless the test sets another.
-        Key::Leader => key_event(crate::keymap::DEFAULT_LEADER),
-    }
-}
-
-/// The event of a key named as [`Session::keys`] names it.
-fn named_key(name: &str) -> keyboard::Event {
-    use keyboard::key::Named;
+/// The key named as [`Session::keys`] names it.
+fn named_key(name: &str) -> Key {
     if let Some(letter) = name.strip_prefix("C-").and_then(|rest| rest.chars().next()) {
-        return press(
-            keyboard::Key::Character(letter.to_string().into()),
-            Modifiers::CTRL,
-            None,
-        );
+        return Key::Ctrl(letter.to_ascii_lowercase());
     }
-    let (shift, name) = name
-        .strip_prefix("S-")
-        .map_or((false, name), |rest| (true, rest));
-    let named = match name {
-        "Esc" => Named::Escape,
-        "Enter" | "CR" => Named::Enter,
-        "Tab" => Named::Tab,
-        "BS" => Named::Backspace,
-        "Space" => Named::Space,
-        "Up" => Named::ArrowUp,
-        "Down" => Named::ArrowDown,
-        "Left" => Named::ArrowLeft,
-        "Right" => Named::ArrowRight,
-        "PageUp" => Named::PageUp,
-        "PageDown" => Named::PageDown,
-        "Home" => Named::Home,
-        "End" => Named::End,
-        "F1" => Named::F1,
+    match name {
+        "Esc" => Key::Escape,
+        "Enter" | "CR" => Key::Enter,
+        "Tab" => Key::Tab,
+        "S-Tab" => Key::ShiftTab,
+        "BS" => Key::Backspace,
+        "Space" => Key::Char(' '),
+        "S-Space" => Key::ShiftSpace,
+        "Up" => Key::Up,
+        "Down" => Key::Down,
+        "Left" => Key::Left,
+        "Right" => Key::Right,
+        "PageUp" => Key::PageUp,
+        "PageDown" => Key::PageDown,
+        "Home" => Key::Home,
+        "End" => Key::End,
+        "F1" => Key::Function(1),
         other => panic!("no key named <{other}>"),
-    };
-    let modifiers = if shift {
-        Modifiers::SHIFT
-    } else {
-        Modifiers::empty()
-    };
-    let text = (named == Named::Space).then(|| " ".into());
-    press(keyboard::Key::Named(named), modifiers, text)
-}
-
-/// The event of typing a character, with shift held for a capital.
-fn character_key(character: char) -> keyboard::Event {
-    let modifiers = if character.is_uppercase() {
-        Modifiers::SHIFT
-    } else {
-        Modifiers::empty()
-    };
-    press(
-        keyboard::Key::Character(character.to_string().into()),
-        modifiers,
-        Some(character.to_string().into()),
-    )
-}
-
-/// A key pressed, as the keyboard reports it.
-fn press(
-    pressed: keyboard::Key,
-    modifiers: Modifiers,
-    text: Option<iced_runtime::core::SmolStr>,
-) -> keyboard::Event {
-    keyboard::Event::KeyPressed {
-        key: pressed.clone(),
-        modified_key: pressed,
-        physical_key: key::Physical::Unidentified(key::NativeCode::Unidentified),
-        location: Location::Standard,
-        modifiers,
-        text,
-        repeat: false,
     }
 }

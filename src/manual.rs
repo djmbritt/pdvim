@@ -188,7 +188,7 @@ impl Page {
             self.in_list = true;
         }
         if tag_given {
-            let tag = arguments.first().map(|tag| inline(tag)).unwrap_or_default();
+            let tag = arguments.first().map_or_default(|tag| inline(tag));
             let _ = write!(self.body, "<dt>{tag}</dt><dd>");
             self.block = Block::Tagged;
         } else {

@@ -1,7 +1,7 @@
 //! Hiding the tab bar and the status bar while reading, and filling the
 //! screen.
 
-use iced::{Task, window};
+use crate::task::{self, Task};
 
 use super::{App, Message, Notice, mode::Mode};
 
@@ -38,12 +38,7 @@ impl Bars {
     /// Fills the screen with the window, or stops.
     pub fn toggle_fullscreen(&mut self) -> Task<Message> {
         self.fullscreen = !self.fullscreen;
-        let mode = if self.fullscreen {
-            window::Mode::Fullscreen
-        } else {
-            window::Mode::Windowed
-        };
-        window::latest().and_then(move |id| window::set_mode(id, mode))
+        task::full_screen(self.fullscreen)
     }
 }
 

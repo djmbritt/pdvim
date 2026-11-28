@@ -7,9 +7,6 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use iced::Element;
-
-use super::Message;
 use super::testing::Session;
 use crate::bindings::Keymaps;
 use crate::command;
@@ -22,7 +19,7 @@ use crate::reader::PageMode;
 const FIXTURES: [&str; 2] = ["links.pdf", "text.pdf"];
 
 /// What is wrong with the reader after something was done, if anything.
-fn unsound(session: &Session) -> Option<String> {
+fn unsound(session: &mut Session) -> Option<String> {
     if let Some(document) = session.app.document() {
         let reader = &document.reader;
         let pages = reader.page_count();
@@ -35,7 +32,7 @@ fn unsound(session: &Session) -> Option<String> {
         }
     }
     // The window can still be made of it.
-    let _: Element<'_, Message> = session.app.view();
+    session.draw();
     let _: super::mode::Mode = session.app.mode();
     None
 }
@@ -46,7 +43,7 @@ fn tried(fixture: &str, steps: impl FnOnce(&mut Session)) -> Option<String> {
     let outcome = catch_unwind(AssertUnwindSafe(|| {
         let mut session = Session::open(fixture);
         steps(&mut session);
-        unsound(&session)
+        unsound(&mut session)
     }));
     match outcome {
         Ok(problem) => problem,
@@ -220,8 +217,7 @@ fn keys_of(name: &str) -> Vec<Key> {
     let keys = bound(&keymaps.normal)
         .into_iter()
         .find(|(_, bound_name)| *bound_name == name)
-        .map(|(keys, _)| keys)
-        .unwrap_or_default();
+        .map_or_default(|(keys, _)| keys);
     assert!(!keys.is_empty(), "no key is bound to {name} by default");
     keys
 }

@@ -3,12 +3,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use iced::widget::canvas::{self, Canvas};
-use iced::widget::{Column, Row, column, container, image, row, stack, text};
-use iced::{
-    Color, Element, Event, Fill, Font, Point, Rectangle, Renderer, Size, Subscription, Task, Theme,
-    keyboard, mouse, window,
-};
+use rune::{Cursor, Cx, El, Phase, Pixels, PointerButton, col, el, row};
 
 use crate::backend::{
     self, Annotation, Backend, Hit, Link, Marking, Markup, MarkupKind, Opened, RenderJob,
@@ -30,7 +25,9 @@ use crate::picker::{self, Choice, Entry, Picker};
 use crate::reader::{PageMode, Place, Reader};
 use crate::recall::{Lines, Recall};
 use crate::recolor::{Palette, Rgb};
+use crate::task::Task;
 use crate::theme::{self, Colours};
+use crate::ui::{self, Align, Color, Frame, Point, Rectangle, Size};
 use crate::visual::{self, Kind, Spot, Visual};
 
 mod bars;
@@ -44,6 +41,7 @@ mod flash;
 mod forms;
 mod incsearch;
 mod info;
+mod launch;
 mod links;
 mod markings;
 mod matches;
@@ -53,12 +51,18 @@ mod paragraphs;
 mod pointer;
 mod reflow;
 mod run;
+mod sliding;
 mod tabs;
 #[cfg(test)]
 mod testing;
 mod unlock;
+mod widgets;
+mod window;
+
+pub use window::run;
 
 use markings::{Edit, Step, Wanted};
+use widgets::{along_bottom, centred, clickable, cut_to, filling, layer, panel, shaded};
 
 /// The colour laid over every search result.
 const HIT: Color = Color::from_rgba8(0xff, 0xd0, 0x00, 0.35);
@@ -112,7 +116,8 @@ const KEEP_AROUND: u32 = 2;
 /// Something that happened, for [`App::update`] to act on.
 #[derive(Debug, Clone)]
 pub enum Message {
-    Keyboard(keyboard::Event),
+    /// A key was pressed.
+    Keyboard(Key),
     /// The area for pages changed size.
     Resized(Size),
     /// The display's pixels per logical pixel became known.
@@ -120,7 +125,7 @@ pub enum Message {
     /// The text on the clipboard, read to paste into the prompt.
     Pasted(Option<String>),
     /// The mouse wheel turned over the pages.
-    Wheel(mouse::ScrollDelta),
+    Wheel(pointer::ScrollDelta),
     /// A mouse button went down, moved or went up over the pages.
     Pointer(pointer::Pointer),
     /// An entry of a list, a tab or a small page was clicked.
@@ -129,16 +134,16 @@ pub enum Message {
     CloseRequested,
     /// The system's preference for a light or dark theme became known, or
     /// changed.
-    SystemTheme(iced::theme::Mode),
+    SystemTheme(bool),
     /// A document finished opening, or failed to, for the request with
     /// this number.
     Opened(u64, PathBuf, Result<Opened, backend::Error>),
     /// A page of the document with this number finished rendering, or
     /// failed to.
-    Rendered(u64, u32, RenderKey, Result<image::Handle, backend::Error>),
+    Rendered(u64, u32, RenderKey, Result<Picture, backend::Error>),
     /// A page of the document with this number was rendered small, for
     /// the overview, this way, or could not be.
-    RenderedSmall(u64, u32, RenderKey, Result<image::Handle, backend::Error>),
+    RenderedSmall(u64, u32, RenderKey, Result<Picture, backend::Error>),
     /// A search in the document with this number finished, or failed.
     Found(u64, Search, Result<Vec<Hit>, backend::Error>),
     /// The pages in view of the document with this number were searched
@@ -190,6 +195,16 @@ pub enum Message {
     NotesExported(PathBuf, Result<usize, String>),
     /// A command run with `:!`, as typed, finished, or could not be run.
     ShellRan(String, Result<crate::shell::Ran, crate::shell::Error>),
+}
+
+/// A page rendered, as the window draws it.
+pub type Picture = Pixels;
+
+/// A page rendered by the backend, made into a picture for the window.
+fn picture(bitmap: backend::Bitmap) -> Picture {
+    let picture = Pixels::new();
+    picture.set(bitmap.width, bitmap.height, bitmap.pixels);
+    picture
 }
 
 /// What to do once a document's changes are saved.
@@ -294,12 +309,12 @@ struct Document {
     /// The changes undone, the last undone last, to redo.
     redo: Vec<Edit>,
     /// The rendered pages, and what each was rendered for.
-    pages: HashMap<u32, (image::Handle, RenderKey)>,
+    pages: HashMap<u32, (Picture, RenderKey)>,
     /// What each page being rendered right now is rendered for.
     rendering: HashMap<u32, RenderKey>,
     /// The pages rendered small, for the overview, and how; and those
     /// being rendered small, and how.
-    small: HashMap<u32, (image::Handle, RenderKey)>,
+    small: HashMap<u32, (Picture, RenderKey)>,
     rendering_small: HashMap<u32, RenderKey>,
     /// What each page that failed to render was rendered for, so the same
     /// render is not tried again and again.
@@ -496,7 +511,17 @@ pub struct App {
     area: Size,
     /// Physical pixels per logical pixel.
     scale_factor: f32,
-    modifiers: keyboard::Modifiers,
+    /// What the pointer shows over the pages, from where it is.
+    hovering: Cursor,
+    /// What carries out the tasks that wait, once the window is up.
+    runner: Option<window::Runner>,
+    /// What was asked for at start, before there was a window to do it.
+    starting: Option<Task<Message>>,
+    /// The title last given to the window.
+    shown_title: Option<String>,
+    /// Where the page layers were laid out from, and how far they are
+    /// slid from there (see `sliding`).
+    sliding: sliding::Sliding,
     keymaps: Keymaps,
     /// What has been typed of a command in normal mode.
     pending: Pending<input::Binding>,
@@ -633,19 +658,6 @@ pub struct App {
 /// # Errors
 ///
 /// When the window cannot be opened.
-pub fn run(paths: Vec<PathBuf>) -> iced::Result {
-    iced::application(move || App::boot(paths.clone()), App::update, App::view)
-        .title(App::title)
-        .subscription(|_: &App| App::subscription())
-        .theme(|app: &App| Some(app.theme()))
-        .exit_on_close_request(false)
-        .window(window::Settings {
-            platform_specific: platform_specific(),
-            ..window::Settings::default()
-        })
-        .run()
-}
-
 impl App {
     fn boot(paths: Vec<PathBuf>) -> (Self, Task<Message>) {
         let (history, notice) = match History::open() {
@@ -662,7 +674,11 @@ impl App {
             history,
             area: Size::ZERO,
             scale_factor: 1.0,
-            modifiers: keyboard::Modifiers::default(),
+            hovering: Cursor::Default,
+            runner: None,
+            starting: None,
+            shown_title: None,
+            sliding: sliding::Sliding::default(),
             // Bindings and settings come from the built-in configuration,
             // carried out in `configure`; these hold only until then.
             keymaps: Keymaps::empty(),
@@ -750,9 +766,13 @@ impl App {
         } else {
             tasks
         };
-        // The theme is also told on every change, but not always at start.
-        let theme = iced::system::theme().map(Message::SystemTheme);
-        (app, Task::batch(tasks.into_iter().chain([theme])))
+        (app, Task::batch(tasks))
+    }
+
+    /// The app with no documents, for the window to start from before it
+    /// is told what to open.
+    fn empty() -> Self {
+        Self::boot(Vec::new()).0
     }
 
     /// Recolours every open document, or stops, to match the system's
@@ -846,14 +866,6 @@ impl App {
         )
     }
 
-    fn subscription() -> Subscription<Message> {
-        Subscription::batch([
-            keyboard::listen().map(Message::Keyboard),
-            window::close_requests().map(|_| Message::CloseRequested),
-            iced::system::theme_changes().map(Message::SystemTheme),
-        ])
-    }
-
     fn update(&mut self, message: Message) -> Task<Message> {
         let task = match message {
             Message::Keyboard(event) => self.on_keyboard(event),
@@ -866,11 +878,7 @@ impl App {
                 for document in self.tabs.iter_mut().filter_map(|tab| tab.document.as_mut()) {
                     document.reader.set_window((area.width, area.height));
                 }
-                // The window may have moved to a display with another scale.
-                let scale = window::latest()
-                    .and_then(window::scale_factor)
-                    .map(Message::Scaled);
-                Task::batch([scale, self.reflow()])
+                self.reflow()
             }
             Message::Pasted(text) => {
                 self.paste(text.as_deref().unwrap_or_default());
@@ -897,12 +905,8 @@ impl App {
                 self.exit()
             }
             Message::CloseRequested => self.quit(),
-            Message::SystemTheme(mode) => {
-                self.system_dark = match mode {
-                    iced::theme::Mode::Dark => Some(true),
-                    iced::theme::Mode::Light => Some(false),
-                    iced::theme::Mode::None => None,
-                };
+            Message::SystemTheme(dark) => {
+                self.system_dark = Some(dark);
                 self.follow_system();
                 Task::none()
             }
@@ -961,88 +965,70 @@ impl App {
         Task::batch([task, self.render_missing(), self.render_small()])
     }
 
-    fn on_keyboard(&mut self, event: keyboard::Event) -> Task<Message> {
-        match event {
-            keyboard::Event::ModifiersChanged(modifiers) => {
-                self.modifiers = modifiers;
-                Task::none()
+    fn on_keyboard(&mut self, key: Key) -> Task<Message> {
+        self.notice = Notice::None;
+        if let Some(question) = self.asking.take() {
+            // A yes goes ahead; any other key thinks better of it.
+            let yes = self.keymaps.confirm.lookup(&[key]) == Match::Bound(ConfirmBinding::Yes);
+            match question {
+                Question::Quit | Question::DiscardAll if yes => self.exit(),
+                Question::CloseTab | Question::DiscardTab if yes => self.close_tab_now(),
+                Question::Quit
+                | Question::CloseTab
+                | Question::DiscardTab
+                | Question::DiscardAll => Task::none(),
             }
-            keyboard::Event::KeyReleased { .. } => Task::none(),
-            keyboard::Event::KeyPressed {
-                key,
-                modifiers,
-                text,
-                ..
-            } => {
-                let Some(key) = translate(&key, modifiers, text.as_deref()) else {
-                    return Task::none();
-                };
-                self.notice = Notice::None;
-                if let Some(question) = self.asking.take() {
-                    // A yes goes ahead; any other key thinks better of it.
-                    let yes =
-                        self.keymaps.confirm.lookup(&[key]) == Match::Bound(ConfirmBinding::Yes);
-                    match question {
-                        Question::Quit | Question::DiscardAll if yes => self.exit(),
-                        Question::CloseTab | Question::DiscardTab if yes => self.close_tab_now(),
-                        Question::Quit
-                        | Question::CloseTab
-                        | Question::DiscardTab
-                        | Question::DiscardAll => Task::none(),
-                    }
-                } else if self.info.take().is_some() {
-                    // Any key puts it away.
-                    Task::none()
-                } else if self.field_edit.is_some() {
-                    self.on_field_key(key)
-                } else if self.flash.is_some() {
-                    self.on_flash_key(key)
-                } else if let Some(hints) = &mut self.hints {
-                    // Before visual mode, which labels the figures in view
-                    // to select one.
-                    let outcome = hints.feed(key, &self.keymaps.hints);
-                    self.on_hint(outcome)
-                } else if self.visual.is_some() {
-                    self.on_visual_key(key)
-                } else if let Some((kind, hints)) = &mut self.line_hints {
-                    let kind = *kind;
-                    let outcome = hints.feed(key, &self.keymaps.hints);
-                    self.on_line_hint(kind, outcome)
-                } else if let Some(hints) = &mut self.marking_hints {
-                    let outcome = hints.feed(key, &self.keymaps.hints);
-                    self.on_marking_hint(outcome);
-                    Task::none()
-                } else if self.overview().is_some() {
-                    self.on_overview_key(key)
-                } else if self.sidebar.is_some() {
-                    self.on_sidebar_key(key)
-                } else if self.help.is_some() {
-                    let rows = self.help_rows();
-                    if let Some(help) = &mut self.help
-                        && !help.feed(key, &self.keymaps.help, rows)
-                    {
-                        self.help = None;
-                    }
-                    Task::none()
-                } else if self.picker.is_some() {
-                    self.on_picker_key(key)
-                } else if self.tab_list.is_some() {
-                    self.on_tab_list_key(key);
-                    Task::none()
-                } else if self.match_list.is_some() {
-                    self.on_match_list_key(key);
-                    Task::none()
-                } else if self.prompt.is_some() {
-                    self.on_prompt_key(key)
-                } else if let Some(verb) = self.awaiting_mark.take() {
-                    self.on_mark(verb, key)
-                } else {
-                    match self.pending.feed(key, &self.keymaps.normal, Counts::Taken) {
-                        Fed::Bound(binding, count) => self.act(binding.action(count)),
-                        Fed::Command(line, _) => self.run_line(&line),
-                        Fed::Waiting | Fed::Unbound(_) => Task::none(),
-                    }
-                }
+        } else if self.info.take().is_some() {
+            // Any key puts it away.
+            Task::none()
+        } else if self.field_edit.is_some() {
+            self.on_field_key(key)
+        } else if self.flash.is_some() {
+            self.on_flash_key(key)
+        } else if let Some(hints) = &mut self.hints {
+            // Before visual mode, which labels the figures in view
+            // to select one.
+            let outcome = hints.feed(key, &self.keymaps.hints);
+            self.on_hint(outcome)
+        } else if self.visual.is_some() {
+            self.on_visual_key(key)
+        } else if let Some((kind, hints)) = &mut self.line_hints {
+            let kind = *kind;
+            let outcome = hints.feed(key, &self.keymaps.hints);
+            self.on_line_hint(kind, outcome)
+        } else if let Some(hints) = &mut self.marking_hints {
+            let outcome = hints.feed(key, &self.keymaps.hints);
+            self.on_marking_hint(outcome);
+            Task::none()
+        } else if self.overview().is_some() {
+            self.on_overview_key(key)
+        } else if self.sidebar.is_some() {
+            self.on_sidebar_key(key)
+        } else if self.help.is_some() {
+            let rows = self.help_rows();
+            if let Some(help) = &mut self.help
+                && !help.feed(key, &self.keymaps.help, rows)
+            {
+                self.help = None;
+            }
+            Task::none()
+        } else if self.picker.is_some() {
+            self.on_picker_key(key)
+        } else if self.tab_list.is_some() {
+            self.on_tab_list_key(key);
+            Task::none()
+        } else if self.match_list.is_some() {
+            self.on_match_list_key(key);
+            Task::none()
+        } else if self.prompt.is_some() {
+            self.on_prompt_key(key)
+        } else if let Some(verb) = self.awaiting_mark.take() {
+            self.on_mark(verb, key)
+        } else {
+            match self.pending.feed(key, &self.keymaps.normal, Counts::Taken) {
+                Fed::Bound(binding, count) => self.act(binding.action(count)),
+                Fed::Command(line, _) => self.run_line(&line),
+                Fed::Waiting | Fed::Unbound(_) => Task::none(),
             }
         }
     }
@@ -1190,11 +1176,7 @@ impl App {
         let mut sentences: Option<(u32, Vec<(usize, usize)>)> = None;
         for (page, index) in self.lines_in_view() {
             if sentences.as_ref().is_none_or(|(known, _)| *known != page) {
-                let page_lines = document
-                    .text
-                    .get(&page)
-                    .map(Vec::as_slice)
-                    .unwrap_or_default();
+                let page_lines = document.text.get(&page).map_or_default(Vec::as_slice);
                 sentences = Some((page, visual::sentence_starts(page_lines)));
             }
             spots.push((page, Start::Text(Spot::line_start(page, index))));
@@ -1219,11 +1201,7 @@ impl App {
         let (width, height) = (self.area.width, self.area.height);
         let reader = &document.reader;
         for page in reader.visible_pages() {
-            let figures = document
-                .figures
-                .get(&page)
-                .map(Vec::as_slice)
-                .unwrap_or_default();
+            let figures = document.figures.get(&page).map_or_default(Vec::as_slice);
             spots.extend(
                 figures
                     .iter()
@@ -1254,8 +1232,7 @@ impl App {
                         Start::Figure(area) => document
                             .text
                             .get(&page)
-                            .map(|lines| links::text_within(lines, area))
-                            .unwrap_or_default(),
+                            .map_or_default(|lines| links::text_within(lines, area)),
                     });
                 }
                 self.line_hints = Some((kind, hints));
@@ -1424,7 +1401,7 @@ impl App {
                     "copied {count} character{}",
                     if count == 1 { "" } else { "s" }
                 ));
-                iced::clipboard::write(text)
+                crate::task::copy(text)
             }
         }
     }
@@ -1620,16 +1597,12 @@ impl App {
         if let Some(area) = visual::character(&document.text, cursor) {
             document.reader.reveal(cursor.page, area);
         }
-        let neighbours = self
-            .visual
-            .as_ref()
-            .map(|visual| {
-                visual.neighbours(
-                    self.document()
-                        .map_or(0, |document| document.reader.page_count()),
-                )
-            })
-            .unwrap_or_default();
+        let neighbours = self.visual.as_ref().map_or_default(|visual| {
+            visual.neighbours(
+                self.document()
+                    .map_or(0, |document| document.reader.page_count()),
+            )
+        });
         self.read_text(neighbours)
     }
 
@@ -2116,7 +2089,7 @@ impl App {
             Fed::Bound(PromptBinding::Paste, _) => {
                 self.completing = completing;
                 self.prompt = Some((prompt, line));
-                return iced::clipboard::read().map(Message::Pasted);
+                return crate::task::paste(Message::Pasted);
             }
             Fed::Bound(PromptBinding::Cancel, _) => {
                 self.preview = None;
@@ -2598,14 +2571,14 @@ impl App {
         Task::none()
     }
 
-    fn on_wheel(&mut self, delta: mouse::ScrollDelta) -> Task<Message> {
+    fn on_wheel(&mut self, delta: pointer::ScrollDelta) -> Task<Message> {
         let line = self.scroll_step * WHEEL_STEPS * self.wheel_speed;
         let pixel = self.wheel_speed;
         let (right, down) = match delta {
-            mouse::ScrollDelta::Lines { x, y } => (-x * line, -y * line),
-            mouse::ScrollDelta::Pixels { x, y } => (-x * pixel, -y * pixel),
+            pointer::ScrollDelta::Lines { x, y } => (-x * line, -y * line),
+            pointer::ScrollDelta::Pixels { x, y } => (-x * pixel, -y * pixel),
         };
-        let zooming = self.modifiers.control();
+        let zooming = self.mouse.control;
         if zooming && down != 0.0 && self.in_book() {
             let action = if down < 0.0 {
                 Action::ZoomIn
@@ -2859,7 +2832,7 @@ impl App {
         id: u64,
         page: u32,
         key: RenderKey,
-        result: Result<image::Handle, backend::Error>,
+        result: Result<Picture, backend::Error>,
     ) {
         let Some(document) = document_by_id(&mut self.tabs, id) else {
             return;
@@ -2943,10 +2916,7 @@ impl App {
                 ..job
             });
             tasks.push(Task::perform(render, move |result| {
-                let handle = result.map(|bitmap| {
-                    image::Handle::from_rgba(bitmap.width, bitmap.height, bitmap.pixels)
-                });
-                Message::Rendered(id, page, wanted, handle)
+                Message::Rendered(id, page, wanted, result.map(picture))
             }));
         }
         Task::batch(tasks)
@@ -3166,11 +3136,7 @@ impl App {
     /// What the bottom line asks.
     fn question(&self, question: Question) -> String {
         let yes = self.keymaps.confirm.first(ConfirmBinding::Yes);
-        let name = self
-            .tabs
-            .get(self.current)
-            .map(Tab::name)
-            .unwrap_or_default();
+        let name = self.tabs.get(self.current).map_or_default(Tab::name);
         match question {
             Question::Quit => format!("quit pdvim? ({yes}/n)"),
             Question::CloseTab => format!("close tab {name}? ({yes}/n)"),
@@ -3248,7 +3214,7 @@ impl App {
         for document in &documents {
             self.remember(document);
         }
-        iced::exit()
+        crate::task::exit()
     }
 
     /// The theme in force: the one set, or the one for the system's
@@ -3267,11 +3233,6 @@ impl App {
         *self.current_theme().colours()
     }
 
-    /// The iced theme, for what is not given colours of its own.
-    fn theme(&self) -> Theme {
-        self.current_theme().iced()
-    }
-
     /// What recoloured pages are drawn in: the colours set, or the
     /// theme's.
     fn palette(&self) -> Palette {
@@ -3282,13 +3243,16 @@ impl App {
         }
     }
 
-    fn view(&self) -> Element<'_, Message> {
+    fn view(&self, cx: &Cx<Self>) -> El {
         let chrome = self.chrome();
-        let pages = Canvas::new(Pages(self)).width(Fill).height(Fill);
-        let marks = Canvas::new(Marks(self)).width(Fill).height(Fill);
-        let mut layers = stack![pages, marks];
+        let mut layers = el()
+            .grow(1.0)
+            .min_h(0.0)
+            .w_full()
+            .clip_soft(0.0)
+            .child(self.pages());
         if let Some(picker) = &self.picker {
-            layers = layers.push(list(
+            layers = layers.child(list(
                 "Recent documents",
                 picker,
                 chrome,
@@ -3297,7 +3261,7 @@ impl App {
             ));
         }
         if let Some(tabs) = &self.tab_list {
-            layers = layers.push(list(
+            layers = layers.child(list(
                 "Tabs",
                 tabs,
                 chrome,
@@ -3306,7 +3270,7 @@ impl App {
             ));
         }
         if let Some((needle, matches)) = &self.match_list {
-            layers = layers.push(list(
+            layers = layers.child(list(
                 needle,
                 matches,
                 chrome,
@@ -3316,7 +3280,7 @@ impl App {
         }
         if let Some((Prompt::Command, line)) = &self.prompt {
             let hint = self.command_hint(line);
-            layers = layers.push(completions(self.completing.as_ref(), hint, chrome));
+            layers = layers.child(completions(self.completing.as_ref(), hint, chrome));
         } else if self.prompt.is_none() {
             // The note on the marking picked, or at visual mode's cursor.
             let note = if self.visual.is_some() {
@@ -3325,12 +3289,12 @@ impl App {
                 self.picked_note().map(str::to_owned)
             };
             if let Some(note) = note {
-                layers = layers.push(markings::note_band(note, chrome));
+                layers = layers.child(markings::note_band(note, chrome));
             }
         }
         match &self.sidebar {
             Some(Sidebar::Outline(sidebar)) => {
-                layers = layers.push(contents(
+                layers = layers.child(contents(
                     sidebar,
                     &self.keymaps,
                     chrome,
@@ -3338,7 +3302,7 @@ impl App {
                 ));
             }
             Some(Sidebar::Markings(list)) => {
-                layers = layers.push(markings::list(
+                layers = layers.child(markings::list(
                     list,
                     &self.keymaps,
                     chrome,
@@ -3348,37 +3312,44 @@ impl App {
             None => {}
         }
         if let Some(grid) = self.overview_grid(chrome) {
-            layers = layers.push(grid);
+            layers = layers.child(grid);
         }
         if let Some((name, facts)) = &self.info {
-            layers = layers.push(info::panel(name, facts, chrome));
+            layers = layers.child(info::panel(name, facts, chrome));
         }
         if let Some(help) = &self.help {
-            layers = layers.push(cheat_sheet(help, &self.keymaps, chrome, self.help_rows()));
+            layers = layers.child(cheat_sheet(help, &self.keymaps, chrome, self.help_rows()));
         }
-        let mut window = Column::new();
+        // Everything lands at once: a reader's window follows its keys,
+        // never gliding after them.
+        let mut window = col()
+            .w_full()
+            .h_full()
+            .fill(chrome.backdrop.rune())
+            .instant_changes()
+            .child(system_theme(cx.system_dark()));
         if let Some(tabs) = self.tab_bar() {
-            window = window.push(tabs);
+            window = window.child(tabs);
         }
-        window = window.push(layers);
+        window = window.child(layers);
         if self.bars.status {
-            window = window.push(self.bar(false));
+            window = window.child(self.bar(false));
         }
         // A line being typed wraps, and grows up over the pages rather than
         // pushing them up, so that all of it shows while the pages stay put.
         // So does the status bar, when hidden while reading, while it has
         // something to show.
         if self.prompt.is_some() {
-            stack![window, container(self.bar(true)).align_bottom(Fill)].into()
+            window.child(along_bottom(self.bar(true)))
         } else if !self.bars.status && self.bar_wanted() {
-            stack![window, container(self.bar(false)).align_bottom(Fill)].into()
+            window.child(along_bottom(self.bar(false)))
         } else {
-            window.into()
+            window
         }
     }
 
     /// The line at the top naming each tab, when there is more than one.
-    fn tab_bar(&self) -> Option<Element<'_, Message>> {
+    fn tab_bar(&self) -> Option<El> {
         let chrome = self.chrome();
         if self.tabs.len() < 2 || !self.bars.tabs {
             return None;
@@ -3395,85 +3366,73 @@ impl App {
                 index.saturating_add(1),
                 info::tab_name(&tab.name())
             );
-            let label = text(name)
-                .size(BAR_TEXT_SIZE)
-                .font(Font::MONOSPACE)
-                .color(if current {
+            let label = ui::label(
+                name,
+                BAR_TEXT_SIZE,
+                if current {
                     chrome.bar_text
                 } else {
                     chrome.tab_text
-                })
-                .wrapping(text::Wrapping::None);
+                },
+            );
             clickable(
-                container(label)
-                    .padding([3, 8])
-                    .width(Fill)
-                    .clip(true)
-                    .style(move |_| {
-                        container::background(if current {
+                el().grow(1.0)
+                    .min_w(0.0)
+                    .px(8.0)
+                    .py(3.0)
+                    .clip_soft(0.0)
+                    .fill(
+                        if current {
                             chrome.tab_current
                         } else {
                             chrome.tabs
-                        })
-                    }),
+                        }
+                        .rune(),
+                    )
+                    .child(label),
                 pointer::Click::Tab(index),
             )
         });
         Some(
-            container(Row::with_children(tabs).spacing(1))
-                .width(Fill)
-                .style(move |_| container::background(chrome.bar))
-                .into(),
+            row()
+                .w_full()
+                .gap(1.0)
+                .fill(chrome.bar.rune())
+                .children(tabs),
         )
     }
 
     /// The box at the left of the bottom line naming the mode, in the
     /// colour of its kind.
-    fn mode_badge(&self) -> Element<'_, Message> {
+    fn mode_badge(&self) -> El {
         let mode = self.mode();
         let modes = self.current_theme().modes();
         let shade = mode.colour(&modes);
-        container(
-            text(mode.name())
-                .size(BAR_TEXT_SIZE)
-                .font(Font {
-                    weight: iced::font::Weight::Bold,
-                    ..Font::MONOSPACE
-                })
-                .color(modes.text)
-                .wrapping(text::Wrapping::None),
-        )
-        .padding([3, 8])
-        .style(move |_| container::background(shade))
-        .into()
+        el().px(8.0).py(3.0).fill(shade.rune()).child(ui::bold(
+            mode.name(),
+            BAR_TEXT_SIZE,
+            modes.text,
+        ))
     }
 
     /// The name of the document's file, marked when it has changes not
     /// saved: just the name, as `:info` and `yy` give the path.
     fn file_label(&self) -> String {
-        self.document()
-            .map(|document| {
-                let unsaved = if document.modified() { " [+]" } else { "" };
-                let name = document.path.file_name().map_or_else(
-                    || tilde(&document.path),
-                    |name| name.to_string_lossy().into_owned(),
-                );
-                format!("{name}{unsaved}")
-            })
-            .unwrap_or_default()
+        self.document().map_or_default(|document| {
+            let unsaved = if document.modified() { " [+]" } else { "" };
+            let name = document.path.file_name().map_or_else(
+                || tilde(&document.path),
+                |name| name.to_string_lossy().into_owned(),
+            );
+            format!("{name}{unsaved}")
+        })
     }
 
     /// The line at the bottom: the prompt while typing, otherwise a notice
     /// or the file name on the left and the position on the right.
-    fn bar(&self, wrap: bool) -> Element<'_, Message> {
+    fn bar(&self, wrap: bool) -> El {
         let chrome = self.chrome();
-        let label = |content: String, colour: Color| {
-            text(content)
-                .size(BAR_TEXT_SIZE)
-                .font(Font::MONOSPACE)
-                .color(colour)
-                .wrapping(text::Wrapping::None)
-        };
+        let label = |content: String, colour: Color| ui::label(content, BAR_TEXT_SIZE, colour);
         let left = match (&self.prompt, &self.notice) {
             _ if let Some(question) = self.asking => {
                 label(self.question(question), chrome.bar_error)
@@ -3493,15 +3452,14 @@ impl App {
                     LinkGoal::Copy | LinkGoal::Picture => "copy",
                     LinkGoal::SelectFigure => "select",
                 };
-                let typed = hints.typed().map(String::from).unwrap_or_default();
+                let typed = hints.typed().map_or_default(String::from);
                 let filter = hints
                     .filter()
-                    .map(|filter| format!("/{filter}  "))
-                    .unwrap_or_default();
+                    .map_or_default(|filter| format!("/{filter}  "));
                 label(format!("{verb}: {filter}{typed}\u{2588}"), chrome.bar_text)
             }
             _ if self.visual.is_some() => {
-                let typed = self.visual.as_ref().map(Visual::typed).unwrap_or_default();
+                let typed = self.visual.as_ref().map_or_default(Visual::typed);
                 let typed = if typed.is_empty() {
                     typed
                 } else {
@@ -3510,11 +3468,10 @@ impl App {
                 label(format!("{typed}{}", self.visual_actions()), chrome.bar_text)
             }
             _ if let Some((_, hints)) = &self.line_hints => {
-                let typed = hints.typed().map(String::from).unwrap_or_default();
+                let typed = hints.typed().map_or_default(String::from);
                 let filter = hints
                     .filter()
-                    .map(|filter| format!("/{filter}  "))
-                    .unwrap_or_default();
+                    .map_or_default(|filter| format!("/{filter}  "));
                 label(
                     format!("select from: {filter}{typed}\u{2588}"),
                     chrome.bar_text,
@@ -3524,11 +3481,14 @@ impl App {
                 label(self.password_prompt(line), chrome.bar_text)
             }
             (Some((prompt, line)), _) => {
-                let typed = label(format!("{}{line}\u{2588}", prompt.sigil()), chrome.bar_text);
+                let typed = format!("{}{line}\u{2588}", prompt.sigil());
                 if wrap {
-                    typed.wrapping(text::Wrapping::WordOrGlyph)
+                    rune::text(typed)
+                        .font(ui::mono(BAR_TEXT_SIZE, false))
+                        .color(chrome.bar_text.rune())
+                        .wrap_anywhere()
                 } else {
-                    typed
+                    label(typed, chrome.bar_text)
                 }
             }
             (None, Notice::Error(message)) => label(message.clone(), chrome.bar_error),
@@ -3550,15 +3510,141 @@ impl App {
         };
         let right = label(format!("{typed}  {position}"), chrome.bar_text);
         // A long notice is cut short rather than pushing the position away.
-        let left = container(left).width(Fill).clip(true);
-        let rest = container(row![left, right].spacing(16))
-            .padding([3, 8])
-            .width(Fill);
-        container(row![self.mode_badge(), rest])
-            .width(Fill)
-            .style(move |_| container::background(chrome.bar))
-            .into()
+        let rest = row()
+            .grow(1.0)
+            .min_w(0.0)
+            .gap(16.0)
+            .px(8.0)
+            .py(3.0)
+            .child(filling(left))
+            .child(right);
+        row()
+            .w_full()
+            .fill(chrome.bar.rune())
+            .child(self.mode_badge())
+            .child(rest)
     }
+
+    /// The pages in view and all that is drawn over them, in the room left
+    /// for them; and what the mouse does over them.
+    fn pages(&self) -> El {
+        el().key("pages")
+            .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
+            .clip_soft(0.0)
+            .fill(self.page_backdrop().rune())
+            .cursor(self.hovering)
+            .pointer_buttons([PointerButton::Primary, PointerButton::Middle])
+            .on_layout_tx(|app: &mut Self, [_, _, width, height], tx| {
+                // Here the room for pages is known, and the screen's scale.
+                let scale = tx.scale();
+                if (scale - app.scale_factor).abs() > f32::EPSILON {
+                    app.dispatch(Message::Scaled(scale), tx);
+                }
+                let area = app.area;
+                if (width - area.width).abs() > 0.5 || (height - area.height).abs() > 0.5 {
+                    app.dispatch(Message::Resized(Size::new(width, height)), tx);
+                }
+            })
+            .on_wheel(|app: &mut Self, wheel, tx| {
+                app.mouse.control = wheel.mods.ctrl;
+                // The window's wheel lines are a point each (see `run`).
+                let delta = if wheel.precise {
+                    pointer::ScrollDelta::Pixels {
+                        x: wheel.dx,
+                        y: wheel.dy,
+                    }
+                } else {
+                    pointer::ScrollDelta::Lines {
+                        x: wheel.dx,
+                        y: wheel.dy,
+                    }
+                };
+                app.dispatch(Message::Wheel(delta), tx);
+                true
+            })
+            .on_drag(|app: &mut Self, drag, tx| {
+                let at = Point::new(drag.x, drag.y);
+                let pointer = match drag.phase {
+                    Phase::Down => {
+                        pointer::Pointer::Press(at, tx.button() != PointerButton::Middle)
+                    }
+                    Phase::Move => pointer::Pointer::Drag(at),
+                    Phase::Up => pointer::Pointer::Release(at),
+                };
+                app.dispatch(Message::Pointer(pointer), tx);
+                let cursor = app.cursor_at(at);
+                if cursor != app.hovering {
+                    app.hovering = cursor;
+                }
+            })
+            .on_pointer_move_local(|app: &mut Self, moved, tx| {
+                // What the pointer shows changes only now and then: the
+                // window is drawn again only then.
+                let cursor = app.cursor_at(Point::new(moved.x, moved.y));
+                if cursor == app.hovering {
+                    tx.live_only();
+                } else {
+                    app.hovering = cursor;
+                }
+            })
+            .child(self.sliding_layers())
+    }
+
+    /// The pages and what is drawn over them, laid out from where the view
+    /// was when they were last laid out, and slid from there to where it
+    /// is now by the live offset (see `sliding`).
+    fn sliding_layers(&self) -> El {
+        let _from = self
+            .document()
+            .map(|document| self.drawing_from_origin(document));
+        el().key("sliding")
+            .w_full()
+            .h_full()
+            .absolute(0.0, 0.0)
+            .live_offset(&self.sliding.offset)
+            .child(self.draw_pages())
+            .child(self.draw_marks())
+    }
+
+    /// What the pointer shows at a point over the pages: a hand over a
+    /// link, a bar over text, a fist while dragging the view.
+    fn cursor_at(&self, at: Point) -> Cursor {
+        if self.mouse.panning() {
+            return Cursor::Grabbing;
+        }
+        let Some(document) = self.document() else {
+            return Cursor::Default;
+        };
+        let Some((page, across, down)) = document.reader.spot_on_page(at.x, at.y) else {
+            return Cursor::Default;
+        };
+        let over = |area: Rect| {
+            (area.left..=area.right).contains(&across) && (area.top..=area.bottom).contains(&down)
+        };
+        if document
+            .links
+            .get(&page)
+            .is_some_and(|links| links.iter().any(|link| over(link.area)))
+        {
+            Cursor::Pointer
+        } else if document.text.get(&page).is_some_and(|lines| {
+            lines
+                .iter()
+                .flat_map(|line| &line.chars)
+                .any(|character| over(character.area))
+        }) {
+            Cursor::Text
+        } else {
+            Cursor::Default
+        }
+    }
+}
+
+/// Tells the app the system's theme, light or dark, when it is first known
+/// and each time it changes: a change puts this in the window anew.
+fn system_theme(dark: bool) -> El {
+    el().key(if dark { "system-dark" } else { "system-light" })
+        .on_mount(move |app: &mut App, tx| app.dispatch(Message::SystemTheme(dark), tx))
 }
 
 /// Puts pasted text at the end of a line, on one line: each line break
@@ -3581,14 +3667,13 @@ fn append_pasted(line: &mut String, text: &str) {
 fn line_from(text: &visual::Text, page: u32, spot: Spot) -> String {
     text.get(&page)
         .and_then(|lines| lines.get(spot.line))
-        .map(|line| {
+        .map_or_default(|line| {
             line.chars
                 .iter()
                 .skip(spot.index)
                 .map(|glyph| glyph.character)
                 .collect()
         })
-        .unwrap_or_default()
 }
 
 /// What to do once the text in view is read.
@@ -3708,22 +3793,19 @@ fn narrowed_with(completion: complete::Completion) -> Option<Completing> {
 /// The completions on offer, in a band over the bottom of the pages, under
 /// a hint at what the command does. A long list is shown a part at a time,
 /// the part with the selected one.
-fn completions(
-    completing: Option<&Completing>,
-    hint: String,
-    chrome: Colours,
-) -> Element<'_, Message> {
-    let hint = text(hint)
-        .size(BAR_TEXT_SIZE)
-        .font(Font::MONOSPACE)
-        .color(chrome.list_number)
-        .wrapping(text::Wrapping::None);
+fn completions(completing: Option<&Completing>, hint: String, chrome: Colours) -> El {
+    let hint = ui::label(hint, BAR_TEXT_SIZE, chrome.list_number);
+    let band = |content: El| {
+        col()
+            .gap(4.0)
+            .px(8.0)
+            .py(4.0)
+            .fill(chrome.bar.rune())
+            .clip_soft(0.0)
+            .child(content)
+    };
     let Some(completing) = completing else {
-        let band = container(hint)
-            .padding([4, 8])
-            .width(Fill)
-            .style(move |_| container::background(chrome.bar));
-        return container(band).align_bottom(Fill).clip(true).into();
+        return along_bottom(band(hint));
     };
     let selected = completing.selected;
     let first = selected.map_or(0, |index| {
@@ -3740,68 +3822,39 @@ fn completions(
         .take(COMPLETIONS_SHOWN)
         .map(|(index, candidate)| {
             let current = selected == Some(index);
-            container(
-                text(candidate.label.as_str())
-                    .size(BAR_TEXT_SIZE)
-                    .font(Font::MONOSPACE)
-                    .color(if current {
+            shaded(
+                el().px(4.0).py(1.0).child(ui::label(
+                    candidate.label.as_str(),
+                    BAR_TEXT_SIZE,
+                    if current {
                         chrome.bar_text
                     } else {
                         chrome.tab_text
-                    })
-                    .wrapping(text::Wrapping::None),
+                    },
+                )),
+                current.then_some(chrome.tab_current),
             )
-            .padding([1, 4])
-            .style(move |_| {
-                if current {
-                    container::background(chrome.tab_current)
-                } else {
-                    container::Style::default()
-                }
-            })
-            .into()
         });
-    let mut entries = Row::with_children(shown).spacing(8);
+    let mut entries = row().flex_wrap().gaps(8.0, 2.0).children(shown);
     let count = completing.candidates.len();
     if count > COMPLETIONS_SHOWN {
         let place = selected.map_or(0, |index| index.saturating_add(1));
-        entries = entries.push(
-            text(format!("({place} of {count})"))
-                .size(BAR_TEXT_SIZE)
-                .font(Font::MONOSPACE)
-                .color(chrome.list_number),
-        );
+        entries = entries.child(ui::label(
+            format!("({place} of {count})"),
+            BAR_TEXT_SIZE,
+            chrome.list_number,
+        ));
     }
-    let band = container(column![hint, entries.wrap().vertical_spacing(2)].spacing(4))
-        .padding([4, 8])
-        .width(Fill)
-        .style(move |_| container::background(chrome.bar));
-    container(band).align_bottom(Fill).clip(true).into()
+    along_bottom(band(hint).child(entries))
 }
 
 /// The cheat sheet, drawn over the pages: as many lines as fit, and a
 /// line at the foot saying where they are and how to move.
-fn cheat_sheet<'a>(
-    help: &'a Help,
-    keymaps: &Keymaps,
-    chrome: Colours,
-    rows: usize,
-) -> Element<'a, Message> {
-    let label = |content: &str, colour: Color| {
-        text(content.to_owned())
-            .size(LIST_TEXT_SIZE)
-            .font(Font::MONOSPACE)
-            .color(colour)
-            .wrapping(text::Wrapping::None)
-    };
+fn cheat_sheet(help: &Help, keymaps: &Keymaps, chrome: Colours, rows: usize) -> El {
+    let label = |content: &str, colour: Color| ui::label(content, LIST_TEXT_SIZE, colour);
     let lines = help.shown(rows).iter().map(|line| {
-        let content: Element<'_, Message> = match line {
-            Line::Heading(heading) => label(heading, chrome.bar_text)
-                .font(Font {
-                    weight: iced::font::Weight::Bold,
-                    ..Font::MONOSPACE
-                })
-                .into(),
+        let content = match line {
+            Line::Heading(heading) => ui::bold(*heading, LIST_TEXT_SIZE, chrome.bar_text),
             Line::Entry {
                 keys,
                 action,
@@ -3809,37 +3862,21 @@ fn cheat_sheet<'a>(
                 ..
             } => {
                 let keys = if keys.is_empty() { "-" } else { keys };
-                row![
-                    container(label(keys, chrome.bar_text))
-                        .width(HELP_KEYS_WIDTH)
-                        .clip(true),
-                    container(label(action, chrome.list_number))
-                        .width(HELP_ACTION_WIDTH)
-                        .clip(true),
-                    container(label(description, chrome.tab_text))
-                        .width(Fill)
-                        .clip(true),
-                ]
-                .spacing(12)
-                .into()
+                row()
+                    .gap(12.0)
+                    .w_full()
+                    .child(cut_to(HELP_KEYS_WIDTH, label(keys, chrome.bar_text)))
+                    .child(cut_to(HELP_ACTION_WIDTH, label(action, chrome.list_number)))
+                    .child(filling(label(description, chrome.tab_text)))
             }
-            Line::Command { keys, line } => row![
-                container(label(keys, chrome.bar_text))
-                    .width(HELP_KEYS_WIDTH)
-                    .clip(true),
-                container(label(&format!(":{line}"), chrome.list_number))
-                    .width(Fill)
-                    .clip(true),
-            ]
-            .spacing(12)
-            .into(),
-            Line::Blank => text("").into(),
+            Line::Command { keys, line } => row()
+                .gap(12.0)
+                .w_full()
+                .child(cut_to(HELP_KEYS_WIDTH, label(keys, chrome.bar_text)))
+                .child(filling(label(&format!(":{line}"), chrome.list_number))),
+            Line::Blank => el(),
         };
-        container(content)
-            .height(HELP_ROW)
-            .width(Fill)
-            .align_y(iced::alignment::Vertical::Center)
-            .into()
+        row().h(HELP_ROW).w_full().items_center().child(content)
     });
     let (top, count) = help.position();
     let last = top.saturating_add(rows).min(count);
@@ -3857,54 +3894,30 @@ fn cheat_sheet<'a>(
             key(B::Close),
         )
     };
-    let foot = row![
-        container(label(&hint, chrome.list_number))
-            .width(Fill)
-            .clip(true),
-        label(
+    let foot = row()
+        .gap(12.0)
+        .w_full()
+        .pt(4.0)
+        .child(filling(label(&hint, chrome.list_number)))
+        .child(label(
             &format!("{}-{last} of {count}", top.saturating_add(1)),
-            chrome.list_number
-        ),
-    ]
-    .spacing(12);
-    let body = Column::with_children(lines);
-    let panel = container(column![
-        body,
-        container(foot).padding(iced::Padding::ZERO.top(4))
-    ])
-    .padding(8)
-    .max_width(HELP_WIDTH)
-    .style(move |_| {
-        container::background(chrome.list).border(iced::Border {
-            color: chrome.list_border,
-            width: 1.0,
-            radius: 4.0.into(),
-        })
-    });
-    container(panel)
-        .center_x(Fill)
-        .center_y(Fill)
-        .padding(24)
-        .into()
+            chrome.list_number,
+        ));
+    let sheet = col()
+        .padding(8.0)
+        .w_full()
+        .max_w(HELP_WIDTH)
+        .children(lines)
+        .child(foot);
+    centred(panel(sheet, chrome, 4.0))
 }
 
 /// The table of contents, in a sidebar over the left of the pages: as many
 /// entries as fit, each set in by its depth, the selected one marked.
-fn contents<'a>(
-    sidebar: &'a Outline,
-    keymaps: &Keymaps,
-    chrome: Colours,
-    rows: usize,
-) -> Element<'a, Message> {
-    let label = |content: String, colour: Color| {
-        text(content)
-            .size(LIST_TEXT_SIZE)
-            .font(Font::MONOSPACE)
-            .color(colour)
-            .wrapping(text::Wrapping::None)
-    };
+fn contents(sidebar: &Outline, keymaps: &Keymaps, chrome: Colours, rows: usize) -> El {
+    let label = |content: String, colour: Color| ui::label(content, LIST_TEXT_SIZE, colour);
     let shown = sidebar.shown(rows);
-    let entries = shown.into_iter().enumerate().map(|(row, shown)| {
+    let entries = shown.into_iter().enumerate().map(|(row_index, shown)| {
         let entry = shown.entry;
         let marker = match (entry.has_sections, shown.unfolded) {
             (false, _) => " ",
@@ -3913,108 +3926,82 @@ fn contents<'a>(
         };
         let page = entry
             .page
-            .map(|page| page.saturating_add(1).to_string())
-            .unwrap_or_default();
+            .map_or_default(|page| page.saturating_add(1).to_string());
         let indent = SIDEBAR_INDENT * num::float(u32::try_from(entry.depth).unwrap_or(u32::MAX));
-        let line = row![
-            iced::widget::Space::new().width(indent),
-            label(marker.to_owned(), chrome.list_number),
-            container(label(
+        let line = row()
+            .gap(6.0)
+            .h(HELP_ROW)
+            .px(6.0)
+            .items_center()
+            .child(el().w(indent))
+            .child(label(marker.to_owned(), chrome.list_number))
+            .child(filling(label(
                 entry.title.clone(),
                 if shown.selected {
                     chrome.bar_text
                 } else {
                     chrome.tab_text
-                }
-            ))
-            .width(Fill)
-            .clip(true),
-            label(page, chrome.list_number),
-        ]
-        .spacing(6);
-        let selected = shown.selected;
+                },
+            )))
+            .child(label(page, chrome.list_number));
         clickable(
-            container(line)
-                .height(HELP_ROW)
-                .width(Fill)
-                .padding([0, 6])
-                .align_y(iced::alignment::Vertical::Center)
-                .style(move |_| {
-                    if selected {
-                        container::background(chrome.tab_current)
-                    } else {
-                        container::Style::default()
-                    }
-                }),
-            pointer::Click::Outline(row),
+            shaded(line, shown.selected.then_some(chrome.tab_current)),
+            pointer::Click::Outline(row_index),
         )
     });
     let (top, count) = sidebar.position(rows);
     let last = top.saturating_add(rows).min(count);
-    let heading = container(label("Contents".to_owned(), chrome.bar_text).font(Font {
-        weight: iced::font::Weight::Bold,
-        ..Font::MONOSPACE
-    }))
-    .height(HELP_ROW)
-    .padding([0, 6]);
-    let foot = container(label(
-        format!(
-            "{}-{last} of {count}   {}: go   {}/{}: open/close",
-            top.saturating_add(1),
-            keymaps.outline.first(outline::Binding::Go),
-            keymaps.outline.first(outline::Binding::Open),
-            keymaps.outline.first(outline::Binding::Fold),
-        ),
-        chrome.list_number,
-    ))
-    .height(HELP_ROW)
-    .padding([0, 6])
-    .clip(true);
-    let panel = container(column![
-        heading,
-        Column::with_children(entries).height(Fill),
-        foot
-    ])
-    .padding(8)
-    .width(SIDEBAR_WIDTH)
-    .height(Fill)
-    .style(move |_| {
-        container::background(chrome.list).border(iced::Border {
-            color: chrome.list_border,
-            width: 1.0,
-            radius: 0.0.into(),
-        })
-    });
-    container(panel).width(Fill).height(Fill).into()
+    let heading = row().h(HELP_ROW).px(6.0).items_center().child(ui::bold(
+        "Contents",
+        LIST_TEXT_SIZE,
+        chrome.bar_text,
+    ));
+    let foot = row()
+        .h(HELP_ROW)
+        .px(6.0)
+        .items_center()
+        .clip_soft(0.0)
+        .child(label(
+            format!(
+                "{}-{last} of {count}   {}: go   {}/{}: open/close",
+                top.saturating_add(1),
+                keymaps.outline.first(outline::Binding::Go),
+                keymaps.outline.first(outline::Binding::Open),
+                keymaps.outline.first(outline::Binding::Fold),
+            ),
+            chrome.list_number,
+        ));
+    let body = col().grow(1.0).min_h(0.0).clip_soft(0.0).children(entries);
+    let bar = col()
+        .padding(8.0)
+        .w(SIDEBAR_WIDTH)
+        .h_full()
+        .child(heading)
+        .child(body)
+        .child(foot);
+    layer().child(panel(bar, chrome, 0.0))
 }
 
 /// The list of recent documents, drawn over the pages. The first nine are
 /// numbered, for the digit that opens each.
-fn list<'a, T: Clone>(
-    title: &'a str,
-    picker: &'a Picker<T>,
+fn list<T: Clone>(
+    title: &str,
+    picker: &Picker<T>,
     chrome: Colours,
     click: fn(usize) -> pointer::Click,
     rows: usize,
-) -> Element<'a, Message> {
-    let label = |content: String, colour: Color| {
-        text(content)
-            .size(LIST_TEXT_SIZE)
-            .font(Font::MONOSPACE)
-            .color(colour)
-            .wrapping(text::Wrapping::None)
-    };
+) -> El {
+    let label = |content: String, colour: Color| ui::label(content, LIST_TEXT_SIZE, colour);
     let typed = picker.typed();
-    let heading = container(
-        row![
-            label(title.to_owned(), chrome.bar_text),
-            container(label(format!("{typed}\u{2588}"), chrome.list_number))
-                .width(Fill)
-                .clip(true),
-        ]
-        .spacing(16),
-    )
-    .padding([4, 10]);
+    let heading = row()
+        .gap(16.0)
+        .px(10.0)
+        .py(4.0)
+        .child(label(title.to_owned(), chrome.bar_text))
+        .child(filling(label(
+            format!("{typed}\u{2588}"),
+            chrome.list_number,
+        )));
     // A list too long for the window shows the rows that hold the entry
     // selected, a window's worth at a time.
     let rows = rows.max(1);
@@ -4023,7 +4010,7 @@ fn list<'a, T: Clone>(
         .checked_div(rows)
         .unwrap_or(0)
         .saturating_mul(rows);
-    let mut entries: Vec<Element<'a, Message>> = picker
+    let mut entries: Vec<El> = picker
         .shown()
         .enumerate()
         .skip(top)
@@ -4031,55 +4018,34 @@ fn list<'a, T: Clone>(
         .map(|(index, entry)| {
             let selected = index == picker.selected();
             clickable(
-                container(label(entry.text.clone(), chrome.bar_text))
-                    .padding([3, 10])
-                    .width(Fill)
-                    .clip(true)
-                    .style(move |_| {
-                        if selected {
-                            container::background(chrome.list_selected)
-                        } else {
-                            container::Style::default()
-                        }
-                    }),
+                shaded(
+                    el().px(10.0)
+                        .py(3.0)
+                        .w_full()
+                        .clip_soft(0.0)
+                        .child(label(entry.text.clone(), chrome.bar_text)),
+                    selected.then_some(chrome.list_selected),
+                ),
                 click(index),
             )
         })
         .collect();
     if entries.is_empty() {
         entries.push(
-            container(label(format!("nothing holds {typed}"), chrome.list_number))
-                .padding([3, 10])
-                .into(),
+            el().px(10.0)
+                .py(3.0)
+                .child(label(format!("nothing holds {typed}"), chrome.list_number)),
         );
     }
-    let body = Column::with_children(entries).spacing(1);
-    let panel = container(column![heading, body].spacing(4))
-        .padding(8)
-        .max_width(LIST_WIDTH)
-        .style(move |_| {
-            container::background(chrome.list).border(iced::Border {
-                color: chrome.list_border,
-                width: 1.0,
-                radius: 4.0.into(),
-            })
-        });
-    container(panel)
-        .center_x(Fill)
-        .center_y(Fill)
-        .padding(24)
-        .into()
-}
-
-/// Something that does this when clicked, with the pointer showing so.
-fn clickable<'a>(
-    content: impl Into<Element<'a, Message>>,
-    click: pointer::Click,
-) -> Element<'a, Message> {
-    iced::widget::mouse_area(content)
-        .on_press(Message::Clicked(click))
-        .interaction(mouse::Interaction::Pointer)
-        .into()
+    let body = col().gap(1.0).children(entries);
+    let shown = col()
+        .gap(4.0)
+        .padding(8.0)
+        .w_full()
+        .max_w(LIST_WIDTH)
+        .child(heading)
+        .child(body);
+    centred(panel(shown, chrome, 4.0))
 }
 
 /// How every tab shows its pages.
@@ -4104,140 +4070,16 @@ enum Contents {
     Read(Vec<backend::Chapter>),
 }
 
-/// The layer that draws the pages, and listens to the mouse.
-struct Pages<'a>(&'a App);
-
-impl canvas::Program<Message> for Pages<'_> {
-    /// Whether a button is held down over the pages: the left, or the
-    /// middle.
-    type State = Option<bool>;
-
-    fn update(
-        &self,
-        held: &mut Option<bool>,
-        event: &Event,
-        bounds: Rectangle,
-        cursor: mouse::Cursor,
-    ) -> Option<canvas::Action<Message>> {
-        let app = self.0;
-        // The canvas is the one place that knows how much room the pages
-        // have, so it reports every change of size.
-        let area = bounds.size();
-        if (area.width - app.area.width).abs() > 0.5 || (area.height - app.area.height).abs() > 0.5
-        {
-            return Some(canvas::Action::publish(Message::Resized(area)));
-        }
-        // Where the pointer is on the canvas, even dragged off it.
-        let at = cursor
-            .position()
-            .map(|position| Point::new(position.x - bounds.x, position.y - bounds.y));
-        let publish =
-            |pointer| Some(canvas::Action::publish(Message::Pointer(pointer)).and_capture());
-        match event {
-            Event::Mouse(mouse::Event::WheelScrolled { delta }) if cursor.is_over(bounds) => {
-                Some(canvas::Action::publish(Message::Wheel(*delta)).and_capture())
-            }
-            Event::Mouse(mouse::Event::ButtonPressed(button)) if cursor.is_over(bounds) => {
-                let left = match button {
-                    mouse::Button::Left => true,
-                    mouse::Button::Middle => false,
-                    mouse::Button::Right
-                    | mouse::Button::Back
-                    | mouse::Button::Forward
-                    | mouse::Button::Other(_) => return None,
-                };
-                *held = Some(left);
-                publish(pointer::Pointer::Press(at?, left))
-            }
-            Event::Mouse(mouse::Event::CursorMoved { .. }) if held.is_some() => {
-                publish(pointer::Pointer::Drag(at?))
-            }
-            Event::Mouse(mouse::Event::ButtonReleased(button))
-                if matches!(
-                    (*held, button),
-                    (Some(true), mouse::Button::Left) | (Some(false), mouse::Button::Middle)
-                ) =>
-            {
-                *held = None;
-                publish(pointer::Pointer::Release(at.unwrap_or(Point::ORIGIN)))
-            }
-            Event::Keyboard(_)
-            | Event::Mouse(_)
-            | Event::Window(_)
-            | Event::Touch(_)
-            | Event::InputMethod(_) => None,
-        }
-    }
-
-    fn mouse_interaction(
-        &self,
-        held: &Option<bool>,
-        bounds: Rectangle,
-        cursor: mouse::Cursor,
-    ) -> mouse::Interaction {
-        let app = self.0;
-        if held.is_some() && app.mouse.panning() {
-            return mouse::Interaction::Grabbing;
-        }
-        let Some(at) = cursor.position_in(bounds) else {
-            return mouse::Interaction::default();
+impl App {
+    /// The pages in view, each on a blank sheet until it is rendered, on
+    /// the backdrop.
+    fn draw_pages(&self) -> El {
+        let mut frame = Frame::new(self.area);
+        let Some(document) = self.document() else {
+            return frame.into_layer();
         };
-        let Some(document) = app.document() else {
-            return mouse::Interaction::default();
-        };
-        let Some((page, across, down)) = document.reader.spot_on_page(at.x, at.y) else {
-            return mouse::Interaction::default();
-        };
-        let over = |area: Rect| {
-            (area.left..=area.right).contains(&across) && (area.top..=area.bottom).contains(&down)
-        };
-        if document
-            .links
-            .get(&page)
-            .is_some_and(|links| links.iter().any(|link| over(link.area)))
-        {
-            mouse::Interaction::Pointer
-        } else if document.text.get(&page).is_some_and(|lines| {
-            lines
-                .iter()
-                .flat_map(|line| &line.chars)
-                .any(|character| over(character.area))
-        }) {
-            mouse::Interaction::Text
-        } else {
-            mouse::Interaction::default()
-        }
-    }
-
-    fn draw(
-        &self,
-        _state: &Option<bool>,
-        renderer: &Renderer,
-        _theme: &Theme,
-        bounds: Rectangle,
-        _cursor: mouse::Cursor,
-    ) -> Vec<canvas::Geometry> {
-        let app = self.0;
-        let mut frame = canvas::Frame::new(renderer, bounds.size());
-        let Some(document) = app.document() else {
-            frame.fill_rectangle(Point::ORIGIN, bounds.size(), app.chrome().backdrop);
-            return vec![frame.into_geometry()];
-        };
-        // Until a page is rendered, a blank sheet stands in for it.
-        let paper = if document.recolor {
-            colour(app.palette().paper)
-        } else {
-            Color::WHITE
-        };
-        // Behind the pages, the paper itself, so that pages and backdrop
-        // are one, or the theme's colour to set them apart.
-        let backdrop = if app.paging.paper_backdrop {
-            paper
-        } else {
-            app.chrome().backdrop
-        };
-        frame.fill_rectangle(Point::ORIGIN, bounds.size(), backdrop);
-        for page in document.reader.visible_pages() {
+        let paper = self.paper(document);
+        for page in self.drawn_pages(document) {
             let Some(area) = document.reader.page_on_screen(page) else {
                 continue;
             };
@@ -4247,52 +4089,56 @@ impl canvas::Program<Message> for Pages<'_> {
             // distorted, so the blank sheet stays until the new one is in.
             let rotation = document.reader.rotation();
             let trimmed = document.reader.crop(page).is_some();
-            if let Some((handle, key)) = document.pages.get(&page)
+            if let Some((picture, key)) = document.pages.get(&page)
                 && key.rotation == rotation
                 && key.trimmed == trimmed
             {
-                frame.draw_image(area, canvas::Image::new(handle.clone()).snap(true));
+                frame.draw_image(area, picture);
             }
-            // Just outside the page: images are drawn over shapes in the
-            // same layer, so a line on the page itself would not show.
-            if app.paging.borders {
+            // Just outside the page.
+            if self.paging.borders {
                 frame.stroke_rectangle(
-                    Point::new(area.x - 0.5, area.y - 0.5),
-                    Size::new(area.width + 1.0, area.height + 1.0),
-                    canvas::Stroke::default()
-                        .with_width(1.0)
-                        .with_color(app.chrome().list_border),
+                    Point::new(area.x - 1.0, area.y - 1.0),
+                    Size::new(area.width + 2.0, area.height + 2.0),
+                    1.0,
+                    self.chrome().list_border,
                 );
             }
         }
-        vec![frame.into_geometry()]
+        frame.into_layer()
     }
-}
 
-/// The layer over the pages that draws the search highlights. Within one
-/// layer images are drawn over shapes, so the highlights need their own.
-struct Marks<'a>(&'a App);
+    /// The colour of the paper: until a page is rendered, a blank sheet
+    /// stands in for it.
+    fn paper(&self, document: &Document) -> Color {
+        if document.recolor {
+            colour(self.palette().paper)
+        } else {
+            Color::WHITE
+        }
+    }
 
-impl canvas::Program<Message> for Marks<'_> {
-    type State = ();
+    /// Behind the pages, the paper itself, so that pages and backdrop are
+    /// one, or the theme's colour to set them apart.
+    fn page_backdrop(&self) -> Color {
+        match self.document() {
+            Some(document) if self.paging.paper_backdrop => self.paper(document),
+            _ => self.chrome().backdrop,
+        }
+    }
 
-    fn draw(
-        &self,
-        _state: &(),
-        renderer: &Renderer,
-        _theme: &Theme,
-        bounds: Rectangle,
-        _cursor: mouse::Cursor,
-    ) -> Vec<canvas::Geometry> {
-        let mut frame = canvas::Frame::new(renderer, bounds.size());
-        let Some(document) = self.0.document() else {
-            return vec![frame.into_geometry()];
+    /// What is laid over the pages: the search highlights, the selection,
+    /// and the labels to pick links, lines and markings by.
+    fn draw_marks(&self) -> El {
+        let mut frame = Frame::new(self.area);
+        let Some(document) = self.document() else {
+            return frame.into_layer();
         };
         let results = &document.results;
-        if let Some(hits) = self.0.preview_for(document) {
+        if let Some(hits) = self.preview_for(document) {
             incsearch::draw(&mut frame, document, hits);
         } else if results.shown {
-            let visible = document.reader.visible_pages();
+            let visible = self.drawn_pages(document);
             for (index, hit) in results.hits.iter().enumerate() {
                 if !visible.contains(&hit.page) {
                     continue;
@@ -4310,16 +4156,16 @@ impl canvas::Program<Message> for Marks<'_> {
             }
         }
         markings::draw_current(&mut frame, document);
-        if let Some(hints) = &self.0.marking_hints {
+        if let Some(hints) = &self.marking_hints {
             markings::draw_labels(&mut frame, document, hints);
         }
-        if let Some((page, area)) = self.0.visual.as_ref().and_then(Visual::figure) {
+        if let Some((page, area)) = self.visual.as_ref().and_then(Visual::figure) {
             // A picture or figure selected: its box, and no cursor.
             if let Some(area) = document.reader.area_on_screen(page, area) {
                 let area = rectangle(area);
                 frame.fill_rectangle(area.position(), area.size(), SELECTION);
             }
-        } else if let Some(visual) = &self.0.visual {
+        } else if let Some(visual) = &self.visual {
             let selected = if visual.selecting() {
                 visual.areas(&document.text)
             } else {
@@ -4339,7 +4185,7 @@ impl canvas::Program<Message> for Marks<'_> {
                 frame.fill_rectangle(area.position(), area.size(), CURSOR);
             }
         }
-        if let Some(hints) = &self.0.hints {
+        if let Some(hints) = &self.hints {
             for hint in hints.shown() {
                 let labelled = match &hint.item {
                     Labelled::Link(link) => link.area,
@@ -4359,23 +4205,23 @@ impl canvas::Program<Message> for Marks<'_> {
                 draw_label(&mut frame, hint.label, Point::new(area.x, area.y));
             }
         }
-        if let Some(flash) = &self.0.flash {
+        if let Some(flash) = &self.flash {
             flash::draw(&mut frame, document, flash);
         }
-        if let Some(edit) = &self.0.field_edit {
-            forms::draw(&mut frame, document, edit, self.0.chrome());
+        if let Some(edit) = &self.field_edit {
+            forms::draw(&mut frame, document, edit, self.chrome());
         }
-        if let Some((_, hints)) = &self.0.line_hints {
+        if let Some((_, hints)) = &self.line_hints {
             draw_line_labels(&mut frame, document, hints);
         }
-        vec![frame.into_geometry()]
+        frame.into_layer()
     }
 }
 
 /// Labels each line, or sentence partway along one, that `v` and `V` can
 /// start at, just left of it; and each picture and figure, shaded, on its
 /// top-left corner, as `yi` shows it.
-fn draw_line_labels(frame: &mut canvas::Frame, document: &Document, hints: &Hints<Start>) {
+fn draw_line_labels(frame: &mut Frame, document: &Document, hints: &Hints<Start>) {
     for hint in hints.shown() {
         let spot = match hint.item {
             Start::Text(spot) => spot,
@@ -4412,85 +4258,24 @@ const fn label_size() -> Size {
 
 /// Draws a label of two letters with its top-left corner at a point, kept
 /// inside the window.
-fn draw_label(frame: &mut canvas::Frame, label: [char; 2], at: Point) {
+fn draw_label(frame: &mut Frame, label: [char; 2], at: Point) {
     draw_text_label(frame, &label.iter().collect::<String>(), at);
 }
 
 /// Draws a label of a letter or two with its top-left corner at a point,
 /// kept inside the window.
-fn draw_text_label(frame: &mut canvas::Frame, label: &str, at: Point) {
+fn draw_text_label(frame: &mut Frame, label: &str, at: Point) {
     let corner = Point::new(at.x.max(0.0), at.y.max(0.0));
     let size = label_size();
     frame.fill_rectangle(corner, size, LABEL);
-    frame.fill_text(canvas::Text {
+    frame.fill_text(ui::Text {
         content: label.to_owned(),
         position: Point::new(corner.x + size.width / 2.0, corner.y + size.height / 2.0),
         color: LABEL_TEXT,
-        size: LABEL_SIZE.into(),
-        font: Font {
-            weight: iced::font::Weight::Bold,
-            ..Font::MONOSPACE
-        },
-        align_x: text::Alignment::Center,
-        align_y: iced::alignment::Vertical::Center,
-        ..canvas::Text::default()
+        size: LABEL_SIZE,
+        bold: true,
+        align: Align::Center,
     });
-}
-
-/// Reduces a key press to the keys the reader distinguishes.
-#[expect(clippy::wildcard_enum_match_arm, reason = "keys pdvim has no use for")]
-fn translate(
-    key: &keyboard::Key,
-    modifiers: keyboard::Modifiers,
-    text: Option<&str>,
-) -> Option<Key> {
-    use keyboard::key::Named;
-
-    if modifiers.alt() || modifiers.logo() {
-        return None;
-    }
-    match key.as_ref() {
-        keyboard::Key::Named(named) => match named {
-            Named::Escape => Some(Key::Escape),
-            Named::Enter => Some(Key::Enter),
-            Named::Backspace => Some(Key::Backspace),
-            Named::ArrowUp => Some(Key::Up),
-            Named::ArrowDown => Some(Key::Down),
-            Named::ArrowLeft => Some(Key::Left),
-            Named::ArrowRight => Some(Key::Right),
-            Named::PageUp => Some(Key::PageUp),
-            Named::PageDown => Some(Key::PageDown),
-            Named::Home => Some(Key::Home),
-            Named::End => Some(Key::End),
-            Named::Tab if modifiers.control() && modifiers.shift() => Some(Key::CtrlShiftTab),
-            Named::Tab if modifiers.control() => Some(Key::CtrlTab),
-            Named::Tab if modifiers.shift() => Some(Key::ShiftTab),
-            Named::Tab => Some(Key::Tab),
-            Named::Space if modifiers.shift() => Some(Key::ShiftSpace),
-            Named::Space => Some(Key::Char(' ')),
-            Named::F1 => Some(Key::Function(1)),
-            Named::F2 => Some(Key::Function(2)),
-            Named::F3 => Some(Key::Function(3)),
-            Named::F4 => Some(Key::Function(4)),
-            Named::F5 => Some(Key::Function(5)),
-            Named::F6 => Some(Key::Function(6)),
-            Named::F7 => Some(Key::Function(7)),
-            Named::F8 => Some(Key::Function(8)),
-            Named::F9 => Some(Key::Function(9)),
-            Named::F10 => Some(Key::Function(10)),
-            Named::F11 => Some(Key::Function(11)),
-            Named::F12 => Some(Key::Function(12)),
-            _ => None,
-        },
-        keyboard::Key::Character(character) if modifiers.control() => character
-            .chars()
-            .next()
-            .map(|letter| Key::Ctrl(letter.to_ascii_lowercase())),
-        keyboard::Key::Character(_) | keyboard::Key::Unidentified => text
-            .and_then(|typed| typed.chars().next())
-            .filter(|character| !character.is_control())
-            .map(Key::Char),
-    }
 }
 
 /// Carries out an action that moves or changes the view of a document;
@@ -4612,22 +4397,6 @@ const fn hide_marks(document: &mut Document) {
 fn leap(document: &mut Document, page: u32) {
     document.jumps.record(document.reader.place());
     document.reader.go_to_page(page);
-}
-
-/// What only some systems take: on Linux, the name the window goes by, which
-/// the desktop matches with `pdvim.desktop`.
-fn platform_specific() -> window::settings::PlatformSpecific {
-    #[cfg(target_os = "linux")]
-    {
-        window::settings::PlatformSpecific {
-            application_id: "pdvim".to_owned(),
-            ..window::settings::PlatformSpecific::default()
-        }
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        window::settings::PlatformSpecific::default()
-    }
 }
 
 /// Has the desktop's chosen program open a link, such as a web page in the
@@ -4762,71 +4531,60 @@ mod tests {
 
     #[test]
     fn each_key_pressed_is_read_as_the_key_pdvim_knows_it_by() {
-        use keyboard::key::Named;
-        let none = keyboard::Modifiers::empty();
-        let (shift, ctrl) = (keyboard::Modifiers::SHIFT, keyboard::Modifiers::CTRL);
-        let named =
-            |named: Named, modifiers| translate(&keyboard::Key::Named(named), modifiers, None);
+        use rune::{Key as Rune, KeyEvent, Mods};
+        let none = Mods::default();
+        let shift = Mods {
+            shift: true,
+            ..Mods::default()
+        };
+        let ctrl = Mods {
+            ctrl: true,
+            cmd: true,
+            ..Mods::default()
+        };
+        let both = Mods {
+            shift: true,
+            ..ctrl
+        };
+        let read = |key: Rune, mods: Mods| window::translate(&KeyEvent { key, mods });
         let mut cases = vec![
-            (Named::Escape, none, Key::Escape),
-            (Named::Enter, none, Key::Enter),
-            (Named::Backspace, none, Key::Backspace),
-            (Named::ArrowUp, none, Key::Up),
-            (Named::ArrowDown, none, Key::Down),
-            (Named::ArrowLeft, none, Key::Left),
-            (Named::ArrowRight, none, Key::Right),
-            (Named::PageUp, none, Key::PageUp),
-            (Named::PageDown, none, Key::PageDown),
-            (Named::Home, none, Key::Home),
-            (Named::End, none, Key::End),
-            (Named::Tab, none, Key::Tab),
-            (Named::Tab, shift, Key::ShiftTab),
-            (Named::Tab, ctrl, Key::CtrlTab),
-            (Named::Tab, ctrl | shift, Key::CtrlShiftTab),
-            (Named::Space, none, Key::Char(' ')),
-            (Named::Space, shift, Key::ShiftSpace),
+            (Rune::Escape, none, Key::Escape),
+            (Rune::Enter, none, Key::Enter),
+            (Rune::Backspace, none, Key::Backspace),
+            (Rune::Up, none, Key::Up),
+            (Rune::Down, none, Key::Down),
+            (Rune::Left, none, Key::Left),
+            (Rune::Right, none, Key::Right),
+            (Rune::PageUp, none, Key::PageUp),
+            (Rune::PageDown, none, Key::PageDown),
+            (Rune::Home, none, Key::Home),
+            (Rune::End, none, Key::End),
+            (Rune::Tab, none, Key::Tab),
+            (Rune::Tab, shift, Key::ShiftTab),
+            (Rune::Tab, ctrl, Key::CtrlTab),
+            (Rune::Tab, both, Key::CtrlShiftTab),
+            (Rune::Text(" ".to_owned()), none, Key::Char(' ')),
+            (Rune::Text(" ".to_owned()), shift, Key::ShiftSpace),
+            (Rune::Text(" ".to_owned()), ctrl, Key::Char(' ')),
+            (Rune::Text("a".to_owned()), none, Key::Char('a')),
+            (Rune::Text("A".to_owned()), shift, Key::Char('A')),
+            (Rune::Command('a'), ctrl, Key::Ctrl('a')),
         ];
-        let function_keys = [
-            Named::F1,
-            Named::F2,
-            Named::F3,
-            Named::F4,
-            Named::F5,
-            Named::F6,
-            Named::F7,
-            Named::F8,
-            Named::F9,
-            Named::F10,
-            Named::F11,
-            Named::F12,
-        ];
-        let numbered = function_keys.into_iter().zip(1_u8..);
-        cases.extend(numbered.map(|(key, n)| (key, none, Key::Function(n))));
-        for (index, (key, modifiers, expected)) in cases.into_iter().enumerate() {
-            assert_eq!(named(key, modifiers), Some(expected), "case {index}");
+        cases.extend((1_u8..=12).map(|n| (Rune::Function(n), none, Key::Function(n))));
+        for (index, (key, mods, expected)) in cases.into_iter().enumerate() {
+            assert_eq!(read(key, mods), Some(expected), "case {index}");
         }
         // Keys held with Alt or the logo key are the desktop's.
-        let a = keyboard::Key::Character("a".into());
-        assert_eq!(
-            translate(&a, none, Some("a")),
-            Some(Key::Char('a')),
-            "a alone"
-        );
-        assert_eq!(
-            translate(&a, keyboard::Modifiers::ALT, Some("a")),
-            None,
-            "a with alt"
-        );
-        assert_eq!(
-            translate(&a, keyboard::Modifiers::LOGO, Some("a")),
-            None,
-            "a with logo"
-        );
-        assert_eq!(
-            translate(&a, ctrl, Some("a")),
-            Some(Key::Ctrl('a')),
-            "a with control"
-        );
+        let alt = Mods {
+            alt: true,
+            ..Mods::default()
+        };
+        let logo = Mods {
+            logo: true,
+            ..Mods::default()
+        };
+        assert_eq!(read(Rune::Text("a".to_owned()), alt), None, "a with alt");
+        assert_eq!(read(Rune::Text("a".to_owned()), logo), None, "a with logo");
     }
 
     /// Where the window is in the document, across and down, in points,
@@ -4854,7 +4612,7 @@ mod tests {
         let (x, y, zoom) = view_of(&session);
         // A line of the wheel is three steps, at the wheel's speed: 42
         // pixels here. Turned towards the reader, it scrolls down.
-        session.send(Message::Wheel(mouse::ScrollDelta::Lines {
+        session.send(Message::Wheel(pointer::ScrollDelta::Lines {
             x: 0.0,
             y: -1.0,
         }));
@@ -4864,7 +4622,7 @@ mod tests {
             "a line scrolled {} pixels",
             (down - y) * zoom
         );
-        session.send(Message::Wheel(mouse::ScrollDelta::Lines {
+        session.send(Message::Wheel(pointer::ScrollDelta::Lines {
             x: -1.0,
             y: 0.0,
         }));
@@ -4875,7 +4633,7 @@ mod tests {
             (right - x) * zoom
         );
         // Pixels are scrolled as they come, at the wheel's speed.
-        session.send(Message::Wheel(mouse::ScrollDelta::Pixels {
+        session.send(Message::Wheel(pointer::ScrollDelta::Pixels {
             x: 3.0,
             y: 5.0,
         }));
@@ -4895,10 +4653,10 @@ mod tests {
     #[test]
     fn the_wheel_with_control_held_zooms_the_page_in_and_out() {
         let mut session = testing::Session::open("text.pdf");
-        session.app.modifiers = keyboard::Modifiers::CTRL;
+        session.app.mouse.control = true;
         let (x, y, zoom) = view_of(&session);
         let zoom_after = |session: &mut testing::Session, x: f32, y: f32| {
-            session.send(Message::Wheel(mouse::ScrollDelta::Lines { x, y }));
+            session.send(Message::Wheel(pointer::ScrollDelta::Lines { x, y }));
             view_of(session).2
         };
         // Turned away from the reader, as to scroll up, it zooms in.
@@ -4944,7 +4702,7 @@ mod tests {
         let size = session.app.font_size;
         let (_, y, zoom) = view_of(&session);
         // Without control, the wheel scrolls the book.
-        session.send(Message::Wheel(mouse::ScrollDelta::Lines {
+        session.send(Message::Wheel(pointer::ScrollDelta::Lines {
             x: 0.0,
             y: -1.0,
         }));
@@ -4956,8 +4714,11 @@ mod tests {
             view_of(&session).1 > y,
             "the wheel alone does not scroll the book"
         );
-        session.app.modifiers = keyboard::Modifiers::CTRL;
-        session.send(Message::Wheel(mouse::ScrollDelta::Lines { x: 0.0, y: 1.0 }));
+        session.app.mouse.control = true;
+        session.send(Message::Wheel(pointer::ScrollDelta::Lines {
+            x: 0.0,
+            y: 1.0,
+        }));
         assert!(
             session.app.font_size > size,
             "away from the reader, the type grows"
@@ -4966,7 +4727,7 @@ mod tests {
             same(view_of(&session).2, zoom),
             "the page is zoomed, not the type"
         );
-        session.send(Message::Wheel(mouse::ScrollDelta::Lines {
+        session.send(Message::Wheel(pointer::ScrollDelta::Lines {
             x: 0.0,
             y: -1.0,
         }));

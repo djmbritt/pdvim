@@ -1,4 +1,0 @@
-[env]
-# The tests draw the window with tiny-skia, on the processor, rather than
-# with the graphics card: the same on every machine, and no card needed.
-ICED_TEST_BACKEND = "tiny-skia"

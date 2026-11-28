@@ -2,10 +2,12 @@
 //! them away, and taking either back; going from one to the next; and the
 //! sidebar that lists them.
 
-use iced::widget::canvas;
-use iced::widget::{Column, column, container, row, text};
-use iced::{Color, Element, Fill, Font, Task};
+use rune::{El, col, row, text};
 
+use crate::task::Task;
+use crate::ui::{self, Color, Frame, Point};
+
+use super::widgets::{along_bottom, clickable, filling, layer, panel, shaded};
 use super::{
     App, Document, HELP_ROW, LIST_TEXT_SIZE, Message, Notice, Prompt, SIDEBAR_WIDTH, Sidebar,
     colour, current_document, document_by_id, draw_label, label_size, rectangle,
@@ -479,7 +481,7 @@ impl App {
             marking.kind.noun(),
             if count == 1 { "" } else { "s" }
         ));
-        iced::clipboard::write(text)
+        crate::task::copy(text)
     }
 
     /// Opens the prompt to change the note on a marking, with the note it
@@ -931,28 +933,17 @@ fn describe(marking: &Marking, index: usize, count: usize) -> String {
 
 /// The band over the bottom of the pages that shows the whole note on the
 /// marking picked, wrapped to fit.
-pub(super) fn note_band(note: String, chrome: Colours) -> Element<'static, Message> {
-    let band = container(
-        text(note)
-            .size(LIST_TEXT_SIZE)
-            .color(chrome.bar_text)
-            .wrapping(text::Wrapping::WordOrGlyph),
-    )
-    .padding([6, 10])
-    .width(Fill)
-    .style(move |_| {
-        container::background(chrome.list).border(iced::Border {
-            color: chrome.list_border,
-            width: 1.0,
-            radius: 0.0.into(),
-        })
-    });
-    container(band).align_bottom(Fill).clip(true).into()
+pub(super) fn note_band(note: String, chrome: Colours) -> El {
+    let band = text(note)
+        .font(rune::TextStyle::new(LIST_TEXT_SIZE, 400.0))
+        .color(chrome.bar_text.rune())
+        .wrap_anywhere();
+    along_bottom(panel(rune::el().px(10.0).py(6.0).child(band), chrome, 0.0))
 }
 
 /// Draws the label on each marking in view, just left of its first area,
 /// so that it does not hide the marking's colour.
-pub(super) fn draw_labels(frame: &mut canvas::Frame, document: &Document, hints: &Hints<Marking>) {
+pub(super) fn draw_labels(frame: &mut Frame, document: &Document, hints: &Hints<Marking>) {
     for hint in hints.shown() {
         draw_marking_label(frame, document, hint.label, &hint.item);
     }
@@ -960,7 +951,7 @@ pub(super) fn draw_labels(frame: &mut canvas::Frame, document: &Document, hints:
 
 /// Draws a label just left of a marking's first line.
 pub(super) fn draw_marking_label(
-    frame: &mut canvas::Frame,
+    frame: &mut Frame,
     document: &Document,
     label: [char; 2],
     marking: &Marking,
@@ -973,15 +964,11 @@ pub(super) fn draw_marking_label(
         return;
     };
     let width = label_size().width;
-    draw_label(
-        frame,
-        label,
-        iced::Point::new(area.left - width - 2.0, area.top),
-    );
+    draw_label(frame, label, Point::new(area.left - width - 2.0, area.top));
 }
 
 /// Draws a frame around each line of the marking last gone to.
-pub(super) fn draw_current(frame: &mut canvas::Frame, document: &Document) {
+pub(super) fn draw_current(frame: &mut Frame, document: &Document) {
     let (Some(current), Some(markings)) = (document.marking, &document.markings) else {
         return;
     };
@@ -991,35 +978,18 @@ pub(super) fn draw_current(frame: &mut canvas::Frame, document: &Document) {
     else {
         return;
     };
-    let stroke = canvas::Stroke::default()
-        .with_color(CURRENT)
-        .with_width(2.0);
     for &area in &marking.areas {
         if let Some(area) = document.reader.area_on_screen(marking.page, area) {
             let area = rectangle(area);
-            frame.stroke(
-                &canvas::Path::rectangle(area.position(), area.size()),
-                stroke,
-            );
+            frame.stroke_rectangle(area.position(), area.size(), 2.0, CURRENT);
         }
     }
 }
 
 /// The markings, in a sidebar over the left of the pages: as many as fit,
 /// each with its colour, its text and its page, the selected one marked.
-pub(super) fn list<'a>(
-    list: &'a List,
-    keymaps: &Keymaps,
-    chrome: Colours,
-    rows: usize,
-) -> Element<'a, Message> {
-    let label = |content: String, colour: Color| {
-        text(content)
-            .size(LIST_TEXT_SIZE)
-            .font(Font::MONOSPACE)
-            .color(colour)
-            .wrapping(text::Wrapping::None)
-    };
+pub(super) fn list(list: &List, keymaps: &Keymaps, chrome: Colours, rows: usize) -> El {
+    let label = |content: String, colour: Color| ui::label(content, LIST_TEXT_SIZE, colour);
     let (top, shown) = list.shown(rows);
     let entries = shown.iter().enumerate().map(|(offset, marking)| {
         let selected = top.saturating_add(offset) == list.selected();
@@ -1029,77 +999,60 @@ pub(super) fn list<'a>(
         } else {
             marking.text.clone()
         };
-        let line = row![
-            label("\u{25a0}".to_owned(), swatch),
-            container(label(
+        let line = row()
+            .gap(6.0)
+            .items_center()
+            .h(HELP_ROW)
+            .px(6.0)
+            .child(label("\u{25a0}".to_owned(), swatch))
+            .child(filling(label(
                 words,
                 if selected {
                     chrome.bar_text
                 } else {
                     chrome.tab_text
-                }
-            ))
-            .width(Fill)
-            .clip(true),
-            label(
+                },
+            )))
+            .child(label(
                 marking.page.saturating_add(1).to_string(),
-                chrome.list_number
-            ),
-        ]
-        .spacing(6);
-        super::clickable(
-            container(line)
-                .height(HELP_ROW)
-                .width(Fill)
-                .padding([0, 6])
-                .align_y(iced::alignment::Vertical::Center)
-                .style(move |_| {
-                    if selected {
-                        container::background(chrome.tab_current)
-                    } else {
-                        container::Style::default()
-                    }
-                }),
+                chrome.list_number,
+            ));
+        clickable(
+            shaded(line, selected.then_some(chrome.tab_current)),
             super::pointer::Click::Marking(top.saturating_add(offset)),
         )
     });
-    let heading = container(label("Markings".to_owned(), chrome.bar_text).font(Font {
-        weight: iced::font::Weight::Bold,
-        ..Font::MONOSPACE
-    }))
-    .height(HELP_ROW)
-    .padding([0, 6]);
+    let heading = row().h(HELP_ROW).px(6.0).items_center().child(ui::bold(
+        "Markings",
+        LIST_TEXT_SIZE,
+        chrome.bar_text,
+    ));
     let end = top.saturating_add(shown.len());
-    let foot = container(label(
-        format!(
-            "{}-{end} of {}   {}: go   {}: take away   {}: change note",
-            top.saturating_add(1),
-            list.len(),
-            keymaps.markings.first(Binding::Go),
-            keymaps.markings.first(Binding::Delete),
-            keymaps.markings.first(Binding::Change),
-        ),
-        chrome.list_number,
-    ))
-    .height(HELP_ROW)
-    .padding([0, 6])
-    .clip(true);
-    let panel = container(column![
-        heading,
-        Column::with_children(entries).height(Fill),
-        foot
-    ])
-    .padding(8)
-    .width(SIDEBAR_WIDTH)
-    .height(Fill)
-    .style(move |_| {
-        container::background(chrome.list).border(iced::Border {
-            color: chrome.list_border,
-            width: 1.0,
-            radius: 0.0.into(),
-        })
-    });
-    container(panel).width(Fill).height(Fill).into()
+    let foot = row()
+        .h(HELP_ROW)
+        .px(6.0)
+        .items_center()
+        .clip_soft(0.0)
+        .child(label(
+            format!(
+                "{}-{end} of {}   {}: go   {}: take away   {}: change note",
+                top.saturating_add(1),
+                list.len(),
+                keymaps.markings.first(Binding::Go),
+                keymaps.markings.first(Binding::Delete),
+                keymaps.markings.first(Binding::Change),
+            ),
+            chrome.list_number,
+        ));
+    let body = col().grow(1.0).min_h(0.0).clip_soft(0.0).children(entries);
+    let sidebar = col()
+        .padding(8.0)
+        .w(SIDEBAR_WIDTH)
+        .h_full()
+        .child(heading)
+        .child(body)
+        .child(foot);
+    layer().child(panel(sidebar, chrome, 0.0))
 }
 
 #[cfg(test)]
@@ -1175,7 +1128,7 @@ mod tests {
 /// them into the file.
 #[cfg(test)]
 mod sessions {
-    use iced::futures::executor::block_on;
+    use futures::executor::block_on;
 
     use crate::app::testing::Session;
     use crate::backend::{self, Marking, MarkupKind};

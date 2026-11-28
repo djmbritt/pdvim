@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use iced::Task;
+use crate::task::Task;
 
 use super::{App, Message, Notice, Tab, info, tilde};
 use crate::backend;
@@ -185,8 +185,7 @@ mod tests {
                 tab.document
                     .as_ref()
                     .and_then(|document| document.path.file_name())
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_default()
+                    .map_or_default(|name| name.to_string_lossy().into_owned())
             })
             .collect();
         (names, session.app.current)

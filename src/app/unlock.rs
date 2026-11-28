@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use iced::Task;
+use crate::task::Task;
 
 use super::{App, Message, Notice, Pending, Prompt, Tab, tilde};
 use crate::backend;
@@ -33,8 +33,7 @@ impl App {
         let (name, wrong) = self
             .locked
             .front()
-            .map(|(_, path, wrong)| (file_name(path), *wrong))
-            .unwrap_or_default();
+            .map_or_default(|(_, path, wrong)| (file_name(path), *wrong));
         let dots = "\u{2022}".repeat(typed.chars().count());
         let ask = if wrong {
             "wrong password; try again for"

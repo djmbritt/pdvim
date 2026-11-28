@@ -1,14 +1,13 @@
 //! What a document says about itself: the name its tab and the window go
 //! by, and the panel `:info` shows.
 
-use iced::widget::{Column, column, container, row, text};
-use iced::{Color, Element, Fill, Font};
+use rune::{El, col, el, row, text};
 
-use super::{
-    App, Document, LIST_TEXT_SIZE, LIST_WIDTH, Message, Notice, current_document, leap, tilde,
-};
+use super::widgets::{centred, panel as framed};
+use super::{App, Document, LIST_TEXT_SIZE, LIST_WIDTH, Notice, current_document, leap, tilde};
 use crate::num;
 use crate::theme::Colours;
+use crate::ui::{self, Color};
 
 /// The most characters of a title a tab shows.
 const TAB_NAME: usize = 40;
@@ -164,46 +163,39 @@ fn bytes(size: u64) -> String {
 }
 
 /// The panel of facts about a document, over the pages; any key closes it.
-pub(super) fn panel<'a>(
-    name: &'a str,
-    facts: &'a [(&'static str, String)],
-    chrome: Colours,
-) -> Element<'a, Message> {
+pub(super) fn panel(name: &str, facts: &[(&'static str, String)], chrome: Colours) -> El {
     let label = |content: String, colour: Color| {
         text(content)
-            .size(LIST_TEXT_SIZE)
-            .font(Font::MONOSPACE)
-            .color(colour)
+            .font(ui::mono(LIST_TEXT_SIZE, false))
+            .color(colour.rune())
+            .wrap()
     };
-    let heading = container(label(name.to_owned(), chrome.bar_text).font(Font {
-        weight: iced::font::Weight::Bold,
-        ..Font::MONOSPACE
-    }))
-    .padding([4, 10]);
+    let heading = el()
+        .px(10.0)
+        .py(4.0)
+        .child(ui::bold(name, LIST_TEXT_SIZE, chrome.bar_text));
     let lines = facts.iter().map(|(fact, value)| {
-        row![
-            container(label((*fact).to_owned(), chrome.list_number)).width(LABEL_WIDTH),
-            container(label(value.clone(), chrome.bar_text)).width(Fill),
-        ]
-        .spacing(12)
-        .padding([3, 10])
-        .into()
+        row()
+            .gap(12.0)
+            .px(10.0)
+            .py(3.0)
+            .child(
+                el().w(LABEL_WIDTH)
+                    .child(label((*fact).to_owned(), chrome.list_number)),
+            )
+            .child(
+                el().grow(1.0)
+                    .min_w(0.0)
+                    .child(label(value.clone(), chrome.bar_text)),
+            )
     });
-    let panel = container(column![heading, Column::with_children(lines).spacing(1)].spacing(4))
-        .padding(8)
-        .max_width(LIST_WIDTH)
-        .style(move |_| {
-            container::background(chrome.list).border(iced::Border {
-                color: chrome.list_border,
-                width: 1.0,
-                radius: 4.0.into(),
-            })
-        });
-    container(panel)
-        .center_x(Fill)
-        .center_y(Fill)
-        .padding(24)
-        .into()
+    let body = col()
+        .gap(4.0)
+        .padding(8.0)
+        .max_w(LIST_WIDTH)
+        .child(heading)
+        .child(col().gap(1.0).children(lines));
+    centred(framed(body, chrome, 4.0))
 }
 
 #[cfg(test)]

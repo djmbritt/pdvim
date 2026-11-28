@@ -1,7 +1,7 @@
 //! Running a command line: the commands in it one after another, as typed
 //! after `:` or bound to keys.
 
-use iced::Task;
+use crate::task::Task;
 
 use super::{App, Message, Notice};
 use crate::{command, input, shell};

@@ -14,7 +14,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use iced::futures::channel::oneshot;
+use futures::channel::oneshot;
 
 /// What stops a command from being run.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

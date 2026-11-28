@@ -5,16 +5,21 @@
 //! The small pages are rendered as they come into view, and kept with the
 //! document, so that opening the overview again shows them at once.
 
-use iced::widget::{Column, Row, column, container, image, text};
-use iced::{Element, Fill, Font, Length, Task};
+use rune::{El, SurfaceFit, col, el, row};
 
-use super::{App, Document, Message, Notice, RenderKey, current_document, document_by_id, leap};
+use super::widgets::{clickable, layer};
+use super::{
+    App, Document, Message, Notice, Picture, RenderKey, current_document, document_by_id, leap,
+    picture,
+};
 use crate::backend::{self, RenderJob};
 use crate::input::Key;
 use crate::layout::Rotation;
 use crate::num;
 use crate::overview::{Outcome, Overview};
+use crate::task::Task;
 use crate::theme::Colours;
+use crate::ui;
 
 /// How wide a small page is, in pixels before the screen's scale.
 const WIDTH: f32 = 160.0;
@@ -185,10 +190,7 @@ impl App {
                 palette: recolor,
             });
             tasks.push(Task::perform(render, move |result| {
-                let handle = result.map(|bitmap| {
-                    image::Handle::from_rgba(bitmap.width, bitmap.height, bitmap.pixels)
-                });
-                Message::RenderedSmall(id, page, wanted, handle)
+                Message::RenderedSmall(id, page, wanted, result.map(picture))
             }));
         }
         Task::batch(tasks)
@@ -201,7 +203,7 @@ impl App {
         id: u64,
         page: u32,
         key: RenderKey,
-        result: Result<image::Handle, backend::Error>,
+        result: Result<Picture, backend::Error>,
     ) -> Task<Message> {
         let Some(document) = document_by_id(&mut self.tabs, id) else {
             return Task::none();
@@ -217,14 +219,14 @@ impl App {
     }
 
     /// The overview, drawn over the pages.
-    pub(super) fn overview_grid(&self, chrome: Colours) -> Option<Element<'_, Message>> {
+    pub(super) fn overview_grid(&self, chrome: Colours) -> Option<El> {
         let overview = self.overview()?;
         let document = self.document()?;
         let (columns, rows) = self.overview_shape();
         let (width, height) = self.small_size();
         let shown: Vec<u32> = overview.shown(columns, rows).collect();
         let lines = shown.chunks(num::index(columns)).map(|line| {
-            Row::with_children(line.iter().map(|&page| {
+            row().gap(GAP).children(line.iter().map(|&page| {
                 small_page(
                     document,
                     page,
@@ -233,19 +235,14 @@ impl App {
                     chrome,
                 )
             }))
-            .spacing(GAP)
-            .into()
         });
-        let grid = Column::with_children(lines).spacing(GAP);
+        let grid = col().gap(GAP).children(lines);
         Some(
-            container(grid)
+            layer()
                 .padding(GAP)
-                .width(Fill)
-                .height(Fill)
-                .center_x(Fill)
-                .center_y(Fill)
-                .style(move |_| container::background(chrome.backdrop))
-                .into(),
+                .center()
+                .fill(chrome.backdrop.rune())
+                .child(grid),
         )
     }
 }
@@ -258,18 +255,11 @@ fn small_page(
     selected: bool,
     (width, height): (f32, f32),
     chrome: Colours,
-) -> Element<'_, Message> {
-    let picture: Element<'_, Message> = match document.small.get(&page) {
-        Some((handle, _)) => image(handle.clone())
-            .width(Length::Fixed(width))
-            .height(Length::Fixed(height))
-            .content_fit(iced::ContentFit::Contain)
-            .into(),
-        None => iced::widget::Space::new()
-            .width(Length::Fixed(width))
-            .height(Length::Fixed(height))
-            .into(),
-    };
+) -> El {
+    let mut picture = el().size(width, height);
+    if let Some((pixels, _)) = document.small.get(&page) {
+        picture = picture.pixels_fit(pixels, SurfaceFit::Fit);
+    }
     let number = page.saturating_add(1).to_string();
     let caption = document
         .label(page)
@@ -285,21 +275,14 @@ fn small_page(
     } else {
         chrome.list_number
     };
-    let small = column![
-        container(picture)
-            .padding(FRAME)
-            .style(move |_| container::background(frame)),
-        container(
-            text(caption)
-                .size(12)
-                .font(Font::MONOSPACE)
-                .color(colour)
-                .wrapping(text::Wrapping::None)
-        )
-        .height(CAPTION)
-        .center_x(Length::Fixed(width))
-        .clip(true),
-    ]
-    .width(Length::Shrink);
-    super::clickable(small, super::pointer::Click::Overview(page))
+    let small = col()
+        .child(el().padding(FRAME).fill(frame.rune()).child(picture))
+        .child(
+            el().h(CAPTION)
+                .w(width)
+                .center()
+                .clip_soft(0.0)
+                .child(ui::label(caption, 12.0, colour)),
+        );
+    clickable(small, super::pointer::Click::Overview(page))
 }
